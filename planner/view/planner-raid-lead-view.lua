@@ -1,0 +1,1097 @@
+-- Raidcheck panel: roster + who has the current plan open (any group member can enable).
+local addonName = ...
+local AceAddon = LibStub("AceAddon-3.0")
+local Addon =
+    AceAddon:GetAddon(addonName, true) or
+    AceAddon:GetAddon("Raidstratsgg", true) or
+    AceAddon:GetAddon("raidstratsgg", true)
+if not Addon then return end
+local Diar = Addon
+
+local SEP = string.char(31)
+local SetBackdrop = Diar.SetBackdrop
+local SkinScrollBar = Diar.SkinScrollBar
+local CreateAnimatedCheckbox = Diar.CreateAnimatedCheckbox
+
+local PRESENCE_TTL = 45
+local HEARTBEAT_INTERVAL = 15
+local POLL_INTERVAL = 25
+local RAID_VIEW_FRAC = 0.42
+local RAID_VIEW_MIN_H = 96
+local RAID_CHECK_BAR_H = 26
+local RAID_NOTIF_BTN_H = 28
+local ROW_H = 22
+local NOTIF_COOLDOWN = 30
+local POLL_ACK_WAIT = 4
+
+local UI = {
+    PANEL   = {0.06, 0.06, 0.09, 0.96},
+    BORDER  = {0.22, 0.24, 0.28, 1},
+    TOOLBAR = {0.05, 0.05, 0.08, 0.92},
+    ROW     = {0.09, 0.10, 0.13, 0.92},
+    ROW_HOV = {0.14, 0.16, 0.20, 1},
+    ACCENT  = {0.23, 0.51, 0.96, 1},
+    VIEWING = {0.35, 0.88, 0.45},
+    OTHER   = {0.40, 0.68, 0.98},
+    IDLE    = {0.42, 0.45, 0.50},
+    LINK    = {0.45, 0.58, 0.78},
+    LINK_HOV = {0.62, 0.76, 0.98},
+    MISSING = {0.98, 0.62, 0.18},
+    NOADDON = {0.92, 0.28, 0.28},
+}
+
+local function SplitSep(str, sep)
+    local out = {}
+    local start = 1
+    while true do
+        local i = str:find(sep, start, true)
+        if not i then
+            out[#out + 1] = str:sub(start)
+            break
+        end
+        out[#out + 1] = str:sub(start, i - 1)
+        start = i + 1
+    end
+    return out
+end
+
+local function PlayerNameKey(name)
+    name = strtrim(tostring(name or ""))
+    if name == "" then return nil end
+    local short = name:match("^([^%-]+)") or name
+    return strlower(short)
+end
+
+local function SanitizeCommField(value)
+    return tostring(value or ""):gsub(SEP, "")
+end
+
+local function GetClassColor(classFile)
+    if not classFile or classFile == "" then return 0.82, 0.82, 0.82 end
+    local c = RAID_CLASS_COLORS and RAID_CLASS_COLORS[classFile]
+    if c then return c.r, c.g, c.b end
+    return 0.82, 0.82, 0.82
+end
+
+function Diar:ShouldShowRaidCheckBar()
+    if IsInGroup() then return true end
+    return self.IsRsggDebug and self:IsRsggDebug()
+end
+
+function Diar:IsRaidCheckEnabled(pf)
+    pf = pf or self.plannerFrame
+    return pf and pf.raidCheckEnabled == true
+end
+
+function Diar:SetRaidCheckEnabled(pf, enabled)
+    pf = pf or self.plannerFrame
+    if not pf then return end
+    enabled = not not enabled
+    pf.raidCheckEnabled = enabled
+    if pf.raidCheckChk then
+        pf.raidCheckChk:SetChecked(enabled)
+    end
+    if pf.raidCheckRefreshBtn then
+        if enabled then pf.raidCheckRefreshBtn:Show() else pf.raidCheckRefreshBtn:Hide() end
+    end
+    if pf.raidCheckSummary then
+        if enabled then pf.raidCheckSummary:Show() else pf.raidCheckSummary:Hide() end
+    end
+    if self.ApplyRaidLeadViewLayout then
+        self:ApplyRaidLeadViewLayout(pf)
+    end
+    if enabled then
+        self:SendPlanViewPoll()
+        self:EnsurePlanViewPollTimer()
+    end
+end
+
+function Diar:IsRaidLeadViewActive()
+    if not self:ShouldShowRaidCheckBar() then return false end
+    if not self:IsRaidCheckEnabled() then return false end
+    local pf = self.plannerFrame
+    if pf and pf.compactMode then return false end
+    return true
+end
+
+function Diar:GetCurrentPlanPresenceKey()
+    local data = self.plannerData
+    if not data then return nil end
+    if self.GetPlanIdentityKey then
+        local key = self:GetPlanIdentityKey(data)
+        if key then return key end
+    end
+    if self.GetPlanSyncKey then
+        return self:GetPlanSyncKey()
+    end
+    return nil
+end
+
+function Diar:GetPlanViewPresenceSnapshot()
+    self._planViewPresence = self._planViewPresence or {}
+    local now = GetTime()
+    local out = {}
+    for key, entry in pairs(self._planViewPresence) do
+        if entry and (now - (entry.t or 0)) <= PRESENCE_TTL then
+            out[key] = entry
+        else
+            self._planViewPresence[key] = nil
+        end
+    end
+    return out
+end
+
+function Diar:PlayerHasPlanKey(planKey, planId)
+    if not self.ReceiverHasMatchingPlan then return false end
+    planId = planId and tostring(planId) or ""
+    if planKey and planKey ~= "" then
+        return self:ReceiverHasMatchingPlan(planKey, { planId = planId, channel = "RAID" })
+    end
+    if planId ~= "" then
+        return self:ReceiverHasMatchingPlan(nil, { planId = planId, channel = "RAID" })
+    end
+    return false
+end
+
+function Diar:GetCurrentPlanId()
+    local data = self.plannerData
+    if not data or not data.planId then return "" end
+    return tostring(data.planId)
+end
+
+function Diar:SetPlanViewPresence(sender, open, activePlanKey, hasPlan, targetPlanKey, activeSceneIndex)
+    local key = PlayerNameKey(sender and (Ambiguate and Ambiguate(sender, "short") or sender) or sender)
+    if not key then return end
+    self._planViewPresence = self._planViewPresence or {}
+    local existing = self._planViewPresence[key] or {}
+    existing.open = open and true or false
+    existing.activePlanKey = activePlanKey or ""
+    if hasPlan ~= nil then
+        existing.hasPlan = hasPlan and true or false
+    end
+    if targetPlanKey and targetPlanKey ~= "" then
+        existing.targetPlanKey = targetPlanKey
+    end
+    if open and activeSceneIndex ~= nil then
+        local idx = tonumber(activeSceneIndex)
+        if idx and idx >= 1 then
+            existing.activeSceneIndex = math.floor(idx + 0.0001)
+        end
+    elseif not open then
+        existing.activeSceneIndex = nil
+    end
+    existing.t = GetTime()
+    self._planViewPresence[key] = existing
+end
+
+function Diar:BuildPlanViewMsg(open, targetPlanKey, planId)
+    targetPlanKey = targetPlanKey or ""
+    planId = planId and tostring(planId) or ""
+    local activeKey = ""
+    local sceneIndex = ""
+    local pf = self.plannerFrame
+    if open and pf and pf:IsShown() then
+        activeKey = self:GetCurrentPlanPresenceKey() or ""
+        sceneIndex = tostring(math.max(1, math.floor(tonumber(pf.selectedSceneIndex) or 1)))
+    end
+    local hasPlan = self:PlayerHasPlanKey(targetPlanKey, planId)
+    return table.concat({
+        "VIEW",
+        open and "1" or "0",
+        SanitizeCommField(activeKey),
+        hasPlan and "1" or "0",
+        SanitizeCommField(targetPlanKey),
+        SanitizeCommField(sceneIndex),
+    }, SEP)
+end
+
+function Diar:BroadcastPlanViewStatus(open, targetPlanKey, planId)
+    if not IsInGroup() then return end
+    local chan = self.GetGroupChatChannel and self:GetGroupChatChannel()
+    if not chan then return end
+    local prefix = self.COMM_PLAN_PREFIX or "RAIDSTRATS_PLAN"
+    local msg = self:BuildPlanViewMsg(open, targetPlanKey, planId)
+    self:SendCommMessage(prefix, msg, chan)
+end
+
+function Diar:BroadcastPlanViewPresence(open)
+    local target = self._lastViewTargetKey
+    local planId = self._lastViewTargetPlanId or ""
+    local at = self._lastViewTargetAt
+    if target and at and (GetTime() - at) <= PRESENCE_TTL then
+        self:BroadcastPlanViewStatus(open, target, planId)
+        return
+    end
+    local key = self:GetCurrentPlanPresenceKey() or ""
+    self:BroadcastPlanViewStatus(open, key, self:GetCurrentPlanId())
+end
+
+function Diar:HandlePlanViewComm(msg, sender)
+    if type(msg) ~= "string" or msg:sub(1, 4) ~= "VIEW" then return end
+    local parts = SplitSep(msg, SEP)
+    if parts[1] ~= "VIEW" then return end
+    local open = parts[2] == "1"
+    local sceneIdx = #parts >= 6 and tonumber(parts[6]) or nil
+    if #parts >= 5 then
+        self:SetPlanViewPresence(sender, open, parts[3] or "", parts[4] == "1", parts[5] or "", sceneIdx)
+    else
+        self:SetPlanViewPresence(sender, open, parts[3] or "", nil, "", sceneIdx)
+    end
+    local pf = self.plannerFrame
+    if pf and pf:IsShown() and self.UpdateSceneTabHighlight then
+        self:UpdateSceneTabHighlight()
+    end
+    if self:IsRaidLeadViewActive() then
+        if pf and pf:IsShown() and self.RefreshRaidLeadView then
+            self:RefreshRaidLeadView(pf)
+        end
+    end
+end
+
+function Diar:HandlePlanViewPoll(msg, sender)
+    if type(msg) ~= "string" or msg:sub(1, 4) ~= "PRRQ" then return end
+    local parts = SplitSep(msg, SEP)
+    local wantKey = parts[2] or ""
+    local wantPlanId = parts[3] or ""
+    self._lastViewTargetKey = wantKey
+    self._lastViewTargetPlanId = wantPlanId
+    self._lastViewTargetAt = GetTime()
+    local pf = self.plannerFrame
+    local open = pf and pf:IsShown() or false
+    self:BroadcastPlanViewStatus(open, wantKey, wantPlanId)
+end
+
+function Diar:ScheduleRaidCheckPollRefresh()
+    if not C_Timer or not C_Timer.NewTimer then return end
+    if self._planViewAckTimer then
+        self._planViewAckTimer:Cancel()
+        self._planViewAckTimer = nil
+    end
+    self._planViewAckTimer = C_Timer.NewTimer(POLL_ACK_WAIT + 0.1, function()
+        Diar._planViewAckTimer = nil
+        local pf = Diar.plannerFrame
+        if pf and pf:IsShown() and Diar:IsRaidLeadViewActive() and Diar.RefreshRaidLeadView then
+            Diar:RefreshRaidLeadView(pf)
+        end
+    end)
+end
+
+function Diar:SendPlanViewPoll()
+    if not IsInGroup() then return end
+    local chan = self.GetGroupChatChannel and self:GetGroupChatChannel()
+    if not chan then return end
+    local prefix = self.COMM_PLAN_PREFIX or "RAIDSTRATS_PLAN"
+    local planKey = SanitizeCommField(self:GetCurrentPlanPresenceKey())
+    local planId = SanitizeCommField(self:GetCurrentPlanId())
+    self._lastViewTargetKey = self:GetCurrentPlanPresenceKey() or ""
+    self._lastViewTargetPlanId = self:GetCurrentPlanId()
+    self._lastViewTargetAt = GetTime()
+    self._planViewPollAt = GetTime()
+    self:SendCommMessage(prefix, table.concat({ "PRRQ", planKey, planId }, SEP), chan)
+    if self:IsRaidLeadViewActive() then
+        self:ScheduleRaidCheckPollRefresh()
+    end
+end
+
+function Diar:StopPlanViewHeartbeat()
+    if self._planViewHeartbeat then
+        self._planViewHeartbeat:Cancel()
+        self._planViewHeartbeat = nil
+    end
+    if self._planViewPollTimer then
+        self._planViewPollTimer:Cancel()
+        self._planViewPollTimer = nil
+    end
+    if self._planViewAckTimer then
+        self._planViewAckTimer:Cancel()
+        self._planViewAckTimer = nil
+    end
+end
+
+function Diar:EnsureGroupPlanViewAckTicker()
+    if not C_Timer or not C_Timer.NewTicker then return end
+    if self._groupViewAckTicker then return end
+    self._groupViewAckTicker = C_Timer.NewTicker(30, function()
+        if not IsInGroup() then return end
+        local pf = Diar.plannerFrame
+        Diar:BroadcastPlanViewPresence(pf and pf:IsShown() or false)
+    end)
+end
+
+function Diar:EnsurePlanViewHeartbeat()
+    if not C_Timer or not C_Timer.NewTicker then return end
+    if self._planViewHeartbeat then return end
+    self._planViewHeartbeat = C_Timer.NewTicker(HEARTBEAT_INTERVAL, function()
+        local pf = Diar.plannerFrame
+        if pf and pf:IsShown() then
+            Diar:BroadcastPlanViewPresence(true)
+        end
+    end)
+end
+
+function Diar:EnsurePlanViewPollTimer()
+    if not C_Timer or not C_Timer.NewTicker then return end
+    if self._planViewPollTimer then return end
+    self._planViewPollTimer = C_Timer.NewTicker(POLL_INTERVAL, function()
+        if Diar:IsRaidLeadViewActive() then
+            Diar:SendPlanViewPoll()
+        end
+    end)
+end
+
+function Diar:OnPlannerFrameShown()
+    self:BroadcastPlanViewPresence(true)
+    self:EnsurePlanViewHeartbeat()
+    if self:IsRaidLeadViewActive() then
+        self:SendPlanViewPoll()
+        self:EnsurePlanViewPollTimer()
+        local pf = self.plannerFrame
+        if pf and self.RefreshRaidLeadView then
+            self:RefreshRaidLeadView(pf)
+        end
+    end
+end
+
+function Diar:OnPlannerFrameHidden()
+    self:BroadcastPlanViewPresence(false)
+    if self:IsRaidLeadViewActive() then
+        local pf = self.plannerFrame
+        if pf and self.RefreshRaidLeadView then
+            self:RefreshRaidLeadView(pf)
+        end
+    end
+end
+
+function Diar:OnPlannerPlanChanged()
+    self:BroadcastPlanViewPresence(self.plannerFrame and self.plannerFrame:IsShown())
+    if self:IsRaidLeadViewActive() then
+        self:SendPlanViewPoll()
+        local pf = self.plannerFrame
+        if pf and self.RefreshRaidLeadView then
+            self:RefreshRaidLeadView(pf)
+        end
+    end
+end
+
+function Diar:GetGroupLeaderNameKey()
+    if not IsInGroup() then return nil end
+    local num = GetNumGroupMembers()
+    if num == 0 then return nil end
+    local prefix = IsInRaid() and "raid" or "party"
+    for i = 1, num do
+        local unit = (prefix == "party" and i == num) and "player" or (prefix .. i)
+        if UnitExists(unit) and UnitIsGroupLeader(unit) then
+            return PlayerNameKey(UnitName(unit))
+        end
+    end
+    if UnitIsGroupLeader("player") then
+        return PlayerNameKey(UnitName("player"))
+    end
+    return nil
+end
+
+function Diar:GetRaidLeaderActiveSceneIndex()
+    if not IsInGroup() or UnitIsGroupLeader("player") then return nil end
+    local leaderKey = self:GetGroupLeaderNameKey()
+    if not leaderKey then return nil end
+
+    local presence = self:GetPlanViewPresenceSnapshot()
+    local entry = presence[leaderKey]
+    if not entry or not entry.open then return nil end
+
+    local currentKey = self:GetCurrentPlanPresenceKey() or ""
+    if entry.activePlanKey and entry.activePlanKey ~= "" and currentKey ~= ""
+        and entry.activePlanKey ~= currentKey then
+        return nil
+    end
+
+    local sceneIdx = tonumber(entry.activeSceneIndex)
+    if not sceneIdx or sceneIdx < 1 then return nil end
+
+    local data = self.plannerData
+    local scenes = data and data.scenes
+    if not scenes or sceneIdx > #scenes then return nil end
+    return math.floor(sceneIdx + 0.0001)
+end
+
+function Diar:OnPlannerSceneChanged()
+    self:BroadcastPlanViewPresence(self.plannerFrame and self.plannerFrame:IsShown())
+    if self.UpdateSceneTabHighlight then
+        self:UpdateSceneTabHighlight()
+    end
+end
+
+local function PresenceEntryFresh(entry)
+    return entry and entry.t and (GetTime() - entry.t) <= PRESENCE_TTL
+end
+
+local function PollAckWindowClosed()
+    local pollAt = Diar._planViewPollAt
+    if not pollAt then return false end
+    return (GetTime() - pollAt) >= POLL_ACK_WAIT
+end
+
+local function MemberViewStatus(memberName, presence, currentKey, currentPlanId, localViewing, localHasPlan, localHasAddon)
+    local key = PlayerNameKey(memberName)
+    if not key then return "idle", "—" end
+    if localViewing then
+        if localHasPlan or currentKey == "" then
+            return "viewing", "Viewing"
+        end
+        return "missing", "Missing plan"
+    end
+    if localHasAddon then
+        if not localHasPlan and currentKey ~= "" then
+            return "missing", "Missing plan"
+        end
+        return "idle", "—"
+    end
+
+    local entry = presence[key]
+    if not PresenceEntryFresh(entry) then
+        if PollAckWindowClosed() then
+            return "noaddon", "Missing addon"
+        end
+        return "idle", "—"
+    end
+
+    if entry.targetPlanKey and entry.targetPlanKey ~= "" and currentKey ~= ""
+        and entry.targetPlanKey ~= currentKey then
+        return "idle", "—"
+    end
+
+    if entry.hasPlan == false then
+        return "missing", "Missing plan"
+    end
+
+    if not entry.open then
+        return "idle", "—"
+    end
+
+    local activeKey = entry.activePlanKey or entry.planKey or ""
+    if currentKey ~= "" and activeKey == currentKey then
+        return "viewing", "Viewing"
+    end
+    if activeKey ~= "" then
+        return "other", "Other plan"
+    end
+    return "viewing", "Viewing"
+end
+
+local DEBUG_RAIDCHECK_STATUSES = {
+    { "viewing", "Viewing" },
+    { "other", "Other plan" },
+    { "missing", "Missing plan" },
+    { "noaddon", "Missing addon" },
+    { "idle", "—" },
+}
+
+local function DebugMemberViewStatus(name, rosterIndex)
+    local key = PlayerNameKey(name) or tostring(name)
+    local hash = rosterIndex or 0
+    for i = 1, #key do
+        hash = (hash * 33 + key:byte(i) + i * 13) % 1000003
+    end
+    local pick = (hash % #DEBUG_RAIDCHECK_STATUSES) + 1
+    local entry = DEBUG_RAIDCHECK_STATUSES[pick]
+    return entry[1], entry[2]
+end
+
+function Diar:RefreshRaidLeadView(pf)
+    pf = pf or self.plannerFrame
+    if not pf or not pf.raidLeadScrollChild then return end
+    if not self:IsRaidLeadViewActive() then return end
+
+    local child = pf.raidLeadScrollChild
+    for _, row in ipairs(pf.raidLeadRows or {}) do
+        if row then row:Hide() end
+    end
+    pf.raidLeadRows = pf.raidLeadRows or {}
+
+    local members = self.GetGroupMemberRoster and self:GetGroupMemberRoster() or {}
+    local presence = self:GetPlanViewPresenceSnapshot()
+    local currentKey = self:GetCurrentPlanPresenceKey() or ""
+    local currentPlanId = self:GetCurrentPlanId()
+    local viewingCount = 0
+    local myKey = PlayerNameKey(UnitName("player"))
+    local iAmViewing = pf:IsShown()
+    local iHavePlan = self:PlayerHasPlanKey(currentKey, currentPlanId)
+    local debugMode = self.IsRsggDebug and self:IsRsggDebug()
+
+    local sorted = {}
+    for i, member in ipairs(members) do
+        local isMe = myKey and PlayerNameKey(member.name) == myKey
+        local status, label
+        if debugMode and not isMe then
+            status, label = DebugMemberViewStatus(member.name, i)
+        else
+            status, label = MemberViewStatus(
+                member.name, presence, currentKey, currentPlanId,
+                isMe and iAmViewing, isMe and iHavePlan, isMe and not iAmViewing
+            )
+        end
+        if status == "viewing" then viewingCount = viewingCount + 1 end
+        sorted[#sorted + 1] = {
+            name = member.name,
+            status = status,
+            statusLabel = label,
+        }
+    end
+
+    table.sort(sorted, function(a, b)
+        local rank = { viewing = 0, other = 1, missing = 2, noaddon = 3, idle = 4 }
+        local ra, rb = rank[a.status] or 4, rank[b.status] or 4
+        if ra ~= rb then return ra < rb end
+        return a.name:lower() < b.name:lower()
+    end)
+
+    local y = 0
+    for i, member in ipairs(sorted) do
+        local row = pf.raidLeadRows[i]
+        if not row then
+            row = CreateFrame("Frame", nil, child)
+            row:SetHeight(ROW_H)
+            row.dot = row:CreateTexture(nil, "ARTWORK")
+            row.dot:SetSize(8, 8)
+            row.dot:SetPoint("LEFT", 2, 0)
+            row.nameText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            row.nameText:SetPoint("LEFT", row.dot, "RIGHT", 6, 0)
+            row.nameText:SetJustifyH("LEFT")
+            row.statusText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            row.statusText:SetPoint("RIGHT", row, "RIGHT", -2, 0)
+            row.statusText:SetJustifyH("RIGHT")
+            pf.raidLeadRows[i] = row
+        end
+        row:Show()
+        row:SetPoint("TOPLEFT", child, "TOPLEFT", 0, -y)
+        row:SetPoint("TOPRIGHT", child, "TOPRIGHT", 0, -y)
+
+        local unit = self.FindGroupUnitByName and self:FindGroupUnitByName(member.name)
+        local _, classFile = unit and UnitClass(unit) or nil
+        local cr, cg, cb = GetClassColor(classFile)
+        row.nameText:SetText(member.name)
+        row.nameText:SetTextColor(cr, cg, cb)
+
+        local status = member.status
+        if status == "viewing" then
+            row.dot:SetColorTexture(unpack(UI.VIEWING))
+            row.statusText:SetTextColor(unpack(UI.VIEWING))
+        elseif status == "other" then
+            row.dot:SetColorTexture(unpack(UI.OTHER))
+            row.statusText:SetTextColor(unpack(UI.OTHER))
+        elseif status == "missing" then
+            row.dot:SetColorTexture(unpack(UI.MISSING))
+            row.statusText:SetTextColor(unpack(UI.MISSING))
+        elseif status == "noaddon" then
+            row.dot:SetColorTexture(unpack(UI.NOADDON))
+            row.statusText:SetTextColor(unpack(UI.NOADDON))
+        else
+            row.dot:SetColorTexture(unpack(UI.IDLE))
+            row.statusText:SetTextColor(unpack(UI.IDLE))
+        end
+        row.statusText:SetText(member.statusLabel)
+
+        y = y + ROW_H
+    end
+
+    child:SetHeight(math.max(1, y))
+    if pf.raidCheckSummary then
+        pf.raidCheckSummary:SetText(("%d / %d viewing"):format(viewingCount, #sorted))
+    end
+    self:UpdateRaidCheckNotifBtn(pf)
+end
+
+function Diar:IsRaidCheckNotifsEnabled()
+    local v = self.GetPlannerSettings and self:GetPlannerSettings().hideRaidCheckNotifs
+    if v == true or v == 1 then return false end
+    return true
+end
+
+function Diar:CanSendRaidCheckNotif()
+    if not (self.IsPushUpdateLeader and self:IsPushUpdateLeader()) then return false end
+    if not IsInGroup() then return false end
+    return true
+end
+
+function Diar:UpdateRaidCheckNotifBtn(pf)
+    pf = pf or self.plannerFrame
+    local btn = pf and pf.raidCheckNotifBtn
+    local scroll = pf and pf.raidLeadScroll
+    local box = pf and pf.raidLeadPanel
+    if not btn or not scroll or not box then return end
+
+    local show = self:IsRaidLeadViewActive() and self:CanSendRaidCheckNotif()
+    if show then
+        btn:Show()
+        scroll:ClearAllPoints()
+        scroll:SetPoint("TOPLEFT", box, "TOPLEFT", 6, -6)
+        scroll:SetPoint("BOTTOMRIGHT", box, "BOTTOMRIGHT", -6, 6 + RAID_NOTIF_BTN_H)
+    else
+        btn:Hide()
+        scroll:ClearAllPoints()
+        scroll:SetPoint("TOPLEFT", box, "TOPLEFT", 6, -6)
+        scroll:SetPoint("BOTTOMRIGHT", box, "BOTTOMRIGHT", -6, 6)
+    end
+end
+
+function Diar:SendRaidCheckNotif()
+    if not self:CanSendRaidCheckNotif() then
+        print("|cffff6666[Raidstrats.gg]|r Only the raid leader can send raidcheck notifications.")
+        return
+    end
+    local now = GetTime()
+    if self._raidCheckNotifSentAt and (now - self._raidCheckNotifSentAt) < NOTIF_COOLDOWN then
+        local left = math.ceil(NOTIF_COOLDOWN - (now - self._raidCheckNotifSentAt))
+        print(("|cffff6666[Raidstrats.gg]|r Wait %d sec before sending another notification."):format(left))
+        return
+    end
+
+    local chan = self.GetGroupChatChannel and self:GetGroupChatChannel()
+    if not chan then
+        print("|cffff6666[Raidstrats.gg]|r Join a party or raid to send notifications.")
+        return
+    end
+
+    local data = self.plannerData
+    if not data or not data.scenes or #data.scenes == 0 then
+        print("|cffff6666[Raidstrats.gg]|r No plan loaded to notify about.")
+        return
+    end
+    if self.EnsurePlanInstanceKey then self:EnsurePlanInstanceKey(data) end
+    if self.PersistCurrentPlanToSaved then self:PersistCurrentPlanToSaved() end
+
+    local payload = self.BuildSharePayload and self:BuildSharePayload(data)
+    if not payload or payload == "" then
+        print("|cffff6666[Raidstrats.gg]|r Couldn't prepare the plan for notification.")
+        return
+    end
+
+    local planName = (data.planName and data.planName ~= "") and data.planName or "Raid plan"
+    local planKey = SanitizeCommField(self:GetCurrentPlanPresenceKey())
+    local planId = SanitizeCommField(self:GetCurrentPlanId())
+    local transferId = string.format("rc%x%x", time(), math.random(0, 0xFFFFFF))
+    self._sharedPlans = self._sharedPlans or {}
+    self._sharedPlans[transferId] = { payload = payload, t = time() }
+
+    local owner = self.GetPlayerShareName and self:GetPlayerShareName()
+        or (UnitName("player") or "Unknown")
+    local prefix = self.COMM_PLAN_PREFIX or "RAIDSTRATS_PLAN"
+    local msg = table.concat({
+        "RNOT", SanitizeCommField(planName), planKey, planId,
+        SanitizeCommField(transferId), SanitizeCommField(owner),
+    }, SEP)
+    self:SendCommMessage(prefix, msg, chan)
+    self._raidCheckNotifSentAt = now
+    print(("|cff00aaff[Raidstrats.gg]|r Sent raidcheck notification for \"%s\" to %s."):format(
+        planName, chan == "RAID" and "raid" or (chan == "PARTY" and "party" or "group")))
+end
+
+function Diar:HideRaidCheckNotifPopup()
+    if self._raidCheckNotifPopup then
+        self._raidCheckNotifPopup:Hide()
+    end
+end
+
+function Diar:OpenPlanFromRaidCheckNotif(planKey, planName, planId)
+    planId = planId and tostring(planId) or ""
+    if self:PlayerHasPlanKey(planKey, planId) then
+        if planKey and planKey ~= "" and self.GetPlanIdentityKey then
+            if self:GetPlanIdentityKey(self.plannerData) == planKey then
+                if self.ShowPlannerViewer then self:ShowPlannerViewer() end
+                return true
+            end
+            if self.FindSavedEntryIdForPlanKey then
+                local id = self:FindSavedEntryIdForPlanKey(planKey, planId ~= "" and planId or nil)
+                if id and self.LoadSavedPlanById then
+                    self:LoadSavedPlanById(id, { openPlanner = true })
+                    return true
+                end
+            end
+        end
+        if planName and planName ~= "" and self.LoadPlanByName and self:LoadPlanByName(planName) then
+            if self.ShowPlannerViewer then self:ShowPlannerViewer() end
+            return true
+        end
+    end
+    return false
+end
+
+function Diar:ImportPlanFromRaidCheckNotif(sender, transferId, owner, planName)
+    transferId = strtrim(tostring(transferId or ""))
+    owner = strtrim(tostring(owner or ""))
+    if transferId == "" or owner == "" then
+        if self.ShowImportPlanDialog then self:ShowImportPlanDialog() end
+        return false
+    end
+
+    if not sender or sender == "" then
+        if self.ShowImportPlanDialog then self:ShowImportPlanDialog() end
+        return false
+    end
+
+    self._incomingPlan = {
+        owner = owner,
+        id = transferId,
+        chunks = {},
+        total = nil,
+        t = GetTime(),
+        planName = planName,
+        sender = sender,
+    }
+
+    -- Same fast path as chat hyperlinks: whisper request + 180-byte bulk chunks.
+    local prefix = self.COMM_PLAN_PREFIX or "RAIDSTRATS_PLAN"
+    self:SendCommMessage(prefix, "REQ:" .. transferId, "WHISPER", sender, "BULK")
+
+    local displayName = (planName and planName ~= "") and planName or "Raid plan"
+    self.plannerData = {
+        planName = displayName,
+        scenes = { { name = "Empty", items = {} } },
+    }
+    if self.OpenPlannerAfterShareImport then
+        self:OpenPlannerAfterShareImport()
+    elseif self.ShowPlannerViewer then
+        self:ShowPlannerViewer()
+    end
+
+    if self.ShowImportProgress then
+        self:ShowImportProgress(true, 0, nil, "Requesting plan...")
+    end
+
+    local who = sender and (Ambiguate and Ambiguate(sender, "short") or sender) or "Raid leader"
+    print(("|cff00aaff[Raidstrats.gg]|r Requesting \"%s\" from %s..."):format(
+        planName and planName ~= "" and planName or "raid plan", who))
+    return true
+end
+
+function Diar:ShowRaidCheckNotifPopup(sender, planName, planKey, planId, transferId, owner)
+    if not self:IsRaidCheckNotifsEnabled() then return end
+    self:HideRaidCheckNotifPopup()
+
+    local who = sender and (Ambiguate and Ambiguate(sender, "short") or sender) or "Raid leader"
+    planName = (planName and planName ~= "") and planName or "the raid plan"
+    planId = planId and tostring(planId) or ""
+    local hasPlan = self:PlayerHasPlanKey(planKey, planId)
+
+    local f = CreateFrame("Frame", "RaidstratsRaidCheckNotifPopup", UIParent, "BackdropTemplate")
+    f:SetSize(360, hasPlan and 148 or 158)
+    f:SetFrameStrata("FULLSCREEN_DIALOG")
+    f:EnableMouse(true)
+    if SetBackdrop then SetBackdrop(f, UI.PANEL, UI.BORDER, 2) end
+    tinsert(UISpecialFrames, "RaidstratsRaidCheckNotifPopup")
+
+    local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    title:SetPoint("TOP", 0, -14)
+    title:SetText(hasPlan and "Review the raid plan" or "Import the raid plan")
+    title:SetTextColor(0.92, 0.92, 0.92)
+
+    local msg = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    msg:SetPoint("TOP", title, "BOTTOM", 0, -10)
+    msg:SetWidth(320)
+    msg:SetJustifyH("CENTER")
+    if hasPlan then
+        msg:SetText(("%s wants you to open \"%s\" in the planner."):format(who, planName))
+    else
+        msg:SetText(("%s wants you to review \"%s\".\nImport the plan to follow along."):format(who, planName))
+    end
+    msg:SetTextColor(0.78, 0.80, 0.84)
+
+    local function makeBtn(text, x, onClick)
+        local b = CreateFrame("Button", nil, f, "BackdropTemplate")
+        b:SetSize(118, 28)
+        b:SetPoint("BOTTOM", x, 14)
+        if SetBackdrop then SetBackdrop(b, UI.ROW, UI.BORDER, 1) end
+        local lbl = b:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        lbl:SetPoint("CENTER")
+        lbl:SetText(text)
+        lbl:SetTextColor(0.9, 0.9, 0.9)
+        b:SetScript("OnEnter", function(s)
+            s:SetBackdropColor(unpack(UI.ROW_HOV))
+            lbl:SetTextColor(1, 1, 1)
+        end)
+        b:SetScript("OnLeave", function(s)
+            s:SetBackdropColor(unpack(UI.ROW))
+            lbl:SetTextColor(0.9, 0.9, 0.9)
+        end)
+        b:SetScript("OnClick", onClick)
+        return b
+    end
+
+    makeBtn("Not now", -62, function()
+        Diar:HideRaidCheckNotifPopup()
+    end)
+    makeBtn(hasPlan and "Open plan" or "Import plan", 62, function()
+        Diar:HideRaidCheckNotifPopup()
+        if hasPlan then
+            Diar:OpenPlanFromRaidCheckNotif(planKey, planName, planId)
+        else
+            Diar:ImportPlanFromRaidCheckNotif(sender, transferId, owner, planName)
+        end
+    end)
+
+    f:SetScript("OnHide", function()
+        if Diar._raidCheckNotifPopup == f then
+            Diar._raidCheckNotifPopup = nil
+        end
+    end)
+
+    self._raidCheckNotifPopup = f
+    if self.PrepareModal then
+        self:PrepareModal(f, self.plannerFrame or self.frame)
+    end
+    f:ClearAllPoints()
+    f:SetPoint("CENTER")
+    f:Show()
+    if PlaySound then PlaySound(3190, "master") end
+end
+
+function Diar:HandleRaidCheckNotifComm(msg, sender)
+    if type(msg) ~= "string" or msg:sub(1, 4) ~= "RNOT" then return end
+    if not self:IsRaidCheckNotifsEnabled() then return end
+    local parts = SplitSep(msg, SEP)
+    if parts[1] ~= "RNOT" then return end
+    local planName = parts[2] or ""
+    local planKey = parts[3] or ""
+    local planId = parts[4] or ""
+    local transferId = parts[5] or ""
+    local owner = parts[6] or ""
+    self:ShowRaidCheckNotifPopup(sender, planName, planKey, planId, transferId, owner)
+end
+
+function Diar:ApplyRaidLeadViewLayout(pf)
+    pf = pf or self.plannerFrame
+    if not pf or not pf.savedPlansPanel then return end
+
+    local panel = pf.savedPlansPanel
+    local footer = pf.savedPlansFooter
+    local title = pf.savedPlansTitle
+    local count = pf.savedPlansCount
+    local subtitle = pf.savedPlansSubtitle
+    local divider = pf.savedPlansDivider
+    local scroll = pf.savedPlansScroll
+    local bar = pf.raidCheckBar
+
+    if not (panel and footer and title and subtitle and divider and scroll) then return end
+
+    local showBar = self:ShouldShowRaidCheckBar()
+    local active = showBar and self:IsRaidCheckEnabled(pf)
+
+    if bar then
+        if showBar then bar:Show() else bar:Hide() end
+    end
+    if pf.raidLeadPanel then
+        if active then pf.raidLeadPanel:Show() else pf.raidLeadPanel:Hide() end
+    end
+    if pf.raidLeadBottomDivider then
+        if active then pf.raidLeadBottomDivider:Show() else pf.raidLeadBottomDivider:Hide() end
+    end
+
+    local topAnchor = panel
+    local topInset = -12
+
+    if showBar and bar then
+        bar:ClearAllPoints()
+        bar:SetPoint("TOPLEFT", panel, "TOPLEFT", 10, -8)
+        bar:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -10, -8)
+        bar:SetHeight(RAID_CHECK_BAR_H)
+        topAnchor = bar
+        topInset = -6
+    end
+
+    if active and pf.raidLeadPanel then
+        local panelH = panel:GetHeight() or 400
+        local footerH = footer:GetHeight() or 72
+        local barH = RAID_CHECK_BAR_H + 14
+        local notifH = self:CanSendRaidCheckNotif() and (RAID_NOTIF_BTN_H + 8) or 0
+        local raidH = math.max(RAID_VIEW_MIN_H, math.floor((panelH - footerH - barH - notifH - 24) * RAID_VIEW_FRAC))
+
+        pf.raidLeadPanel:ClearAllPoints()
+        pf.raidLeadPanel:SetPoint("TOPLEFT", topAnchor, "BOTTOMLEFT", -2, topInset)
+        pf.raidLeadPanel:SetPoint("TOPRIGHT", topAnchor, "BOTTOMRIGHT", 2, topInset)
+        pf.raidLeadPanel:SetHeight(raidH)
+
+        if pf.raidLeadBottomDivider then
+            pf.raidLeadBottomDivider:ClearAllPoints()
+            pf.raidLeadBottomDivider:SetPoint("TOPLEFT", pf.raidLeadPanel, "BOTTOMLEFT", 0, -6)
+            pf.raidLeadBottomDivider:SetPoint("TOPRIGHT", pf.raidLeadPanel, "BOTTOMRIGHT", 0, -6)
+        end
+
+        topAnchor = pf.raidLeadBottomDivider or pf.raidLeadPanel
+        topInset = -10
+    end
+
+    title:ClearAllPoints()
+    title:SetPoint("TOPLEFT", topAnchor, "BOTTOMLEFT", showBar and 2 or 0, topInset)
+    count:ClearAllPoints()
+    count:SetPoint("LEFT", title, "RIGHT", 6, 0)
+    subtitle:ClearAllPoints()
+    subtitle:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -2)
+    subtitle:SetPoint("RIGHT", panel, "RIGHT", -12, 0)
+    divider:ClearAllPoints()
+    divider:SetPoint("TOP", subtitle, "BOTTOM", 0, -8)
+    divider:SetPoint("LEFT", panel, "LEFT", 10, 0)
+    divider:SetPoint("RIGHT", panel, "RIGHT", -10, 0)
+    scroll:ClearAllPoints()
+    scroll:SetPoint("TOPLEFT", divider, "BOTTOMLEFT", -2, -8)
+    scroll:SetPoint("BOTTOMRIGHT", footer, "TOPRIGHT", -6, 6)
+
+    if active then
+        self:RefreshRaidLeadView(pf)
+        self:UpdateRaidCheckNotifBtn(pf)
+    end
+end
+
+local function CreateRaidCheckNotifBtn(box, pf)
+    local notifBtn = CreateFrame("Button", nil, box, "BackdropTemplate")
+    notifBtn:SetHeight(RAID_NOTIF_BTN_H)
+    notifBtn:SetPoint("BOTTOMLEFT", box, "BOTTOMLEFT", 8, 8)
+    notifBtn:SetPoint("BOTTOMRIGHT", box, "BOTTOMRIGHT", -8, 8)
+    if SetBackdrop then SetBackdrop(notifBtn, UI.ROW, UI.BORDER, 1) end
+    local notifLbl = notifBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    notifLbl:SetPoint("CENTER")
+    notifLbl:SetText("Send notif")
+    notifLbl:SetTextColor(0.88, 0.88, 0.88)
+    notifBtn:SetScript("OnEnter", function(s)
+        s:SetBackdropColor(unpack(UI.ROW_HOV))
+        notifLbl:SetTextColor(1, 1, 1)
+    end)
+    notifBtn:SetScript("OnLeave", function(s)
+        s:SetBackdropColor(unpack(UI.ROW))
+        notifLbl:SetTextColor(0.88, 0.88, 0.88)
+    end)
+    notifBtn:SetScript("OnClick", function()
+        Diar:SendRaidCheckNotif()
+    end)
+    notifBtn:Hide()
+    pf.raidCheckNotifBtn = notifBtn
+    return notifBtn
+end
+
+function Diar:EnsureRaidLeadViewPanel(pf)
+    if not pf then return end
+    local panel = pf.savedPlansPanel
+    if not panel then return end
+
+    if pf.raidCheckBar and pf.raidCheckNotifBtn then return end
+
+    if pf.raidCheckBar and not pf.raidCheckNotifBtn and pf.raidLeadPanel then
+        CreateRaidCheckNotifBtn(pf.raidLeadPanel, pf)
+        self:UpdateRaidCheckNotifBtn(pf)
+        return
+    end
+
+    if pf.raidCheckBar then return end
+
+    if pf.raidLeadPanel then
+        pf.raidLeadPanel:Hide()
+        pf.raidLeadPanel = nil
+    end
+    if pf.raidLeadBottomDivider then
+        pf.raidLeadBottomDivider:Hide()
+        pf.raidLeadBottomDivider = nil
+    end
+
+    local bar = CreateFrame("Frame", nil, panel)
+    bar:SetHeight(RAID_CHECK_BAR_H)
+    pf.raidCheckBar = bar
+
+    local chk = CreateAnimatedCheckbox and CreateAnimatedCheckbox(bar, nil)
+    if chk then
+        chk:SetSize(20, 20)
+        chk:SetPoint("LEFT", bar, "LEFT", 0, 0)
+        chk:SetScript("OnClick", function(s)
+            s.isChecked = not s.isChecked
+            if s.UpdateVisuals then s:UpdateVisuals() end
+            Diar:SetRaidCheckEnabled(pf, s.isChecked)
+        end)
+        pf.raidCheckChk = chk
+    end
+
+    local label = bar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    label:SetPoint("LEFT", chk or bar, chk and "RIGHT" or "LEFT", chk and 8 or 0, 0)
+    label:SetText("Raidcheck")
+    label:SetTextColor(0.78, 0.80, 0.84)
+    pf.raidCheckLabel = label
+
+    local summary = bar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    summary:SetPoint("RIGHT", bar, "RIGHT", -56, 0)
+    summary:SetPoint("LEFT", label, "RIGHT", 8, 0)
+    summary:SetJustifyH("RIGHT")
+    summary:SetTextColor(0.48, 0.52, 0.58)
+    summary:SetText("")
+    summary:Hide()
+    pf.raidCheckSummary = summary
+
+    local refreshBtn = CreateFrame("Button", nil, bar)
+    refreshBtn:SetSize(52, 20)
+    refreshBtn:SetPoint("RIGHT", bar, "RIGHT", 0, 0)
+    local refreshLbl = refreshBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    refreshLbl:SetPoint("CENTER")
+    refreshLbl:SetText("Refresh")
+    refreshLbl:SetTextColor(unpack(UI.LINK))
+    refreshBtn:SetScript("OnEnter", function()
+        refreshLbl:SetTextColor(unpack(UI.LINK_HOV))
+    end)
+    refreshBtn:SetScript("OnLeave", function()
+        refreshLbl:SetTextColor(unpack(UI.LINK))
+    end)
+    refreshBtn:SetScript("OnClick", function()
+        Diar:SendPlanViewPoll()
+        Diar:RefreshRaidLeadView(pf)
+    end)
+    refreshBtn:Hide()
+    pf.raidCheckRefreshBtn = refreshBtn
+
+    local box = CreateFrame("Frame", nil, panel, "BackdropTemplate")
+    if SetBackdrop then SetBackdrop(box, UI.TOOLBAR, UI.BORDER, 1) end
+    pf.raidLeadPanel = box
+
+    local scroll = CreateFrame("ScrollFrame", nil, box, "UIPanelScrollFrameTemplate")
+    scroll:SetPoint("TOPLEFT", box, "TOPLEFT", 6, -6)
+    scroll:SetPoint("BOTTOMRIGHT", box, "BOTTOMRIGHT", -6, 6)
+    if SkinScrollBar then SkinScrollBar(scroll) end
+    local scrollChild = CreateFrame("Frame", nil, scroll)
+    scrollChild:SetWidth((pf.savedPlansListW or 200) - 16)
+    scrollChild:SetHeight(1)
+    scroll:SetScrollChild(scrollChild)
+    pf.raidLeadScroll = scroll
+    pf.raidLeadScrollChild = scrollChild
+    pf.raidLeadRows = {}
+
+    CreateRaidCheckNotifBtn(box, pf)
+
+    local bottomDivider = panel:CreateTexture(nil, "ARTWORK")
+    bottomDivider:SetHeight(1)
+    bottomDivider:SetColorTexture(unpack(UI.BORDER))
+    pf.raidLeadBottomDivider = bottomDivider
+
+    pf.raidCheckEnabled = false
+
+    local oldOnShow = pf:GetScript("OnShow")
+    pf:SetScript("OnShow", function(frame)
+        if Diar.OnPlannerFrameShown then Diar:OnPlannerFrameShown() end
+        if oldOnShow then oldOnShow(frame) end
+    end)
+
+    local oldOnHide = pf:GetScript("OnHide")
+    pf:SetScript("OnHide", function(frame)
+        if Diar.OnPlannerFrameHidden then Diar:OnPlannerFrameHidden() end
+        if oldOnHide then oldOnHide(frame) end
+    end)
+
+    box:Hide()
+    bar:Hide()
+    self:ApplyRaidLeadViewLayout(pf)
+end
+
+function Diar:OnGroupRosterChangedForRaidLeadView()
+    local pf = self.plannerFrame
+    if pf and pf:IsShown() then
+        if self.ApplyRaidLeadViewLayout then self:ApplyRaidLeadViewLayout(pf) end
+        if self:IsRaidLeadViewActive() then
+            self:SendPlanViewPoll()
+        elseif self.UpdateRaidCheckNotifBtn then
+            self:UpdateRaidCheckNotifBtn(pf)
+        end
+    end
+end

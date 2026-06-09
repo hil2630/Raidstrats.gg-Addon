@@ -1,0 +1,39 @@
+## Interface: 120001
+
+## Title: Raidstrats.gg
+## Author: Bettiold, Nairyana
+## Version: alpha0.0.2
+## Notes: The best free World of Warcraft raid planner
+## IconTexture: 1519351
+## SavedVariables: RaidstratsggSavedPlans, RaidstratsggSettings
+
+Libs\LibStub\LibStub.lua
+Libs\LibDeflate-main\LibDeflate.lua
+Libs\CallbackHandler-1.0\CallbackHandler-1.0.xml
+Libs\AceAddon-3.0\AceAddon-3.0.xml
+Libs\AceConsole-3.0\AceConsole-3.0.xml
+Libs\AceComm-3.0\AceComm-3.0.xml
+Libs\AceEvent-3.0\AceEvent-3.0.xml
+Libs\AceTimer-3.0\AceTimer-3.0.xml
+
+main.lua
+version-check.lua
+minimap-button.lua
+nsrt-integration.lua
+planner\core\planner-shared.lua
+planner\scene\planner-scene.lua
+planner\anim\planner-path.lua
+planner\anim\planner-stationary.lua
+planner\anim\planner-frontal.lua
+planner\anim\planner-tether.lua
+planner\ui\planner-palette.lua
+planner\data\planner-plan-push.lua
+planner\interaction\planner-roster-sync.lua
+planner\view\planner-raid-lead-view.lua
+planner\data\planner-settings.lua
+planner\data\planner-saved-plans.lua
+planner\view\planner-import.lua
+planner\view\planner-create-plan.lua
+planner\view\planner-help.lua
+planner\view\planner-nsrt-view.lua
+planner\anim\planner-playback.lua
