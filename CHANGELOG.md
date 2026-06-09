@@ -1,8 +1,13 @@
 # Changelog
 
+## [Alpha release v0.0.31]
+
+- Up TOC to correct number
+
 ## [Unreleased]
 
 ### Added
+
 - In-game raid assignment viewer
 - Share to Group and Push Update for raid leaders
 - Roster sync from your current group
