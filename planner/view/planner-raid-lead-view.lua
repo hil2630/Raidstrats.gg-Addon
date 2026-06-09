@@ -921,7 +921,11 @@ function Diar:ApplyRaidLeadViewLayout(pf)
     end
 
     title:ClearAllPoints()
-    title:SetPoint("TOPLEFT", topAnchor, "BOTTOMLEFT", showBar and 2 or 0, topInset)
+    if showBar or active then
+        title:SetPoint("TOPLEFT", topAnchor, "BOTTOMLEFT", showBar and 2 or 0, topInset)
+    else
+        title:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, -12)
+    end
     count:ClearAllPoints()
     count:SetPoint("LEFT", title, "RIGHT", 6, 0)
     subtitle:ClearAllPoints()

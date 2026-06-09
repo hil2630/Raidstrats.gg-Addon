@@ -219,10 +219,6 @@ function Diar:RefreshSavedPlansList()
         pf.savedPlansCount:SetText(#list > 0 and ("(" .. #list .. ")") or "")
     end
     if pf.savedPlansSubtitle then
-        if pf.savedPlansPanel then
-            pf.savedPlansSubtitle:SetPoint("RIGHT", pf.savedPlansPanel, "RIGHT", -12, 0)
-            pf.savedPlansSubtitle:SetWordWrap(true)
-        end
         pf.savedPlansSubtitle:SetText(#list > 0 and "Use the checkbox to auto-import pushed updates" or "Import a plan to get started")
     end
 

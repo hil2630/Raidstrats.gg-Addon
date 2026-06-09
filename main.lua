@@ -482,6 +482,31 @@ function Raidstrats:GetGroupChatChannel()
     return nil
 end
 
+function Raidstrats:IsGuildOnlyShareChannel()
+    if IsInGroup(LE_PARTY_CATEGORY_INSTANCE) then return false end
+    if IsInRaid() then return false end
+    if IsInGroup() then return false end
+    return IsInGuild() and true or false
+end
+
+local function EnsureShareToGuildPopup()
+    if StaticPopupDialogs["RAIDSTRATSGG_SHARE_TO_GUILD"] then return end
+    StaticPopupDialogs["RAIDSTRATSGG_SHARE_TO_GUILD"] = {
+        text = "You are not in a party or raid. Share \"%s\" to guild chat? Everyone in your guild will see this link.",
+        button1 = _G.YES or "Yes",
+        button2 = _G.CANCEL or "Cancel",
+        OnAccept = function(popup)
+            local data = popup.data
+            if data then
+                Raidstrats:SharePlanToGroup(data, { confirmedGuild = true })
+            end
+        end,
+        timeout = 0,
+        whileDead = 1,
+        hideOnEscape = 1,
+    }
+end
+
 local function ChannelLabel(chan)
     if chan == "INSTANCE_CHAT" then return "instance" end
     if chan == "RAID" then return "raid" end
@@ -538,7 +563,8 @@ end
 -- Share the current plan to chat, WeakAuras-style: post a plain-text token that each
 -- addon user's chat filter renders as a clickable link. The plan itself is NOT sent now;
 -- it is only transferred (on request) when someone clicks the link. No auto-import.
-function Raidstrats:SharePlanToGroup(data)
+function Raidstrats:SharePlanToGroup(data, opts)
+    opts = opts or {}
     data = data or self.plannerData
     if not data or type(data.scenes) ~= "table" or #data.scenes == 0 then
         print("|cffff6666[Raidstrats.gg]|r No plan loaded to share.")
@@ -548,6 +574,13 @@ function Raidstrats:SharePlanToGroup(data)
     self:EnsurePlanInstanceKey(data)
     if self.PersistCurrentPlanToSaved then
         self:PersistCurrentPlanToSaved()
+    end
+
+    if self:IsGuildOnlyShareChannel() and not opts.confirmedGuild then
+        EnsureShareToGuildPopup()
+        local planName = SanitizeShareName((type(data.planName) == "string" and data.planName ~= "") and data.planName or "Raid plan")
+        StaticPopup_Show("RAIDSTRATSGG_SHARE_TO_GUILD", planName, nil, data)
+        return false
     end
 
     local chan = self:GetGroupChatChannel()
