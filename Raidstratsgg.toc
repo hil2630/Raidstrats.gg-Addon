@@ -2,9 +2,11 @@
 
 ## Title: Raidstrats.gg
 ## Author: Bettiold, Nairyana
-## Version: alpha0.0.2
-## Notes: The best free World of Warcraft raid planner
+## Version: @project-version@
+## Notes: In-game raid assignments for Raidstrats.gg
 ## IconTexture: 1519351
+## X-Curse-Project-ID: 1570058
+## X-Wago-ID: YK9bXVGL
 ## SavedVariables: RaidstratsggSavedPlans, RaidstratsggSettings
 
 Libs\LibStub\LibStub.lua

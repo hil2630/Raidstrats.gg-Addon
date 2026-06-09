@@ -1,0 +1,24 @@
+package-as: Raidstratsgg
+
+enable-nolib-creation: no
+
+manual-changelog:
+  filename: CHANGELOG.md
+  markup-type: markdown
+
+ignore:
+  - .github
+  - .env
+  - .gitignore
+  - .release
+  - "*.zip"
+  - libs/LibDeflate-main/tests
+  - libs/LibDeflate-main/tools
+  - libs/LibDeflate-main/dev_docs
+  - libs/LibDeflate-main/.github
+  - libs/LibDeflate-main/rockspecs
+  - libs/LibDeflate-main/examples
+  - libs/LibDeflate-main/docs
+  - libs/LibDeflate-main/changelog.md
+  - libs/LibDeflate-main/CONTRIBUTING.md
+  - libs/LibDeflate-main/README.md
