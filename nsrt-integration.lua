@@ -213,8 +213,70 @@ local function FindNSI()
     return nil
 end
 
+local function OnNsrtReminderChanged(addon)
+    if addon.AppendPlannerDebugLine then
+        local pf = addon.plannerFrame
+        addon:AppendPlannerDebugLine(("NSRT_REMINDER_CHANGED scene=%s"):format(
+            tostring((pf and pf.selectedSceneIndex) or 1)))
+    end
+    if addon.ReloadRsggCuesFromActiveNote then
+        addon:ReloadRsggCuesFromActiveNote()
+    elseif addon.rsggEncounterID then
+        addon:ReloadRsggCues(addon.rsggEncounterID)
+    end
+    if addon.RefreshPlannerNsrtAssignmentIfOpen then
+        addon:RefreshPlannerNsrtAssignmentIfOpen()
+    else
+        local pf = addon.plannerFrame
+        if pf and pf:IsShown() and not pf.nsrtSceneActive and addon.ApplyNsrtAssignmentForPlannerView then
+            addon:ApplyNsrtAssignmentForPlannerView(pf.selectedSceneIndex or 1)
+            if addon.RefreshPlannerScene then
+                addon:RefreshPlannerScene()
+            end
+        end
+    end
+end
+
+local function RegisterNsrtCallbacks(addon)
+    if addon._nsrtCallbacksRegistered then return true end
+    if not NSAPI or not NSAPI.RegisterCallback then return false end
+
+    NSAPI:RegisterCallback("NSRT_PHASE", function(phase, encID, testrun)
+        if testrun then return end
+        phase = tonumber(phase) or 1
+        encID = encID and tonumber(encID) or nil
+        if encID then
+            addon.rsggEncounterID = encID
+            addon:ReloadRsggCues(encID)
+        end
+        if addon.HideRaidPlanScene then
+            addon:HideRaidPlanScene()
+        end
+        if addon.OnNSRTPhase then
+            addon:OnNSRTPhase(phase)
+        end
+    end, addon)
+
+    NSAPI:RegisterCallback("NSRT_HIDE_REMINDERS", function()
+        if addon.HideRaidPlanScene then
+            addon:HideRaidPlanScene()
+        end
+        if addon.OnEncounterEnd then
+            addon:OnEncounterEnd()
+        end
+    end, addon)
+
+    NSAPI:RegisterCallback("NSRT_REMINDER_CHANGED", function()
+        OnNsrtReminderChanged(addon)
+    end, addon)
+
+    addon._nsrtCallbacksRegistered = true
+    return true
+end
+
 local function TryHookNSRT(addon)
     if addon._nsrtHooked then return true end
+    RegisterNsrtCallbacks(addon)
 
     local nsI = FindNSI()
     if nsI then
@@ -412,6 +474,14 @@ end
 
 function Raidstrats:OnNSRTPhase(phase)
     if not self.rsggEncounterID then return end
+    phase = tonumber(phase) or 1
+    local key = ("%d:%d"):format(self.rsggEncounterID, phase)
+    local now = GetTime()
+    if self._lastNsrtPhaseKey == key and (now - (self._lastNsrtPhaseAt or 0)) < 2 then
+        return
+    end
+    self._lastNsrtPhaseKey = key
+    self._lastNsrtPhaseAt = now
     self:ScheduleRsggCues(self.rsggEncounterID, phase)
 end
 
@@ -426,7 +496,7 @@ function Raidstrats:OnEncounterStart(encID)
         print(("|cff00aaff[Raidstrats.gg]|r Loaded %d rsgg cue(s) for encounter %d."):format(#phase1, encID))
     end
 
-    self:ScheduleRsggCues(encID, 1)
+    self:OnNSRTPhase(1)
 end
 
 function Raidstrats:OnEncounterEnd()
@@ -435,6 +505,8 @@ function Raidstrats:OnEncounterEnd()
         self:HideRaidPlanScene()
     end
     self.rsggEncounterID = nil
+    self._lastNsrtPhaseKey = nil
+    self._lastNsrtPhaseAt = nil
 end
 
 local function ResolveEncIdFromCues(cues, preferredEncID, noteEncID)
@@ -534,36 +606,13 @@ function Raidstrats:InitNSRTIntegration()
     frame:SetScript("OnEvent", function(_, event, ...)
         if event == "ADDON_LOADED" then
             if (...) == "NorthernSkyRaidTools" then
+                RegisterNsrtCallbacks(Raidstrats)
                 TryHookNSRT(Raidstrats)
             end
         elseif event == "PLAYER_LOGIN" then
             if C_AddOns.IsAddOnLoaded("NorthernSkyRaidTools") then
+                RegisterNsrtCallbacks(Raidstrats)
                 TryHookNSRT(Raidstrats)
-            end
-            if NSAPI and NSAPI.RegisterCallback then
-                NSAPI:RegisterCallback("NSRT_REMINDER_CHANGED", function()
-                    if Raidstrats.AppendPlannerDebugLine then
-                        local pf = Raidstrats.plannerFrame
-                        Raidstrats:AppendPlannerDebugLine(("NSRT_REMINDER_CHANGED scene=%s"):format(
-                            tostring((pf and pf.selectedSceneIndex) or 1)))
-                    end
-                    if Raidstrats.ReloadRsggCuesFromActiveNote then
-                        Raidstrats:ReloadRsggCuesFromActiveNote()
-                    elseif Raidstrats.rsggEncounterID then
-                        Raidstrats:ReloadRsggCues(Raidstrats.rsggEncounterID)
-                    end
-                    if Raidstrats.RefreshPlannerNsrtAssignmentIfOpen then
-                        Raidstrats:RefreshPlannerNsrtAssignmentIfOpen()
-                    else
-                        local pf = Raidstrats.plannerFrame
-                        if pf and pf:IsShown() and not pf.nsrtSceneActive and Raidstrats.ApplyNsrtAssignmentForPlannerView then
-                            Raidstrats:ApplyNsrtAssignmentForPlannerView(pf.selectedSceneIndex or 1)
-                            if Raidstrats.RefreshPlannerScene then
-                                Raidstrats:RefreshPlannerScene()
-                            end
-                        end
-                    end
-                end, Raidstrats)
             end
         elseif event == "ENCOUNTER_START" then
             if not ShouldHandleEncounter() then return end
