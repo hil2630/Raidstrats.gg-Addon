@@ -903,6 +903,12 @@ local function CreateInput(p, lbl, multi)
         eb:SetMaxLetters(0)
         eb:SetWidth(math.max(1, sf:GetWidth()))
         sf:SetScrollChild(eb)
+        sf:EnableMouse(true)
+        sf:SetScript("OnMouseDown", function(_, button)
+            if button == "LeftButton" and eb and eb.SetFocus then
+                eb:SetFocus()
+            end
+        end)
         f._scroll = sf
         f._edit = eb
         f.SyncEditWidth = function(self)
@@ -911,8 +917,25 @@ local function CreateInput(p, lbl, multi)
                 local innerW = w - 32
                 self._scroll:SetWidth(innerW)
                 self._edit:SetWidth(innerW)
+                local innerH = math.max(1, self._scroll:GetHeight())
+                local textH = 0
+                if self._edit.GetStringHeight then
+                    textH = tonumber(self._edit:GetStringHeight()) or 0
+                elseif self._edit.GetTextHeight then
+                    textH = tonumber(self._edit:GetTextHeight()) or 0
+                else
+                    -- Conservative fallback for clients where height APIs are unavailable.
+                    local _, fontSize = self._edit:GetFont()
+                    local fs = tonumber(fontSize) or 14
+                    textH = fs * 1.4
+                end
+                textH = math.ceil(textH + 16)
+                self._edit:SetHeight(math.max(innerH, textH))
             end
         end
+        eb:SetScript("OnTextChanged", function()
+            if f and f.SyncEditWidth then f:SyncEditWidth() end
+        end)
         f:SetScript("OnSizeChanged", function(s) s:SyncEditWidth() end)
     else
         eb = CreateFrame("EditBox", nil, f); eb:SetPoint("LEFT",10,0); eb:SetPoint("RIGHT",-10,0); eb:SetHeight(30)

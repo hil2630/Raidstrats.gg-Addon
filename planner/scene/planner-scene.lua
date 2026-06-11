@@ -47,6 +47,28 @@ local CheckboxIsChecked = PUI.CheckboxIsChecked
 local FOOTER_BTN_H = 28
 local FOOTER_BTN_GAP = 8
 local FOOTER_HEIGHT = FOOTER_BTN_H * 2 + FOOTER_BTN_GAP
+local PLANNER_CREDITS_TEXT = table.concat({
+    "Raidstrats.gg Addon Credits",
+    "",
+    "Every successful pull starts with a plan.",
+    "Every addon starts with people willing to build it.",
+    "",
+    "Raidstrats.gg:",
+    "- Created by Nairyana",
+    "",
+    "Addon Development:",
+    "- Bettiold for creating the original addon framework",
+    "- Nairyana for the madness of putting a raid planner inside WoW",
+    "",
+    "Special Thanks:",
+    "- Our Patreon supporters for keeping the project alive",
+    "- Raid Lead Exchange Discord for feedback, testing, and ideas",
+    "- Reloe, creator of NSRT, for paving the way for raid planning addons",
+    "- Viserio and Penkek from WowUtils for their help and support",
+    "",
+    "And thanks to everyone who tested things,",
+    "broke things, reported things, and helped us fix things."
+}, "\n")
 
 local function LayoutSavedPlansFooter(pf)
     local footer = pf and pf.savedPlansFooter
@@ -790,7 +812,10 @@ local function UpdatePlannerModeToggleBtn(pf)
     if not pf or not pf.modeToggleBtn or not pf.closeBtn then return end
     pf.closeBtn:ClearAllPoints()
     pf.modeToggleBtn:ClearAllPoints()
+    if pf.discordBtn then pf.discordBtn:ClearAllPoints() end
     if pf.compactMode then
+        -- The Discord button is part of the expanded top bar only.
+        if pf.discordBtn then pf.discordBtn:Hide() end
         if pf.compactPreviewActive then
             SetCompactControlButtonsVisible(pf, false)
             return
@@ -826,6 +851,10 @@ local function UpdatePlannerModeToggleBtn(pf)
         pf.closeBtn:SetPoint("TOPRIGHT", pf, "TOPRIGHT", -6, -6)
         pf.modeToggleBtn:SetPoint("TOPRIGHT", pf.closeBtn, "TOPLEFT", -2, 1)
         SetPlannerBtnText(pf.modeToggleBtn, "Compact")
+        if pf.discordBtn then
+            pf.discordBtn:Show()
+            pf.discordBtn:SetPoint("TOPRIGHT", pf.modeToggleBtn, "TOPLEFT", -2, 0)
+        end
     end
 end
 
@@ -1202,6 +1231,22 @@ local function SceneViewPctToCanvas(vc, cw, ch, xp, yp)
     return SceneViewCoord(vc, cw * xp, ch * yp)
 end
 
+local function ResolveItemLayerIndex(item, fallbackIndex)
+    local n = tonumber(item and (item.layerIndex or item.zIndex or item.layer or item.z))
+    if not n then
+        n = (fallbackIndex or 1) - 1
+    end
+    if n < 0 then n = 0 end
+    if n > 900 then n = 900 end
+    return math.floor(n + 0.5)
+end
+
+local function ResolveItemFrameLevel(root, item, fallbackIndex, boost)
+    local base = (root and root.GetFrameLevel and root:GetFrameLevel()) or 0
+    local z = ResolveItemLayerIndex(item, fallbackIndex)
+    return base + 2 + z + (boost or 0)
+end
+
 local function CanvasScreenToWorld(vc, sx, sy)
     if not vc then return sx, sy end
     return (sx - vc.panX) / vc.zoom, (sy - vc.panY) / vc.zoom
@@ -1265,15 +1310,25 @@ local function ApplyTextWidgetContent(w, item, label, vc, ch, minSize)
     end
     w.__baseTextColor = { tr, tg, tb }
     w.text:SetTextColor(tr, tg, tb)
-    w.text:SetWordWrap(false)
+    local textValue = tostring(label or "")
+    textValue = textValue:gsub("\r\n", "\n"):gsub("\r", "\n")
+    local isMultiLine = textValue:find("\n", 1, true) ~= nil
+    w.text:SetWordWrap(isMultiLine)
+    if w.text.SetNonSpaceWrap then w.text:SetNonSpaceWrap(isMultiLine) end
     if w.text.SetMaxLines then w.text:SetMaxLines(0) end
-    w.text:SetWidth(0)
-    w.text:SetText(label or "")
-    local textW = math.max(minSize, math.ceil((w.text:GetStringWidth() or 0) + 2))
+    -- Use a large temporary width for measurement; width=0 can render as ellipsis on some clients.
+    local measureW = isMultiLine and math.max(32, math.ceil((w.baseWorldW or w:GetWidth() or 0))) or 4096
+    w.text:SetWidth(measureW)
+    w.text:SetText(textValue)
+    local measuredW = (not isMultiLine and w.text.GetUnboundedStringWidth)
+        and w.text:GetUnboundedStringWidth()
+        or w.text:GetStringWidth()
+    local textW = math.max(minSize, math.ceil((measuredW or 0) + 8))
     local textH = math.max(minSize, math.ceil((w.text:GetStringHeight() or 0) + 2))
     w:SetSize(textW, textH)
     w.basePixelW = textW
     w.basePixelH = textH
+    w.text:SetWidth(math.max(textW, measureW))
     w.text:Show()
     return tr, tg, tb
 end
@@ -1540,7 +1595,7 @@ local function ResetShapePool(pf)
     end
 end
 
-local function AcquireShapeFrame(pf, canvas)
+local function AcquireShapeFrame(pf, canvas, frameLevel)
     pf._shapePool = pf._shapePool or {}
     pf._shapePoolUsed = (pf._shapePoolUsed or 0) + 1
     local f = pf._shapePool[pf._shapePoolUsed]
@@ -1553,7 +1608,7 @@ local function AcquireShapeFrame(pf, canvas)
     f:SetParent(canvas)
     f:ClearAllPoints()
     f:SetAllPoints(canvas)
-    f:SetFrameLevel(canvas:GetFrameLevel() + 2)
+    f:SetFrameLevel(frameLevel or (canvas:GetFrameLevel() + 2))
     f:SetAlpha(1)
     f._lineUsed = 0
     f._dotUsed = 0
@@ -1631,8 +1686,8 @@ local function ShapeDot(f)
     return d
 end
 
-local function DrawLineShape(pf, canvas, item, cw, ch)
-    local f = AcquireShapeFrame(pf, canvas)
+local function DrawLineShape(pf, canvas, item, cw, ch, frameLevel)
+    local f = AcquireShapeFrame(pf, canvas, frameLevel)
     local vc = pf.sceneViewContext
     local r, g, b, a = ParseStrokeColor(item.stroke, item.opacity)
     local thick = SceneViewScale(vc, math.max(2, ch * ((type(item.strokeWidth) == "number" and item.strokeWidth or 0.6) / 100)))
@@ -1670,8 +1725,8 @@ end
 -- Filled triangle/cone via horizontal scanlines (apex at top), with crisp edges on top.
 -- Drawn at full color alpha inside the frame; the frame's alpha applies the real opacity
 -- so overlapping fill rows don't stack into darker bands.
-local function DrawTriangleShape(pf, canvas, item, cw, ch)
-    local f = AcquireShapeFrame(pf, canvas)
+local function DrawTriangleShape(pf, canvas, item, cw, ch, frameLevel)
+    local f = AcquireShapeFrame(pf, canvas, frameLevel)
     local vc = pf.sceneViewContext
     local r, g, b, a = ParseItemColor(item.fill, item.opacity)
     local x, y = SceneViewCoord(vc, cw * ((tonumber(item.x) or 0) / 100), ch * ((tonumber(item.y) or 0) / 100))
@@ -1701,8 +1756,8 @@ end
 -- Smooth donut/ring built from overlapping round dots around the mid-radius.
 -- Rounded dots give clean inner/outer edges (no faceting); full-alpha dots + frame
 -- alpha avoid the patchy overlap darkening of translucent segments.
-local function DrawDonutShape(pf, canvas, item, cw, ch)
-    local f = AcquireShapeFrame(pf, canvas)
+local function DrawDonutShape(pf, canvas, item, cw, ch, frameLevel)
+    local f = AcquireShapeFrame(pf, canvas, frameLevel)
     local vc = pf.sceneViewContext
     local r, g, b, a = ParseItemColor(item.fill, item.opacity)
     local wpx = SceneViewScale(vc, cw * ((tonumber(item.w) or 10) / 100))
@@ -1735,6 +1790,76 @@ local function DrawDonutShape(pf, canvas, item, cw, ch)
     return f
 end
 
+-- Skewed/rotated rectangles export their 4 oriented corners (percent coords) so we can
+-- render the true parallelogram instead of an axis-aligned bounding box.
+local function HasQuadCorners(item)
+    return item and type(item.corners) == "table" and #item.corners >= 3
+end
+
+local function GetItemCornerPoints(item, cw, ch, vc)
+    local c = item and item.corners
+    if type(c) ~= "table" or #c < 3 then return nil end
+    local pts = {}
+    for i = 1, #c do
+        local p = c[i]
+        local pxPct = tonumber(p and p.x) or 0
+        local pyPct = tonumber(p and p.y) or 0
+        local px, py = SceneViewCoord(vc, cw * (pxPct / 100), ch * (pyPct / 100))
+        pts[i] = { px, py }
+    end
+    return pts
+end
+
+-- Fill a convex polygon (canvas coords, y positive-down) using horizontal scanlines,
+-- mirroring the triangle/cone fill approach so skewed rects render as solid parallelograms.
+local function FillConvexPolygon(f, canvas, pts, r, g, b, a)
+    local n = pts and #pts or 0
+    if n < 3 then return end
+    local minY, maxY = pts[1][2], pts[1][2]
+    for i = 2, n do
+        local py = pts[i][2]
+        if py < minY then minY = py end
+        if py > maxY then maxY = py end
+    end
+    local height = maxY - minY
+    if height < 0.5 then return end
+    local rows = math.max(8, math.min(math.floor(height), 200))
+    local step = height / rows
+    local rowThick = step + 1.2
+    for i = 0, rows - 1 do
+        local sy = minY + (i + 0.5) * step
+        local xMin, xMax
+        for e = 1, n do
+            local pa = pts[e]
+            local pb = pts[(e % n) + 1]
+            local ay, by = pa[2], pb[2]
+            if (ay <= sy and by > sy) or (by <= sy and ay > sy) then
+                local t = (sy - ay) / (by - ay)
+                local xi = pa[1] + t * (pb[1] - pa[1])
+                if not xMin or xi < xMin then xMin = xi end
+                if not xMax or xi > xMax then xMax = xi end
+            end
+        end
+        if xMin and xMax and (xMax - xMin) > 0.4 then
+            local ln = ShapeLine(f)
+            ln:SetThickness(rowThick)
+            ln:SetColorTexture(r, g, b, a)
+            ln:SetStartPoint("TOPLEFT", canvas, xMin, -sy)
+            ln:SetEndPoint("TOPLEFT", canvas, xMax, -sy)
+        end
+    end
+end
+
+local function DrawQuadShape(pf, canvas, item, cw, ch, frameLevel)
+    local f = AcquireShapeFrame(pf, canvas, frameLevel)
+    local vc = pf.sceneViewContext
+    local pts = GetItemCornerPoints(item, cw, ch, vc)
+    if not pts then return f end
+    local r, g, b, a = ParseItemColor(item.fill, item.opacity)
+    FillConvexPolygon(f, canvas, pts, r, g, b, a)
+    return f
+end
+
 local function ResetStrokePool(pf)
     pf._strokePoolUsed = 0
     if not pf._strokePool then return end
@@ -1744,7 +1869,7 @@ local function ResetStrokePool(pf)
     end
 end
 
-local function AcquireStrokeFrame(pf, canvas)
+local function AcquireStrokeFrame(pf, canvas, frameLevel)
     pf._strokePool = pf._strokePool or {}
     pf._strokePoolUsed = (pf._strokePoolUsed or 0) + 1
     local f = pf._strokePool[pf._strokePoolUsed]
@@ -1756,7 +1881,7 @@ local function AcquireStrokeFrame(pf, canvas)
     f:SetParent(canvas)
     f:ClearAllPoints()
     f:SetAllPoints(canvas)
-    f:SetFrameLevel(canvas:GetFrameLevel() + 4)
+    f:SetFrameLevel(frameLevel or (canvas:GetFrameLevel() + 4))
     f._lineUsed = 0
     f:Show()
     return f
@@ -1768,15 +1893,30 @@ local function RebuildStrokeOverlays(pf, scene, canvas, cw, ch)
     ResetStrokePool(pf)
     if not scene or not scene.items then return end
     local vc = pf.sceneViewContext
-    for _, item in ipairs(scene.items) do
+    for i, item in ipairs(scene.items) do
         if not HasStroke(item) or IsFrontalItem(item) then
         elseif item.kind == "line" then
+        elseif item.kind == "shape" and HasQuadCorners(item) then
+            local pts = GetItemCornerPoints(item, cw, ch, vc)
+            if pts and #pts >= 2 then
+                local f = AcquireStrokeFrame(pf, canvas, ResolveItemFrameLevel(canvas, item, i, 1))
+                local er, eg, eb, ea = ParseStrokeColor(item.stroke, item.opacity)
+                local et = StrokeThickPx(item, ch)
+                for i = 1, #pts do
+                    local p1 = pts[i]
+                    local p2 = pts[(i % #pts) + 1]
+                    local ln = ShapeLine(f)
+                    ColorLine(ln, er, eg, eb, ea, et)
+                    ln:SetStartPoint("TOPLEFT", canvas, p1[1], -p1[2])
+                    ln:SetEndPoint("TOPLEFT", canvas, p2[1], -p2[2])
+                end
+            end
         elseif item.kind == "shape" then
             local shp = tostring(item.shape or ""):lower()
             local drawStroke = (shp == "donut" or shp == "triangle" or shp == "cone")
             if drawStroke then
                 local x, y, iw, ih = GetItemCanvasRect(item, cw, ch, vc)
-                local f = AcquireStrokeFrame(pf, canvas)
+                local f = AcquireStrokeFrame(pf, canvas, ResolveItemFrameLevel(canvas, item, i, 1))
                 if shp == "donut" then
                     local inner = tonumber(item.innerRatio) or 0.5
                     if inner < 0 then inner = 0 elseif inner > 0.95 then inner = 0.95 end
@@ -1805,16 +1945,19 @@ end
 local function BuildShapeWidgets(pf, scene, canvas, cw, ch)
     ResetShapePool(pf)
     if not scene or not scene.items then return end
-    for _, item in ipairs(scene.items) do
+    for i, item in ipairs(scene.items) do
         if not IsFrontalItem(item) then
             local k = item.kind
             local shp = tostring(item.shape or ""):lower()
+            local itemFrameLevel = ResolveItemFrameLevel(canvas, item, i, 0)
             if k == "line" then
-                DrawLineShape(pf, canvas, item, cw, ch)
+                DrawLineShape(pf, canvas, item, cw, ch, itemFrameLevel)
+            elseif k == "shape" and HasQuadCorners(item) then
+                DrawQuadShape(pf, canvas, item, cw, ch, itemFrameLevel)
             elseif k == "shape" and shp == "donut" then
-                DrawDonutShape(pf, canvas, item, cw, ch)
+                DrawDonutShape(pf, canvas, item, cw, ch, itemFrameLevel)
             elseif k == "shape" and (shp == "triangle" or shp == "cone") then
-                DrawTriangleShape(pf, canvas, item, cw, ch)
+                DrawTriangleShape(pf, canvas, item, cw, ch, itemFrameLevel)
             end
         end
     end
@@ -2314,14 +2457,14 @@ end
 local function ApplyGroupSpotIcon(w, mine, ch, item)
     if not w or not w.tex then return end
     local colors = Diar:GetAssignmentSpotColors()
-    local ring = mine and colors.mineRing or colors.otherRing
+    local fill = mine and colors.mineFill or colors.otherFill
     w:SetAlpha(1)
     w.__groupSpotMine = mine and true or nil
     w.tex:SetAlpha(1)
-    w.tex:SetVertexColor(ring[1], ring[2], ring[3], mine and 1 or 0.9)
-    local thick = math.max(2, math.ceil(StrokeThickPx(item or {}, ch or 1)))
-    if mine then thick = math.ceil(thick * 1.35) end
-    ApplyGroupSpotBorder(w, ring, thick)
+    -- Icons (roles/classes/etc) should be color-tinted for assignment state, not bordered.
+    w.tex:SetVertexColor(fill[1], fill[2], fill[3], mine and 1 or 0.9)
+    HideWidgetStroke(w)
+    ClearBackdropStroke(w)
 end
 
 local function ApplyGroupSpotText(w, mine, ch, item)
@@ -2433,7 +2576,7 @@ end
 local function SetPlannerChromeVisible(pf, visible)
     if not pf then return end
     local elems = {
-        pf.title, pf.brandTitle, pf.versionLabel, pf.toolbar, pf.controls, pf.timeline,
+        pf.title, pf.brandTitle, pf.versionLabel, pf.creditsBtn, pf.toolbar, pf.controls, pf.timeline,
         pf.patreonPanel, pf.savedPlansPanel, pf.objectPalettePanel,
     }
     for _, el in ipairs(elems) do
@@ -2595,6 +2738,15 @@ local function ApplyPlannerNormalLayout(pf, keepFrameSize)
         pf.versionLabel:SetJustifyH("RIGHT")
         if Diar.UpdatePlannerVersionLabel then
             Diar:UpdatePlannerVersionLabel(pf)
+        end
+    end
+    if pf.creditsBtn then
+        pf.creditsBtn:Show()
+        pf.creditsBtn:ClearAllPoints()
+        if pf.versionLabel then
+            pf.creditsBtn:SetPoint("BOTTOMRIGHT", pf.versionLabel, "TOPRIGHT", 0, 6)
+        else
+            pf.creditsBtn:SetPoint("BOTTOMRIGHT", pf, "BOTTOMRIGHT", -UI_PAD, 24)
         end
     end
     if pf.brandTitle then
@@ -3055,6 +3207,13 @@ function Diar:ShowPlannerViewer(opts)
         end)
         pf.modeToggleBtn = modeToggleBtn
 
+        local discordBtn = CreatePlannerIconBtn(pf, "Discord", 76, 22)
+        discordBtn:SetPoint("TOPRIGHT", modeToggleBtn, "TOPLEFT", -2, 0)
+        discordBtn:SetScript("OnClick", function()
+            Diar:ShowPlannerDiscordPopup()
+        end)
+        pf.discordBtn = discordBtn
+
         local resizeGrip = CreateFrame("Button", nil, pf)
         resizeGrip:SetSize(16, 16)
         resizeGrip:SetPoint("BOTTOMRIGHT", pf, "BOTTOMRIGHT", -2, 2)
@@ -3084,6 +3243,12 @@ function Diar:ShowPlannerViewer(opts)
         else
             pf.versionLabel:SetText("Version 0.0.2")
         end
+        local creditsBtn = CreatePlannerIconBtn(pf, "Credits", 72, 22)
+        creditsBtn:SetPoint("BOTTOMRIGHT", pf.versionLabel, "TOPRIGHT", 0, 6)
+        creditsBtn:SetScript("OnClick", function()
+            if Diar.ShowPlannerCreditsDialog then Diar:ShowPlannerCreditsDialog() end
+        end)
+        pf.creditsBtn = creditsBtn
 
         -- Toolbar: scene tabs (left) + plan link (right), spanning the canvas width
         local toolbar = CreateFrame("Frame", nil, pf, "BackdropTemplate")
@@ -3332,6 +3497,10 @@ function Diar:ShowPlannerViewer(opts)
     end
 
     local pf = self.plannerFrame
+    if pf.previewNamesVisible == nil then
+        -- Imported attached labels should be visible by default; users can hide them via the toggle.
+        pf.previewNamesVisible = true
+    end
     pf:SetScript("OnSizeChanged", function(s)
         if s.__layoutSyncing or not s.__plannerSizing or s.compactMode then return end
         Diar:SyncPlannerLayoutFromFrame(false)
@@ -3365,6 +3534,14 @@ function Diar:ShowPlannerViewer(opts)
             Diar:TogglePlannerCompactMode()
         end)
         pf.modeToggleBtn = modeToggleBtn
+    end
+    if not pf.discordBtn and pf.modeToggleBtn then
+        local discordBtn = CreatePlannerIconBtn(pf, "Discord", 76, 22)
+        discordBtn:SetPoint("TOPRIGHT", pf.modeToggleBtn, "TOPLEFT", -2, 0)
+        discordBtn:SetScript("OnClick", function()
+            Diar:ShowPlannerDiscordPopup()
+        end)
+        pf.discordBtn = discordBtn
     end
     if not pf.resizeGrip then
         local resizeGrip = CreateFrame("Button", nil, pf)
@@ -3600,6 +3777,124 @@ function Diar:ShowPlannerPlanLinkPopup()
     self.planLinkPopup:Show()
 end
 
+local PLANNER_DISCORD_URL = "https://discord.gg/QtU244VZ8X"
+
+function Diar:ShowPlannerDiscordPopup()
+    if not self.discordPopup then
+        local f = CreateFrame("Frame", "RaidstratsDiscordPopup", UIParent, "BackdropTemplate")
+        f:SetSize(480, 170)
+        f:SetPoint("CENTER")
+        f:SetMovable(true)
+        f:EnableMouse(true)
+        SetBackdrop(f)
+        tinsert(UISpecialFrames, "RaidstratsDiscordPopup")
+        f:SetScript("OnMouseDown", function(s, b) if b == "LeftButton" then s:StartMoving() end end)
+        f:SetScript("OnMouseUp", function(s) s:StopMovingOrSizing() end)
+        CreateFrame("Button", nil, f, "UIPanelCloseButton"):SetPoint("TOPRIGHT", -5, -5)
+        f.title = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+        f.title:SetPoint("TOP", 0, -18)
+        f.title:SetTextColor(0.9, 0.9, 0.9)
+        f.title:SetText("Raidstrats.gg Discord")
+        f.desc = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        f.desc:SetPoint("TOP", f.title, "BOTTOM", 0, -6)
+        f.desc:SetTextColor(0.7, 0.72, 0.75)
+        f.desc:SetText("Copy the invite link below and open it in your browser.")
+        local bc, b = CreateInput(f, "Copy link", false)
+        bc:SetPoint("TOPLEFT", f, "TOPLEFT", 20, -78)
+        bc:SetPoint("TOPRIGHT", f, "TOPRIGHT", -20, -78)
+        bc:SetHeight(44)
+        b:SetScript("OnEscapePressed", function() f:Hide() end)
+        f.linkEdit = b
+        local btn = CreateButton(f, "CLOSE")
+        btn:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 20, 16)
+        btn:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -20, 16)
+        btn:SetScript("OnClick", function() f:Hide() end)
+        self.discordPopup = f
+    end
+
+    self.discordPopup.linkEdit:SetText(PLANNER_DISCORD_URL)
+    self.discordPopup.linkEdit:HighlightText()
+    self.discordPopup.linkEdit:SetFocus()
+    if self.PrepareModal then
+        self:PrepareModal(self.discordPopup, self.plannerFrame)
+    end
+    self.discordPopup:Show()
+end
+
+function Diar:GetPlannerCreditsText()
+    return tostring(PLANNER_CREDITS_TEXT or "")
+end
+
+function Diar:ShowPlannerCreditsDialog()
+    if not self.plannerCreditsDialog then
+        local f = CreateFrame("Frame", "RaidstratsPlannerCreditsDialog", UIParent, "BackdropTemplate")
+        f:SetSize(560, 420)
+        f:SetPoint("CENTER")
+        f:SetMovable(true)
+        f:EnableMouse(true)
+        SetBackdrop(f)
+        tinsert(UISpecialFrames, "RaidstratsPlannerCreditsDialog")
+        f:SetScript("OnMouseDown", function(s, b) if b == "LeftButton" then s:StartMoving() end end)
+        f:SetScript("OnMouseUp", function(s) s:StopMovingOrSizing() end)
+        CreateFrame("Button", nil, f, "UIPanelCloseButton"):SetPoint("TOPRIGHT", -5, -5)
+
+        f.title = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+        f.title:SetPoint("TOP", 0, -18)
+        f.title:SetTextColor(0.9, 0.9, 0.9)
+        f.title:SetText("Planner Credits")
+
+        local scroll = CreateFrame("ScrollFrame", nil, f, "UIPanelScrollFrameTemplate")
+        scroll:SetPoint("TOPLEFT", f, "TOPLEFT", 20, -52)
+        scroll:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -36, 58)
+        SkinPlannerScroll(scroll)
+        local content = CreateFrame("Frame", nil, scroll)
+        content:SetPoint("TOPLEFT")
+        content:SetSize(1, 1)
+        scroll:SetScrollChild(content)
+
+        local body = content:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        body:SetPoint("TOPLEFT", content, "TOPLEFT", 2, -2)
+        body:SetJustifyH("LEFT")
+        body:SetJustifyV("TOP")
+        body:SetWordWrap(true)
+        if body.SetNonSpaceWrap then body:SetNonSpaceWrap(true) end
+        body:SetSpacing(4)
+        body:SetTextColor(0.86, 0.88, 0.92)
+        body:SetText("")
+        local function syncCreditsScroll()
+            local targetW = math.max(1, scroll:GetWidth() - 28)
+            content:SetWidth(targetW)
+            body:SetWidth(math.max(1, targetW - 4))
+            local neededH = math.ceil(body:GetStringHeight()) + 8
+            content:SetHeight(math.max(scroll:GetHeight(), neededH))
+        end
+        scroll:SetScript("OnSizeChanged", syncCreditsScroll)
+        f.syncCreditsScroll = syncCreditsScroll
+        f.creditsScroll = scroll
+        f.creditsContent = content
+        f.creditsText = body
+
+        local closeBtn = CreateButton(f, "CLOSE")
+        closeBtn:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 20, 16)
+        closeBtn:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -20, 16)
+        closeBtn:SetScript("OnClick", function() f:Hide() end)
+
+        self.plannerCreditsDialog = f
+    end
+
+    self.plannerCreditsDialog.creditsText:SetText(self:GetPlannerCreditsText())
+    if self.plannerCreditsDialog.syncCreditsScroll then
+        self.plannerCreditsDialog.syncCreditsScroll()
+    end
+    if self.plannerCreditsDialog.creditsScroll then
+        self.plannerCreditsDialog.creditsScroll:SetVerticalScroll(0)
+    end
+    if self.PrepareModal then
+        self:PrepareModal(self.plannerCreditsDialog, self.plannerFrame)
+    end
+    self.plannerCreditsDialog:Show()
+end
+
 function Diar:UpdateSceneTabHighlight()
     local pf = self.plannerFrame
     if not pf or not pf.sceneTabButtons then
@@ -3731,7 +4026,7 @@ function Diar:RefreshPlannerScene()
         item.currentY = nil
 
         local isStatic = (k == "line")
-            or (k == "shape" and (IsFrontalItem(item) or shp == "donut" or shp == "triangle" or shp == "cone"))
+            or (k == "shape" and (IsFrontalItem(item) or HasQuadCorners(item) or shp == "donut" or shp == "triangle" or shp == "cone"))
 
         if isStatic then
             -- Drawn elsewhere; make sure no stale widget lingers.
@@ -3750,10 +4045,11 @@ function Diar:RefreshPlannerScene()
             if not IsPlannerWidgetFrame(w) then
                 item.widget = nil
                 w = CreateFrame("Frame", nil, root, "BackdropTemplate")
-                w:SetFrameLevel(root:GetFrameLevel() + 2)
                 item.widget = w
             end
             ActivatePlannerWidget(w, root)
+            local layerBoost = (k == "text") and 40 or 0
+            w:SetFrameLevel(ResolveItemFrameLevel(root, item, i, layerBoost))
             w:ClearAllPoints()
             w.baseWorldW = math.max(minSize, cw * wp)
             w.baseWorldH = math.max(minSize, ch * hp)
@@ -3833,6 +4129,26 @@ function Diar:RefreshPlannerScene()
                     w.tex:SetColorTexture(r, g, b, a)
                     w.tex:Show()
                 end
+                local namesVisible = self:IsPlannerPreviewNamesVisible()
+                local isAttachedLabel = item.labelAttached == true
+                local shouldShowLabel = (label ~= "") and ((not isAttachedLabel) or namesVisible)
+                if shouldShowLabel then
+                    if not w.label then
+                        w.label = w:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+                        w.label:SetPoint("TOP", w, "BOTTOM", 0, -2)
+                        w.label:SetTextColor(0.85, 0.85, 0.85)
+                    end
+                    w.__baseTextColor = { 0.85, 0.85, 0.85 }
+                    w.label:SetText(label)
+                    w.label:Show()
+                    if hasSelfOnPlan and LabelMatchesPlayer(label, playerKey) then
+                        ApplyNameHighlight(w, true, true, 0.85, 0.85, 0.85, w.label)
+                    else
+                        ClearNameHighlight(w, w.label, 0.85, 0.85, 0.85)
+                    end
+                elseif w.label then
+                    w.label:Hide()
+                end
             else
                 -- Icon
                 HideWidgetStroke(w)
@@ -3862,7 +4178,10 @@ function Diar:RefreshPlannerScene()
                         w.tex:Show()
                     end
                     if w.text then w.text:Hide() end
-                    if label ~= "" then
+                    local namesVisible = self:IsPlannerPreviewNamesVisible()
+                    local isAttachedLabel = item.labelAttached == true
+                    local shouldShowLabel = (label ~= "") and ((not isAttachedLabel) or namesVisible)
+                    if shouldShowLabel then
                         if not w.label then
                             w.label = w:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
                             w.label:SetPoint("TOP", w, "BOTTOM", 0, -2)

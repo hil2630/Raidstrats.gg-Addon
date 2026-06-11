@@ -47,6 +47,7 @@ local HELP_SECTIONS = {
     {
         title = "NSRT — automatic popups",
         lines = {
+            "NSRT setup system guide: https://raidstrats.gg/addon",
             "Works with Northern Sky Raid Tools (NSRT). Add special rsgg lines to your NSRT note.",
             "Basic cue (everyone sees scene 1 at 11s in phase 1):",
             "  time:11;ph:1;rsgg;scene:1",
