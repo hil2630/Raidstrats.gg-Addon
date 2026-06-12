@@ -75,17 +75,20 @@ local function LayoutSavedPlansFooter(pf)
     if not footer then return end
     footer:SetHeight(FOOTER_HEIGHT)
 
-    if pf.savedPlansNewBtn then
-        pf.savedPlansNewBtn:Hide()
-    end
-
+    local newBtn = pf.savedPlansNewBtn
     local importBtn = pf.savedPlansImportBtn
     local shareBtn = pf.savedPlansShareBtn
     local pushBtn = pf.pushUpdateBtn
-    if not importBtn or not shareBtn or not pushBtn then return end
+    if not newBtn or not importBtn or not shareBtn or not pushBtn then return end
+
+    newBtn:Show()
+    newBtn:ClearAllPoints()
+    newBtn:SetPoint("TOPLEFT", footer, "TOPLEFT", 0, 0)
+    newBtn:SetPoint("TOPRIGHT", footer, "TOP", -3, 0)
+    newBtn:SetHeight(FOOTER_BTN_H)
 
     importBtn:ClearAllPoints()
-    importBtn:SetPoint("TOPLEFT", footer, "TOPLEFT", 0, 0)
+    importBtn:SetPoint("TOPLEFT", footer, "TOP", 3, 0)
     importBtn:SetPoint("TOPRIGHT", footer, "TOPRIGHT", 0, 0)
     importBtn:SetHeight(FOOTER_BTN_H)
 
@@ -875,6 +878,52 @@ local CLASS_ICON_MAP = {
     rogue = "Rogue", shaman = "Shaman", warlock = "Warlock", warrior = "Warrior"
 }
 
+-- Spec IDs (modern API source of truth for specialization icons).
+Diar.SPEC_ID_BY_CLASS = Diar.SPEC_ID_BY_CLASS or {
+    deathknight = { blood = 250, frost = 251, unholy = 252 },
+    demonhunter = { havoc = 577, vengeance = 581, devourer = 1480 },
+    druid = { balance = 102, feral = 103, guardian = 104, restoration = 105 },
+    evoker = { devastation = 1467, preservation = 1468, augmentation = 1473 },
+    hunter = { beastmastery = 253, ["beast-mastery"] = 253, marksmanship = 254, survival = 255 },
+    mage = { arcane = 62, fire = 63, frost = 64 },
+    monk = { brewmaster = 268, windwalker = 269, mistweaver = 270 },
+    paladin = { holy = 65, protection = 66, retribution = 70 },
+    priest = { discipline = 256, holy = 257, shadow = 258 },
+    rogue = { assassination = 259, outlaw = 260, subtlety = 261 },
+    shaman = { elemental = 262, enhancement = 263, restoration = 264 },
+    warlock = { affliction = 265, demonology = 266, destruction = 267 },
+    warrior = { arms = 71, fury = 72, protection = 73 },
+}
+
+Diar.SPEC_KEY_ALIASES_BY_CLASS = Diar.SPEC_KEY_ALIASES_BY_CLASS or {
+    demonhunter = {
+        ["havoc-dh"] = "havoc",
+        ["vengeance-dh"] = "vengeance",
+        ["devouring"] = "devourer",
+        ["devourer-demon-hunter"] = "devourer",
+        ["devourerdemonhunter"] = "devourer",
+        ["dps"] = "havoc",
+        ["tank"] = "vengeance",
+    },
+}
+
+-- Fallback spell icons if spec API lookup is unavailable.
+Diar.SPEC_ICON_SPELL_BY_CLASS = Diar.SPEC_ICON_SPELL_BY_CLASS or {
+    deathknight = { blood = 50842, frost = 49143, unholy = 55090 },
+    demonhunter = { havoc = 162794, vengeance = 203720 },
+    druid = { balance = 194153, feral = 22568, guardian = 6807, restoration = 774 },
+    evoker = { devastation = 357211, preservation = 355936, augmentation = 395152 },
+    hunter = { beastmastery = 19574, ["beast-mastery"] = 19574, marksmanship = 19434, survival = 190925 },
+    mage = { arcane = 30451, fire = 133, frost = 116 },
+    monk = { brewmaster = 115181, mistweaver = 116670, windwalker = 113656 },
+    paladin = { holy = 82326, protection = 31935, retribution = 35395 },
+    priest = { discipline = 47540, holy = 2061, shadow = 34914 },
+    rogue = { assassination = 1329, outlaw = 315341, subtlety = 53 },
+    shaman = { elemental = 188196, enhancement = 17364, restoration = 61295 },
+    warlock = { affliction = 172, demonology = 105174, destruction = 17962 },
+    warrior = { arms = 12294, fury = 23881, protection = 23922 },
+}
+
 -- Role icons: single texture UI-LFG-ICON-PORTRAITROLES (64x64), pixel regions from Blizzard Constants.lua
 local ROLE_ICON_PATH = "Interface\\LFGFrame\\UI-LFG-ICON-PORTRAITROLES"
 local ROLE_ICON_COORDS = {
@@ -882,6 +931,22 @@ local ROLE_ICON_COORDS = {
     healer = { 20/64, 39/64, 1/64, 20/64 },
     rdps  = { 20/64, 39/64, 22/64, 41/64 },
     mdps  = { 20/64, 39/64, 22/64, 41/64 },
+}
+
+Diar.CLASS_TOKEN_BY_KEY = Diar.CLASS_TOKEN_BY_KEY or {
+    deathknight = "DEATHKNIGHT",
+    demonhunter = "DEMONHUNTER",
+    druid = "DRUID",
+    evoker = "EVOKER",
+    hunter = "HUNTER",
+    mage = "MAGE",
+    monk = "MONK",
+    paladin = "PALADIN",
+    priest = "PRIEST",
+    rogue = "ROGUE",
+    shaman = "SHAMAN",
+    warlock = "WARLOCK",
+    warrior = "WARRIOR",
 }
 
 local function GetCustomIconCandidates(iconKey)
@@ -903,6 +968,104 @@ local function SetTextureFromCandidates(tex, candidates)
         if ok then return true end
     end
     return false
+end
+
+function Diar.SplitPathParts(path)
+    local out = {}
+    if type(path) ~= "string" or path == "" then return out end
+    for part in path:gmatch("[^/]+") do
+        out[#out + 1] = part
+    end
+    return out
+end
+
+function Diar.GetSpellTextureSafe(spellId)
+    if not spellId then return nil end
+    if C_Spell and type(C_Spell.GetSpellTexture) == "function" then
+        local tex = C_Spell.GetSpellTexture(spellId)
+        if tex then return tex end
+    end
+    if type(GetSpellTexture) == "function" then
+        local tex = GetSpellTexture(spellId)
+        if tex then return tex end
+    end
+    return nil
+end
+
+function Diar.GetSpecTextureSafe(specId)
+    if not specId then return nil end
+    if C_SpecializationInfo and type(C_SpecializationInfo.GetSpecializationInfoForSpecID) == "function" then
+        local _, _, _, icon = C_SpecializationInfo.GetSpecializationInfoForSpecID(specId)
+        if icon then return icon end
+    end
+    if type(GetSpecializationInfoByID) == "function" then
+        local _, _, _, icon = GetSpecializationInfoByID(specId)
+        if icon then return icon end
+    end
+    return nil
+end
+
+function Diar.ResolveSpecTextureFromIconKey(iconKey)
+    if type(iconKey) ~= "string" or iconKey == "" then return nil end
+    local clean = iconKey:lower():gsub("^/+", ""):gsub("%.[^%.]+$", "")
+    local parts = Diar.SplitPathParts(clean)
+    local specsIdx = nil
+    for i = 1, #parts do
+        if parts[i] == "specs" then
+            specsIdx = i
+            break
+        end
+    end
+    if not specsIdx then return nil end
+    local classKey = parts[specsIdx + 1]
+    local specKey = parts[#parts]
+    if not classKey or not specKey then return nil end
+    classKey = classKey:gsub("%s+", ""):lower()
+    specKey = specKey:gsub("%s+", ""):lower()
+    local aliasMap = Diar.SPEC_KEY_ALIASES_BY_CLASS[classKey]
+    if aliasMap and aliasMap[specKey] then
+        specKey = aliasMap[specKey]
+    end
+    local alt = specKey:gsub("-", "")
+
+    local specMap = Diar.SPEC_ID_BY_CLASS[classKey]
+    if specMap then
+        local specId = specMap[specKey] or specMap[alt]
+        local specTex = Diar.GetSpecTextureSafe(specId)
+        if specTex then return specTex end
+    end
+
+    -- Fallback: representative spell texture (older behavior).
+    local spellMap = Diar.SPEC_ICON_SPELL_BY_CLASS[classKey]
+    if not spellMap then return nil end
+    local spellId = spellMap[specKey] or spellMap[alt]
+    if not spellId then return nil end
+    return Diar.GetSpellTextureSafe(spellId)
+end
+
+function Diar.ResolveClassKeyFromIconKey(iconKey)
+    if type(iconKey) ~= "string" or iconKey == "" then return nil end
+    local clean = iconKey:lower():gsub("^/+", ""):gsub("%.[^%.]+$", "")
+    local parts = Diar.SplitPathParts(clean)
+    for i = 1, #parts do
+        if parts[i] == "classes" then
+            return parts[i + 1]
+        end
+        if parts[i] == "specs" then
+            return parts[i + 1]
+        end
+    end
+    return nil
+end
+
+function Diar.GetClassCircleColor(classKey, opacity)
+    local token = classKey and Diar.CLASS_TOKEN_BY_KEY[classKey]
+    local cc = token and RAID_CLASS_COLORS and RAID_CLASS_COLORS[token]
+    local a = (type(opacity) == "number") and opacity or 1
+    if cc then
+        return cc.r or 0.75, cc.g or 0.75, cc.b or 0.75, a
+    end
+    return 0.45, 0.58, 0.92, a
 end
 
 -- Pre-made shape texture paths (rect, circle, cone/triangle). Use these if present; else fall back to SetColorTexture/SetPortraitToTexture.
@@ -1969,6 +2132,12 @@ local function GetPlanIconTexture(iconKey)
     if not iconKey or iconKey == "" then return nil end
     local key = iconKey:lower():gsub("^.*/", "")  -- "classes/warlock" -> "warlock"
 
+    -- Specs (/icon/specs/<class>/<spec>.png) resolved to in-game spell textures.
+    local specTex = Diar.ResolveSpecTextureFromIconKey(iconKey)
+    if specTex then
+        return specTex, nil, nil
+    end
+
     -- Raid / markers (skull, cross, ...)
     local idx = RAID_ICON_MAP[key]
     if idx then
@@ -2515,6 +2684,221 @@ local function SetGroupSpotPreviewText(w, text, mine, item)
     local fontSize = math.max(7, math.floor(area * 0.17))
     w.spotPreviewText:SetFont("Fonts\\FRIZQT__.TTF", fontSize, "OUTLINE")
     w.spotPreviewText:Show()
+end
+
+function Diar.ApplyWidgetLabel(w, item, label, hasSelfOnPlan, playerKey, isNamesVisible)
+    if not w then return end
+    local isAttachedLabel = item and item.labelAttached == true
+    local shouldShowLabel = (label ~= "") and ((not isAttachedLabel) or isNamesVisible)
+    if shouldShowLabel then
+        if not w.label then
+            w.label = w:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            w.label:SetPoint("TOP", w, "BOTTOM", 0, -2)
+            w.label:SetTextColor(0.85, 0.85, 0.85)
+        end
+        w.__baseTextColor = { 0.85, 0.85, 0.85 }
+        w.label:SetText(label)
+        w.label:Show()
+        if hasSelfOnPlan and LabelMatchesPlayer(label, playerKey) then
+            ApplyNameHighlight(w, true, true, 0.85, 0.85, 0.85, w.label)
+        else
+            ClearNameHighlight(w, w.label, 0.85, 0.85, 0.85)
+        end
+    elseif w.label then
+        w.label:Hide()
+    end
+end
+
+function Diar.RenderIconWidget(addon, w, item, label, hasSelfOnPlan, playerKey, spotNum, isMySpot, ch)
+    HideWidgetStroke(w)
+    ClearBackdropStroke(w)
+    local skipHelper = (not item.icon or item.icon == "") and label == ""
+    if skipHelper then
+        w.__suppressed = true
+        w:Hide()
+        if w.text then w.text:Hide() end
+        if w.label then w.label:Hide() end
+        return
+    end
+
+    local classKey = Diar.ResolveClassKeyFromIconKey(item.icon)
+    local useClassSpecCircle = classKey and addon.IsClassSpecCircleModeEnabled and addon:IsClassSpecCircleModeEnabled()
+    if useClassSpecCircle then
+        local cr, cg, cb, ca = Diar.GetClassCircleColor(classKey, item.opacity)
+        ApplyCircleWidgetVisual(w, item, { cr, cg, cb, ca })
+        ClearBackdropStroke(w)
+        if w.text then w.text:Hide() end
+    else
+        local texPath, texCoord, customCandidates = GetPlanIconTexture(item.icon)
+        local customLoaded = SetTextureFromCandidates(w.tex, customCandidates)
+        if customLoaded or texPath then
+            if not customLoaded then
+                w.tex:SetTexture(texPath)
+            end
+            if (not customLoaded) and texCoord and #texCoord >= 4 then
+                w.tex:SetTexCoord(texCoord[1], texCoord[2], texCoord[3], texCoord[4])
+            else
+                w.tex:SetTexCoord(0, 1, 0, 1)
+            end
+            w.tex:Show()
+        else
+            w.tex:SetTexCoord(0, 1, 0, 1)
+            w.tex:SetColorTexture(0.35, 0.5, 0.7, 0.9)
+            w.tex:Show()
+        end
+        if w.text then w.text:Hide() end
+    end
+    Diar.ApplyWidgetLabel(w, item, label, hasSelfOnPlan, playerKey, addon:IsPlannerPreviewNamesVisible())
+    w:SetScript("OnEnter", function(f)
+        local tip = (f.label and f.label:GetText() and f.label:GetText() ~= "") and f.label:GetText() or nil
+        if tip then
+            GameTooltip:SetOwner(f, "ANCHOR_RIGHT")
+            GameTooltip:SetText(tip, 1, 1, 1)
+            GameTooltip:Show()
+        end
+    end)
+    w:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    if spotNum then
+        ApplyGroupSpotIcon(w, isMySpot, ch, item)
+    end
+end
+
+function Diar.RenderSceneItem(addon, pf, root, cw, ch, vc, minSize, item, itemIndex, sceneCtx)
+    local k = item.kind
+    local shp = tostring(item.shape or ""):lower()
+    item.currentX = nil
+    item.currentY = nil
+
+    local isStatic = (k == "line")
+        or (k == "shape" and (IsFrontalItem(item) or HasQuadCorners(item) or shp == "donut" or shp == "triangle" or shp == "cone"))
+
+    if isStatic then
+        if IsPlannerWidgetFrame(item.widget) then
+            ReleasePlannerWidget(pf, item.widget)
+        end
+        item.widget = nil
+        return
+    end
+
+    local wp = (type(item.w) == "number" and item.w or 4) / 100
+    local hp = (type(item.h) == "number" and item.h or 4) / 100
+    local label = (item.label and item.label ~= "") and item.label or ""
+    local xp = (type(item.x) == "number" and item.x or 0) / 100
+    local yp = (type(item.y) == "number" and item.y or 0) / 100
+
+    local w = item.widget
+    if not IsPlannerWidgetFrame(w) then
+        item.widget = nil
+        w = CreateFrame("Frame", nil, root, "BackdropTemplate")
+        item.widget = w
+    end
+    ActivatePlannerWidget(w, root)
+    local layerBoost = (k == "text") and 40 or 0
+    w:SetFrameLevel(ResolveItemFrameLevel(root, item, itemIndex, layerBoost))
+    w:ClearAllPoints()
+    w.baseWorldW = math.max(minSize, cw * wp)
+    w.baseWorldH = math.max(minSize, ch * hp)
+    local iw = math.max(minSize, SceneViewScale(vc, w.baseWorldW))
+    local ih = math.max(minSize, SceneViewScale(vc, w.baseWorldH))
+    w:SetSize(iw, ih)
+    w.basePixelW = iw
+    w.basePixelH = ih
+    local px, py = SceneViewPctToCanvas(vc, cw, ch, xp, yp)
+    w:SetPoint("TOPLEFT", root, "TOPLEFT", px, -py)
+
+    if not w.tex then
+        w.tex = w:CreateTexture(nil, "ARTWORK")
+        w.tex:SetAllPoints(w)
+    end
+    w.tex:SetRotation(0)
+    w.tex:SetTexCoord(0, 1, 0, 1)
+    w.tex:SetVertexColor(1, 1, 1)
+    w.tex:SetAlpha(1)
+    if w.__maskOn and w.circleMask then
+        w.tex:RemoveMaskTexture(w.circleMask)
+        w.__maskOn = false
+    elseif w.__maskOn and w.circleMasks then
+        for _, m in ipairs(w.circleMasks) do w.tex:RemoveMaskTexture(m) end
+        w.__maskOn = false
+    end
+    if w.borderTex then w.borderTex:Hide() end
+    w:SetScript("OnEnter", nil)
+    w:SetScript("OnLeave", nil)
+    w.__suppressed = nil
+    ClearNameHighlight(w)
+    if w.spotPreviewText then w.spotPreviewText:Hide() end
+    w.__ringOverride = nil
+    w.__groupSpotMine = nil
+    if w.__groupSpotStroke then
+        w.__groupSpotStroke = nil
+        ClearBackdropStroke(w)
+    end
+
+    local spotNum = sceneCtx.groupSpots and sceneCtx.groupSpots[itemIndex]
+    local isMySpot = spotNum and sceneCtx.activeGroup and sceneCtx.activeGroup.mySpots and sceneCtx.activeGroup.mySpots[spotNum]
+    local spotName = spotNum and sceneCtx.previewNamesOn and sceneCtx.groupSpotNames and sceneCtx.groupSpotNames[spotNum] or nil
+    if sceneCtx.debugMineHits and spotNum and isMySpot then
+        sceneCtx.debugMineHits[#sceneCtx.debugMineHits + 1] = ("%d@item%d:%s"):format(spotNum, itemIndex, k)
+    end
+
+    if k == "text" then
+        w.tex:Hide()
+        HideWidgetStroke(w)
+        if w.label then w.label:Hide() end
+        local tr, tg, tb = ApplyTextWidgetContent(w, item, label, vc, ch, minSize)
+        if spotNum then
+            ApplyGroupSpotText(w, isMySpot, ch, item)
+        end
+        if sceneCtx.hasSelfOnPlan and LabelMatchesPlayer(label, sceneCtx.playerKey) then
+            ApplyNameHighlight(w, true, true, tr, tg, tb, w.text)
+        else
+            ClearNameHighlight(w, w.text, tr, tg, tb)
+        end
+    elseif k == "shape" then
+        if w.text then w.text:Hide() end
+        if w.label then w.label:Hide() end
+        if spotNum then
+            ApplyGroupSpotShape(w, item, isMySpot, shp, ch)
+            if spotName and (shp == "circle" or shp == "ellipse") then
+                SetGroupSpotPreviewText(w, spotName, isMySpot, item)
+            end
+        elseif shp == "circle" or shp == "ellipse" then
+            ApplyCircleWidgetVisual(w, item)
+            ClearBackdropStroke(w)
+        elseif IsRectLikeShape(shp) then
+            ApplyBoxShapeVisual(w, item, ch)
+        else
+            ClearBackdropStroke(w)
+            local r, g, b, a = ParseItemColor(item.fill, item.opacity)
+            w.tex:SetColorTexture(r, g, b, a)
+            w.tex:Show()
+        end
+        Diar.ApplyWidgetLabel(w, item, label, sceneCtx.hasSelfOnPlan, sceneCtx.playerKey, addon:IsPlannerPreviewNamesVisible())
+    else
+        Diar.RenderIconWidget(addon, w, item, label, sceneCtx.hasSelfOnPlan, sceneCtx.playerKey, spotNum, isMySpot, ch)
+    end
+
+    w.itemIndex = itemIndex
+    w.baseX = xp
+    w.baseY = yp
+    item.currentX = xp
+    item.currentY = yp
+    if addon.AttachPlannerItemContextMenu and not w.__suppressed then
+        addon:AttachPlannerItemContextMenu(w, itemIndex, item)
+    end
+    if not w.__suppressed then
+        if addon:IsPlannerPreviewIndexVisible() then
+            local badgeIndex = sceneCtx.previewSpots and sceneCtx.previewSpots[itemIndex]
+            UpdateWidgetSlotBadge(w, badgeIndex)
+        elseif w.slotBadge then
+            w.slotBadge:Hide()
+        end
+        if k == "shape" and (shp == "circle" or shp == "ellipse") then
+            UpdateCircleWidgetStroke(w, item, vc, ch)
+        end
+    elseif w.slotBadge then
+        w.slotBadge:Hide()
+    end
 end
 
 -- Compact mode: same canvas as expanded, displayed smaller via SetScale (~52% default).
@@ -3180,6 +3564,9 @@ function Diar:ShowPlannerViewer(opts)
                 frame.compactMode = false
                 if frame.canvas then frame.canvas:SetScale(1) end
             end
+            if Diar.HidePlannerTransientMenus then
+                Diar:HidePlannerTransientMenus()
+            end
             if frame.debugPanel then frame.debugPanel:Hide() end
             Diar:ClearPlannerDisplay()
         end)
@@ -3474,6 +3861,14 @@ function Diar:ShowPlannerViewer(opts)
             Diar:ShowImportPlanDialog()
         end)
 
+        local newBtn = CreatePlannerIconBtn(footer, "New Plan", 200, FOOTER_BTN_H)
+        pf.savedPlansNewBtn = newBtn
+        newBtn:SetScript("OnClick", function()
+            if Diar.ShowCreatePlanDialog then
+                Diar:ShowCreatePlanDialog()
+            end
+        end)
+
         local shareBtn = CreatePlannerIconBtn(footer, "Share to Group", 200, FOOTER_BTN_H)
         shareBtn:SetScript("OnClick", function()
             if Diar.SharePlanToGroup then Diar:SharePlanToGroup(Diar.plannerData) end
@@ -3513,8 +3908,17 @@ function Diar:ShowPlannerViewer(opts)
     if Diar.EnsurePlannerHelpButton then Diar:EnsurePlannerHelpButton(pf) end
     if Diar.EnsureRaidLeadViewPanel then Diar:EnsureRaidLeadViewPanel(pf) end
     if Diar.UpdatePlannerDebugPanel then Diar:UpdatePlannerDebugPanel() end
-    if not pf.pushUpdateBtn and pf.savedPlansShareBtn and pf.savedPlansFooter then
+    if (not pf.pushUpdateBtn or not pf.savedPlansNewBtn) and pf.savedPlansShareBtn and pf.savedPlansFooter then
         local footer = pf.savedPlansFooter
+        if not pf.savedPlansNewBtn then
+            local newBtn = CreatePlannerIconBtn(footer, "New Plan", 200, FOOTER_BTN_H)
+            newBtn:SetScript("OnClick", function()
+                if Diar.ShowCreatePlanDialog then
+                    Diar:ShowCreatePlanDialog()
+                end
+            end)
+            pf.savedPlansNewBtn = newBtn
+        end
         if not pf.pushUpdateBtn then
             local pushBtn = CreatePlannerIconBtn(footer, "Push Update", 200, FOOTER_BTN_H)
             pushBtn:SetScript("OnClick", function()
@@ -3573,7 +3977,7 @@ function Diar:ShowPlannerViewer(opts)
     pf.sceneTabButtons = {}
     local prevBtn = nil
     for i, scene in ipairs(scenes) do
-        local name = (scene.name and scene.name ~= "") and scene.name or ("Scene " .. i)
+        local name = (scene.name and scene.name ~= "") and scene.name or tostring(i)
         local btn = tabButtons[i]
         if not btn then
             btn = CreatePlannerIconBtn(container, name, 56, SCENE_TAB_H)
@@ -4019,219 +4423,18 @@ function Diar:RefreshPlannerScene()
     -- animatable item.widget. Frontal beams, donuts, triangles/cones, lines and arrows
     -- are drawn separately (pf.frontalBeamWidgets / pooled static shapes) and have no widget.
     local minSize = 2
+    local sceneCtx = {
+        hasSelfOnPlan = hasSelfOnPlan,
+        playerKey = playerKey,
+        groupSpots = groupSpots,
+        activeGroup = activeGroup,
+        groupSpotNames = groupSpotNames,
+        previewNamesOn = previewNamesOn,
+        previewSpots = previewSpots,
+        debugMineHits = debugMineHits,
+    }
     for i, item in ipairs(scene.items) do
-        local k = item.kind
-        local shp = tostring(item.shape or ""):lower()
-        item.currentX = nil
-        item.currentY = nil
-
-        local isStatic = (k == "line")
-            or (k == "shape" and (IsFrontalItem(item) or HasQuadCorners(item) or shp == "donut" or shp == "triangle" or shp == "cone"))
-
-        if isStatic then
-            -- Drawn elsewhere; make sure no stale widget lingers.
-            if IsPlannerWidgetFrame(item.widget) then
-                ReleasePlannerWidget(pf, item.widget)
-            end
-            item.widget = nil
-        else
-            local wp = (type(item.w) == "number" and item.w or 4) / 100
-            local hp = (type(item.h) == "number" and item.h or 4) / 100
-            local label = (item.label and item.label ~= "") and item.label or ""
-            local xp = (type(item.x) == "number" and item.x or 0) / 100
-            local yp = (type(item.y) == "number" and item.y or 0) / 100
-
-            local w = item.widget
-            if not IsPlannerWidgetFrame(w) then
-                item.widget = nil
-                w = CreateFrame("Frame", nil, root, "BackdropTemplate")
-                item.widget = w
-            end
-            ActivatePlannerWidget(w, root)
-            local layerBoost = (k == "text") and 40 or 0
-            w:SetFrameLevel(ResolveItemFrameLevel(root, item, i, layerBoost))
-            w:ClearAllPoints()
-            w.baseWorldW = math.max(minSize, cw * wp)
-            w.baseWorldH = math.max(minSize, ch * hp)
-            local iw = math.max(minSize, SceneViewScale(vc, w.baseWorldW))
-            local ih = math.max(minSize, SceneViewScale(vc, w.baseWorldH))
-            w:SetSize(iw, ih)
-            w.basePixelW = iw
-            w.basePixelH = ih
-            local px, py = SceneViewPctToCanvas(vc, cw, ch, xp, yp)
-            w:SetPoint("TOPLEFT", root, "TOPLEFT", px, -py)
-
-            if not w.tex then
-                w.tex = w:CreateTexture(nil, "ARTWORK")
-                w.tex:SetAllPoints(w)
-            end
-            -- Reset shared texture state (frames are recycled across item kinds).
-            w.tex:SetRotation(0)
-            w.tex:SetTexCoord(0, 1, 0, 1)
-            w.tex:SetVertexColor(1, 1, 1)
-            w.tex:SetAlpha(1)
-            if w.__maskOn and w.circleMask then
-                w.tex:RemoveMaskTexture(w.circleMask)
-                w.__maskOn = false
-            elseif w.__maskOn and w.circleMasks then
-                for _, m in ipairs(w.circleMasks) do w.tex:RemoveMaskTexture(m) end
-                w.__maskOn = false
-            end
-            if w.borderTex then w.borderTex:Hide() end
-            w:SetScript("OnEnter", nil)
-            w:SetScript("OnLeave", nil)
-            w.__suppressed = nil
-            ClearNameHighlight(w)
-            if w.spotPreviewText then w.spotPreviewText:Hide() end
-            w.__ringOverride = nil
-            w.__groupSpotMine = nil
-            if w.__groupSpotStroke then
-                w.__groupSpotStroke = nil
-                ClearBackdropStroke(w)
-            end
-
-            local spotNum = groupSpots and groupSpots[i]
-            local isMySpot = spotNum and activeGroup and activeGroup.mySpots and activeGroup.mySpots[spotNum]
-            local spotName = spotNum and previewNamesOn and groupSpotNames and groupSpotNames[spotNum] or nil
-            if debugMineHits and spotNum and isMySpot then
-                debugMineHits[#debugMineHits + 1] = ("%d@item%d:%s"):format(spotNum, i, k)
-            end
-
-            if k == "text" then
-                w.tex:Hide()
-                HideWidgetStroke(w)
-                if w.label then w.label:Hide() end
-                local tr, tg, tb = ApplyTextWidgetContent(w, item, label, vc, ch, minSize)
-                if spotNum then
-                    ApplyGroupSpotText(w, isMySpot, ch, item)
-                end
-                if hasSelfOnPlan and LabelMatchesPlayer(label, playerKey) then
-                    ApplyNameHighlight(w, true, true, tr, tg, tb, w.text)
-                else
-                    ClearNameHighlight(w, w.text, tr, tg, tb)
-                end
-            elseif k == "shape" then
-                if w.text then w.text:Hide() end
-                if w.label then w.label:Hide() end
-                if spotNum then
-                    ApplyGroupSpotShape(w, item, isMySpot, shp, ch)
-                    if spotName and (shp == "circle" or shp == "ellipse") then
-                        SetGroupSpotPreviewText(w, spotName, isMySpot, item)
-                    end
-                elseif shp == "circle" or shp == "ellipse" then
-                    ApplyCircleWidgetVisual(w, item)
-                    ClearBackdropStroke(w)
-                elseif IsRectLikeShape(shp) then
-                    ApplyBoxShapeVisual(w, item, ch)
-                else
-                    ClearBackdropStroke(w)
-                    local r, g, b, a = ParseItemColor(item.fill, item.opacity)
-                    w.tex:SetColorTexture(r, g, b, a)
-                    w.tex:Show()
-                end
-                local namesVisible = self:IsPlannerPreviewNamesVisible()
-                local isAttachedLabel = item.labelAttached == true
-                local shouldShowLabel = (label ~= "") and ((not isAttachedLabel) or namesVisible)
-                if shouldShowLabel then
-                    if not w.label then
-                        w.label = w:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-                        w.label:SetPoint("TOP", w, "BOTTOM", 0, -2)
-                        w.label:SetTextColor(0.85, 0.85, 0.85)
-                    end
-                    w.__baseTextColor = { 0.85, 0.85, 0.85 }
-                    w.label:SetText(label)
-                    w.label:Show()
-                    if hasSelfOnPlan and LabelMatchesPlayer(label, playerKey) then
-                        ApplyNameHighlight(w, true, true, 0.85, 0.85, 0.85, w.label)
-                    else
-                        ClearNameHighlight(w, w.label, 0.85, 0.85, 0.85)
-                    end
-                elseif w.label then
-                    w.label:Hide()
-                end
-            else
-                -- Icon
-                HideWidgetStroke(w)
-                ClearBackdropStroke(w)
-                local skipHelper = (not item.icon or item.icon == "") and label == ""
-                if skipHelper then
-                    w.__suppressed = true
-                    w:Hide()
-                    if w.text then w.text:Hide() end
-                    if w.label then w.label:Hide() end
-                else
-                    local texPath, texCoord, customCandidates = GetPlanIconTexture(item.icon)
-                    local customLoaded = SetTextureFromCandidates(w.tex, customCandidates)
-                    if customLoaded or texPath then
-                        if not customLoaded then
-                            w.tex:SetTexture(texPath)
-                        end
-                        if (not customLoaded) and texCoord and #texCoord >= 4 then
-                            w.tex:SetTexCoord(texCoord[1], texCoord[2], texCoord[3], texCoord[4])
-                        else
-                            w.tex:SetTexCoord(0, 1, 0, 1)
-                        end
-                        w.tex:Show()
-                    else
-                        w.tex:SetTexCoord(0, 1, 0, 1)
-                        w.tex:SetColorTexture(0.35, 0.5, 0.7, 0.9)
-                        w.tex:Show()
-                    end
-                    if w.text then w.text:Hide() end
-                    local namesVisible = self:IsPlannerPreviewNamesVisible()
-                    local isAttachedLabel = item.labelAttached == true
-                    local shouldShowLabel = (label ~= "") and ((not isAttachedLabel) or namesVisible)
-                    if shouldShowLabel then
-                        if not w.label then
-                            w.label = w:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-                            w.label:SetPoint("TOP", w, "BOTTOM", 0, -2)
-                            w.label:SetTextColor(0.85, 0.85, 0.85)
-                        end
-                        w.__baseTextColor = { 0.85, 0.85, 0.85 }
-                        w.label:SetText(label)
-                        w.label:Show()
-                        if hasSelfOnPlan and LabelMatchesPlayer(label, playerKey) then
-                            ApplyNameHighlight(w, true, true, 0.85, 0.85, 0.85, w.label)
-                        else
-                            ClearNameHighlight(w, w.label, 0.85, 0.85, 0.85)
-                        end
-                    elseif w.label then w.label:Hide() end
-                    w:SetScript("OnEnter", function(f)
-                        local tip = (f.label and f.label:GetText() and f.label:GetText() ~= "") and f.label:GetText() or nil
-                        if tip then
-                            GameTooltip:SetOwner(f, "ANCHOR_RIGHT")
-                            GameTooltip:SetText(tip, 1, 1, 1)
-                            GameTooltip:Show()
-                        end
-                    end)
-                    w:SetScript("OnLeave", function() GameTooltip:Hide() end)
-                    if spotNum then
-                        ApplyGroupSpotIcon(w, isMySpot, ch, item)
-                    end
-                end
-            end
-            w.itemIndex = i
-            w.baseX = xp
-            w.baseY = yp
-            item.currentX = xp
-            item.currentY = yp
-            if Diar.AttachPlannerItemContextMenu and not w.__suppressed then
-                Diar:AttachPlannerItemContextMenu(w, i, item)
-            end
-            if not w.__suppressed then
-                if self:IsPlannerPreviewIndexVisible() then
-                    local badgeIndex = previewSpots and previewSpots[i]
-                    UpdateWidgetSlotBadge(w, badgeIndex)
-                elseif w.slotBadge then
-                    w.slotBadge:Hide()
-                end
-                if k == "shape" and (shp == "circle" or shp == "ellipse") then
-                    UpdateCircleWidgetStroke(w, item, vc, ch)
-                end
-            elseif w.slotBadge then
-                w.slotBadge:Hide()
-            end
-        end
+        Diar.RenderSceneItem(self, pf, root, cw, ch, vc, minSize, item, i, sceneCtx)
     end
 
     BuildFrontalBeamWidgets(pf, scene, root, cw, ch)

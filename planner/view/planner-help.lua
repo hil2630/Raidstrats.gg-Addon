@@ -120,6 +120,18 @@ end
 function Diar:EnsurePlannerHelpButton(pf)
     if not pf or not pf.toolbar or not pf.planLinkBtn then return end
 
+    if not pf.newSceneBtn then
+        local newSceneBtn = CreatePlannerIconBtn(pf.toolbar, "New Scene", 86, SCENE_TAB_H + 4)
+        newSceneBtn:SetScript("OnClick", function()
+            if Diar.ShowCreateSceneDialog then
+                Diar:ShowCreateSceneDialog()
+            elseif Diar.ShowCreatePlanDialog then
+                Diar:ShowCreatePlanDialog({ sceneMode = true })
+            end
+        end)
+        pf.newSceneBtn = newSceneBtn
+    end
+
     if not pf.planHelpBtn then
         local helpBtn = CreatePlannerIconBtn(pf.toolbar, "Help", 52, SCENE_TAB_H + 4)
         helpBtn:SetScript("OnClick", function()
@@ -134,10 +146,13 @@ function Diar:EnsurePlannerHelpButton(pf)
     pf.planHelpBtn:ClearAllPoints()
     pf.planHelpBtn:SetPoint("RIGHT", pf.planLinkBtn, "LEFT", -6, 0)
 
+    pf.newSceneBtn:ClearAllPoints()
+    pf.newSceneBtn:SetPoint("RIGHT", pf.planHelpBtn, "LEFT", -6, 0)
+
     if pf.sceneTabsContainer then
         pf.sceneTabsContainer:ClearAllPoints()
         pf.sceneTabsContainer:SetPoint("TOPLEFT", pf.toolbar, "TOPLEFT", 8, -6)
-        pf.sceneTabsContainer:SetPoint("BOTTOMRIGHT", pf.planHelpBtn, "BOTTOMLEFT", -10, 0)
+        pf.sceneTabsContainer:SetPoint("BOTTOMRIGHT", pf.newSceneBtn, "BOTTOMLEFT", -10, 0)
     end
 end
 

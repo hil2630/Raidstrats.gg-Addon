@@ -1,5 +1,24 @@
 # Changelog
 
+## [Alpha v0.0.36] going live today.
+
+- Fixed an issue where spec-icons were not properly mapped on import
+- Fixed an issue where labels were added to all objects with their object-name. Objects should now only have labels, if they are added beforehand.
+- Fixed an issue where resizing the main window wouldn't resize the palette properly, causing some icons to be bigger than their parent box.
+- Fixed some spelling mistakes in our bg TGA files.
+
+- Added a way to enable Circle mode.
+  - After importing a raidplan with class/spec- icons you can new decide to show them as circles instead, this makes it easier to see positions. This option is available in the Settings panel.
+- Added specs + class icons to the palette.
+- Added a "New plan" button. This allows you to create plans ingame, rather than on the website.
+  - Note: The addon currently does NOT support exporting plans and importing them into the website, this is a WIP.
+- Added a "New scene" button to create a new scene.
+- Added a "Change background" which will allow you to change the background of the current plan.
+- Added new backgrounds for Midnight intermission, p2 and p3 Soaks
+
+- Updated the Preview names to also work on imported plans where labels are attached to objects.
+- Updated some allignment issues for arrows, text, etc.
+
 ## [Alpha v0.0.35]
 
 - Fixed an issue where you couldn't click properly in the import plan textbox modal

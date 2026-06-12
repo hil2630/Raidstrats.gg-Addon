@@ -30,6 +30,7 @@ function Diar:GetPlannerSettings()
     end
     if s.debugMode == nil then s.debugMode = false end
     if s.showObjectPalette == nil then s.showObjectPalette = false end
+    if s.classSpecCircleMode == nil then s.classSpecCircleMode = false end
     if s.hideRaidCheckNotifs == nil then s.hideRaidCheckNotifs = false end
     if type(s.assignMineFill) ~= "table" then s.assignMineFill = nil end
     if type(s.assignOtherFill) ~= "table" then s.assignOtherFill = nil end
@@ -195,6 +196,12 @@ function Diar:IsHighlightMyNameEnabled()
     return true
 end
 
+function Diar:IsClassSpecCircleModeEnabled()
+    local v = self:GetPlannerSettings().classSpecCircleMode
+    if v == true or v == 1 then return true end
+    return false
+end
+
 function Diar:IsNsrtPopupsEnabled()
     local v = self:GetPlannerSettings().hideNsrtPlan
     if v == true or v == 1 then return false end
@@ -236,7 +243,7 @@ function Diar:ShowPlannerSettingsDialog()
     if not self.plannerSettingsDialog then
         local f = CreateFrame("Frame", "RaidstratsPlannerSettingsDialog", UIParent, "BackdropTemplate")
         f.__settingsV6 = true
-        f:SetSize(440, 524)
+        f:SetSize(440, 580)
         f:SetFrameStrata("FULLSCREEN_DIALOG")
         f:SetFrameLevel(500)
         f:SetPoint("CENTER")
@@ -352,6 +359,7 @@ function Diar:ShowPlannerSettingsDialog()
         y = AddSectionHeader("Display", y)
         y = AddCheckbox(y, "highlightChk", "Highlight my name on the plan")
         y = AddCheckbox(y, "compactBgChk", "Show background in compact view")
+        y = AddCheckbox(y, "classSpecCircleChk", "Render class/spec icons as circles")
         y = AddCheckbox(y, "nsrtPopupChk", "Hide plan popups (even if assigned)")
         y = AddCheckbox(y, "raidCheckNotifChk", "Hide raidcheck notifications from raid leader")
         y = AddCheckbox(y, "plannerDebugChk", "Show planner debug panel")
@@ -404,6 +412,7 @@ function Diar:ShowPlannerSettingsDialog()
             s.rsggShowAfter = after
             s.highlightMyName = CheckboxIsChecked(f.highlightChk)
             s.compactShowBackground = CheckboxIsChecked(f.compactBgChk)
+            s.classSpecCircleMode = CheckboxIsChecked(f.classSpecCircleChk)
             s.hideNsrtPlan = CheckboxIsChecked(f.nsrtPopupChk)
             s.hideRaidCheckNotifs = CheckboxIsChecked(f.raidCheckNotifChk)
             s.debugMode = CheckboxIsChecked(f.plannerDebugChk)
@@ -459,6 +468,9 @@ function Diar:ShowPlannerSettingsDialog()
     dlg.afterEdit:SetText(tostring(settings.rsggShowAfter ~= nil and settings.rsggShowAfter or 5))
     dlg.highlightChk:SetChecked(self:IsHighlightMyNameEnabled())
     dlg.compactBgChk:SetChecked(self:IsCompactBackgroundEnabled())
+    if dlg.classSpecCircleChk then
+        dlg.classSpecCircleChk:SetChecked(self:IsClassSpecCircleModeEnabled())
+    end
     dlg.nsrtPopupChk:SetChecked(settings.hideNsrtPlan == true or settings.hideNsrtPlan == 1)
     if dlg.raidCheckNotifChk then
         dlg.raidCheckNotifChk:SetChecked(settings.hideRaidCheckNotifs == true or settings.hideRaidCheckNotifs == 1)

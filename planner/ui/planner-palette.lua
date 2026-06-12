@@ -35,6 +35,61 @@ local ROLE_ENTRIES = {
     { key = "mdps", label = "Melee" },
 }
 
+local CLASS_ENTRIES = {
+    { key = "deathknight", label = "Death Knight" },
+    { key = "demonhunter", label = "Demon Hunter" },
+    { key = "druid", label = "Druid" },
+    { key = "evoker", label = "Evoker" },
+    { key = "hunter", label = "Hunter" },
+    { key = "mage", label = "Mage" },
+    { key = "monk", label = "Monk" },
+    { key = "paladin", label = "Paladin" },
+    { key = "priest", label = "Priest" },
+    { key = "rogue", label = "Rogue" },
+    { key = "shaman", label = "Shaman" },
+    { key = "warlock", label = "Warlock" },
+    { key = "warrior", label = "Warrior" },
+}
+
+local SPEC_LABEL_BY_KEY = {
+    beastmastery = "Beast Mastery",
+    marksmanship = "Marksmanship",
+    blood = "Blood",
+    frost = "Frost",
+    unholy = "Unholy",
+    havoc = "Havoc",
+    vengeance = "Vengeance",
+    devourer = "Devourer",
+    balance = "Balance",
+    feral = "Feral",
+    guardian = "Guardian",
+    restoration = "Restoration",
+    devastation = "Devastation",
+    preservation = "Preservation",
+    augmentation = "Augmentation",
+    arcane = "Arcane",
+    fire = "Fire",
+    brewmaster = "Brewmaster",
+    windwalker = "Windwalker",
+    mistweaver = "Mistweaver",
+    holy = "Holy",
+    protection = "Protection",
+    retribution = "Retribution",
+    discipline = "Discipline",
+    shadow = "Shadow",
+    assassination = "Assassination",
+    outlaw = "Outlaw",
+    subtlety = "Subtlety",
+    elemental = "Elemental",
+    enhancement = "Enhancement",
+    affliction = "Affliction",
+    demonology = "Demonology",
+    destruction = "Destruction",
+    arms = "Arms",
+    fury = "Fury",
+    survival = "Survival",
+}
+
 local UI = {
     PANEL   = {0.06, 0.06, 0.09, 0.96},
     BORDER  = {0.22, 0.24, 0.28, 1},
@@ -102,6 +157,8 @@ local PALETTE_TILE_GAP = 6
 local PALETTE_HEADER_H = 18
 local PALETTE_SECTION_GAP = 6
 local PALETTE_CONTENT_PAD_X = 4
+local PALETTE_ICON_CURSOR_OFFSET_X = -10
+local PALETTE_ICON_CURSOR_OFFSET_Y = -10
 -- Matches planner SETTINGS_ROW_H + UI_PAD so palette bottom aligns with timeline bottom.
 local PALETTE_BOTTOM_INSET = 16
 
@@ -435,6 +492,93 @@ function Diar:StopPaletteDragTracking(pf)
     end
 end
 
+function Diar:EnsurePaletteGhostPreview(pf)
+    local canvas = pf and pf.canvas
+    if not canvas then return nil end
+    if pf.__paletteGhostPreview and pf.__paletteGhostPreview:GetParent() == canvas then
+        return pf.__paletteGhostPreview
+    end
+    local f = CreateFrame("Frame", nil, canvas)
+    f:SetFrameLevel((canvas:GetFrameLevel() or 0) + 450)
+    f:EnableMouse(false)
+    f.tex = f:CreateTexture(nil, "OVERLAY")
+    f.tex:SetAllPoints(f)
+    f:Hide()
+    pf.__paletteGhostPreview = f
+    return f
+end
+
+function Diar:HidePaletteGhostPreview(pf)
+    pf = pf or self.plannerFrame
+    if not pf then return end
+    if pf.__paletteGhostPreview then
+        pf.__paletteGhostPreview:Hide()
+        pf.__paletteGhostPreview.__ghostIconKey = nil
+    end
+end
+
+function Diar:UpdatePaletteGhostPreview()
+    local pf = self.plannerFrame
+    local canvas = pf and pf.canvas
+    local placement = pf and pf.__palettePlacement
+    if not pf or not canvas or not placement then
+        self:HidePaletteGhostPreview(pf)
+        return
+    end
+    if placement.__dragDraw or placement.kind ~= "icon" then
+        self:HidePaletteGhostPreview(pf)
+        return
+    end
+
+    local lx, ly, cw, ch = GetCanvasLocalPoint(canvas, pf)
+    if not lx then
+        self:HidePaletteGhostPreview(pf)
+        return
+    end
+
+    local ghost = self:EnsurePaletteGhostPreview(pf)
+    if not ghost or not ghost.tex then return end
+    local wpct, hpct = self:SquareIconPercents(placement.w or self.OBJECT_PALETTE_ICON_W_PCT)
+    local iw = math.max(10, cw * (wpct / 100))
+    local ih = math.max(10, ch * (hpct / 100))
+    local px = math.max(0, math.min(cw, lx + PALETTE_ICON_CURSOR_OFFSET_X))
+    local py = math.max(0, math.min(ch, ly + PALETTE_ICON_CURSOR_OFFSET_Y))
+    ghost:ClearAllPoints()
+    ghost:SetPoint("TOPLEFT", canvas, "TOPLEFT", px, -py)
+    ghost:SetSize(iw, ih)
+
+    local iconKey = placement.icon
+    if ghost.__ghostIconKey ~= iconKey then
+        ghost.__ghostIconKey = iconKey
+        if not ApplyIngameIconTexture(ghost.tex, iconKey) then
+            ghost.tex:SetColorTexture(0.35, 0.50, 0.70, 0.90)
+            ghost.tex:SetTexCoord(0, 1, 0, 1)
+        end
+    end
+    ghost:SetAlpha(0.55)
+    ghost:Show()
+end
+
+function Diar:StartPaletteGhostTracking(pf)
+    pf = pf or self.plannerFrame
+    if not pf then return end
+    if not pf.__paletteGhostTicker then
+        pf.__paletteGhostTicker = CreateFrame("Frame", nil, pf)
+    end
+    pf.__paletteGhostTicker:SetScript("OnUpdate", function()
+        Diar:UpdatePaletteGhostPreview()
+    end)
+end
+
+function Diar:StopPaletteGhostTracking(pf)
+    pf = pf or self.plannerFrame
+    if not pf then return end
+    if pf.__paletteGhostTicker then
+        pf.__paletteGhostTicker:SetScript("OnUpdate", nil)
+    end
+    self:HidePaletteGhostPreview(pf)
+end
+
 function Diar:EnsurePaletteDragLayer(pf)
     if pf.__paletteDragLayer then return pf.__paletteDragLayer end
     local canvas = pf.canvas
@@ -647,6 +791,10 @@ end
 function Diar:ClearPalettePlacement()
     local pf = self.plannerFrame
     if not pf then return end
+    if self.HidePaletteSpecPicker then
+        self:HidePaletteSpecPicker()
+    end
+    self:StopPaletteGhostTracking(pf)
     self:CancelPaletteDragDraw()
     pf.__palettePlacement = nil
     if pf.objectPaletteHint then
@@ -669,9 +817,17 @@ function Diar:BeginPalettePlacement(template, label, opts)
     if self.IsPlannerCanvasLocked and self:IsPlannerCanvasLocked() then return end
     local pf = self.plannerFrame
     if not pf then return end
+    if self.HidePaletteSpecPicker then
+        self:HidePaletteSpecPicker()
+    end
+    self:StopPaletteGhostTracking(pf)
     self:CancelPaletteDragDraw()
     pf.__palettePlacement = CopyTemplate(template)
     pf.__palettePlacement.__dragDraw = opts and opts.dragDraw or nil
+    if pf.__palettePlacement.kind == "icon" and not pf.__palettePlacement.__dragDraw then
+        self:StartPaletteGhostTracking(pf)
+        self:UpdatePaletteGhostPreview()
+    end
     if pf.objectPaletteHint then
         if pf.__palettePlacement.__dragDraw then
             pf.objectPaletteHint:SetText(("Drag on canvas to draw %s (right-click cancel)"):format(label or "shape"))
@@ -719,6 +875,10 @@ function Diar:TryPaletteCanvasMouseDown(button)
 
     local lx, ly, cw, ch = GetCanvasLocalPoint(pf.canvas, pf)
     if not lx then return false end
+    if template.kind == "icon" then
+        lx = math.max(0, math.min(cw, lx + PALETTE_ICON_CURSOR_OFFSET_X))
+        ly = math.max(0, math.min(ch, ly + PALETTE_ICON_CURSOR_OFFSET_Y))
+    end
     local xPct, yPct = CanvasLocalToItemPercent(pf, lx, ly, cw, ch)
     local placement = CopyTemplate(template)
     self:ClearPalettePlacement()
@@ -768,8 +928,15 @@ end
 
 local function WirePaletteTile(btn, template, label, opts)
     opts = opts or {}
-    btn:SetScript("OnClick", function()
+    btn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    btn:SetScript("OnClick", function(_, button)
         if Diar.IsPlannerCanvasLocked and Diar:IsPlannerCanvasLocked() then return end
+        if button == "RightButton" then
+            if opts.onRightClick then
+                opts.onRightClick(btn, template, label)
+            end
+            return
+        end
         if opts.promptText then
             Diar:PromptPaletteTextLabel(template, label)
         else
@@ -854,7 +1021,18 @@ local function PaletteGridOrigin(contentWidth, tileSize)
     return math.max(PALETTE_CONTENT_PAD_X, math.floor((cw - gridW) / 2 + 0.5))
 end
 
-local PALETTE_MARKER_ICON_SCALE = 0.8
+local PALETTE_MARKER_ICON_SCALE = 0.62
+local RAID_MARKER_ATLAS = "Interface\\TargetingFrame\\UI-RaidTargetingIcons"
+local RAID_MARKER_ATLAS_COORDS = {
+    [1] = { 0.00, 0.25, 0.00, 0.25 }, -- star
+    [2] = { 0.25, 0.50, 0.00, 0.25 }, -- circle
+    [3] = { 0.50, 0.75, 0.00, 0.25 }, -- diamond
+    [4] = { 0.75, 1.00, 0.00, 0.25 }, -- triangle
+    [5] = { 0.00, 0.25, 0.25, 0.50 }, -- moon
+    [6] = { 0.25, 0.50, 0.25, 0.50 }, -- square
+    [7] = { 0.50, 0.75, 0.25, 0.50 }, -- cross
+    [8] = { 0.75, 1.00, 0.25, 0.50 }, -- skull
+}
 
 local function RefreshMarkerTile(btn, tile, tileSize)
     if btn.letter then btn.letter:Hide() end
@@ -862,7 +1040,12 @@ local function RefreshMarkerTile(btn, tile, tileSize)
     SetSquareTileIcon(btn.icon, btn, tileSize, PALETTE_MARKER_ICON_SCALE)
     btn.icon:Show()
     btn.icon:SetAlpha(1)
-    if not ApplyIngameIconTexture(btn.icon, tile.markerKey) then
+    local coords = tile and RAID_MARKER_ATLAS_COORDS[tile.raidIdx or 0]
+    if coords then
+        btn.icon:SetTexture(RAID_MARKER_ATLAS)
+        btn.icon:SetTexCoord(coords[1], coords[2], coords[3], coords[4])
+        btn.icon:SetVertexColor(1, 1, 1, 1)
+    elseif not ApplyIngameIconTexture(btn.icon, tile.markerKey) then
         btn.icon:SetTexture(RAID_TEX .. (tile.raidIdx or 1))
         btn.icon:SetTexCoord(0, 1, 0, 1)
         btn.icon:SetVertexColor(1, 1, 1, 1)
@@ -878,6 +1061,227 @@ local function RefreshRoleTile(btn, tile, tileSize)
     if not SetTextureFromCandidates(btn.icon, RoleIconCandidates(tile.roleKey)) then
         btn.icon:SetColorTexture(0.35, 0.5, 0.7, 0.9)
         btn.icon:SetTexCoord(0, 1, 0, 1)
+    end
+end
+
+local function RefreshClassTile(btn, tile, tileSize)
+    if btn.letter then btn.letter:Hide() end
+    if not btn.icon then return end
+    SetSquareTileIcon(btn.icon, btn, tileSize)
+    btn.icon:Show()
+    btn.icon:SetAlpha(1)
+    local iconKey = tile and tile.classKey and ("classes/" .. tile.classKey) or nil
+    if iconKey and ApplyIngameIconTexture(btn.icon, iconKey) then
+        return
+    end
+    btn.icon:SetColorTexture(0.70, 0.70, 0.78, 0.95)
+    btn.icon:SetTexCoord(0, 1, 0, 1)
+end
+
+local function HumanizeSpecKey(specKey)
+    if type(specKey) ~= "string" or specKey == "" then return "Spec" end
+    local key = specKey:lower():gsub("%s+", ""):gsub("%-", "")
+    if SPEC_LABEL_BY_KEY[key] then return SPEC_LABEL_BY_KEY[key] end
+    return key:gsub("^%l", string.upper)
+end
+
+local function GetSpecDisplayInfo(classKey, specKey, specId)
+    local label = HumanizeSpecKey(specKey)
+    local texture = Diar.GetSpecTextureSafe and Diar.GetSpecTextureSafe(specId) or nil
+    if C_SpecializationInfo and type(C_SpecializationInfo.GetSpecializationInfoForSpecID) == "function" then
+        local _, specName, _, specIcon = C_SpecializationInfo.GetSpecializationInfoForSpecID(specId)
+        if type(specName) == "string" and specName ~= "" then
+            label = specName
+        end
+        if specIcon then texture = specIcon end
+    elseif type(GetSpecializationInfoByID) == "function" then
+        local _, specName, _, specIcon = GetSpecializationInfoByID(specId)
+        if type(specName) == "string" and specName ~= "" then
+            label = specName
+        end
+        if specIcon then texture = specIcon end
+    end
+    if not texture and Diar.ResolveSpecTextureFromIconKey then
+        texture = Diar.ResolveSpecTextureFromIconKey(("specs/%s/%s"):format(classKey, specKey))
+    end
+    return label, texture
+end
+
+local function BuildClassSpecEntries(classKey)
+    local out = {}
+    local map = Diar.SPEC_ID_BY_CLASS and Diar.SPEC_ID_BY_CLASS[classKey]
+    if type(map) ~= "table" then return out end
+    local seenBySpecId = {}
+    for specKey, specId in pairs(map) do
+        if type(specKey) == "string" and type(specId) == "number" then
+            -- Skip alternate key forms; include one canonical entry per spec ID.
+            local canonical = specKey:gsub("%s+", "")
+            if not canonical:find("%-") and not seenBySpecId[specId] then
+                seenBySpecId[specId] = true
+                local name, iconTexture = GetSpecDisplayInfo(classKey, specKey, specId)
+                out[#out + 1] = {
+                    key = canonical,
+                    specId = specId,
+                    label = name,
+                    iconTexture = iconTexture,
+                }
+            end
+        end
+    end
+    table.sort(out, function(a, b)
+        return tostring(a.label or a.key) < tostring(b.label or b.key)
+    end)
+    return out
+end
+
+function Diar:HidePaletteSpecPicker()
+    local pf = self.plannerFrame
+    local menu = pf and pf._paletteSpecMenu
+    if menu then
+        menu:Hide()
+    end
+    if self.HidePaletteSpecDismissOverlay then
+        self:HidePaletteSpecDismissOverlay()
+    end
+end
+
+function Diar:HidePaletteSpecDismissOverlay()
+    local o = self._paletteSpecDismissOverlay
+    if not o then return end
+    o:Hide()
+    o:SetScript("OnClick", nil)
+    o:SetScript("OnMouseUp", nil)
+end
+
+function Diar:ShowPaletteSpecDismissOverlay(menu)
+    if not menu then return end
+    if not self._paletteSpecDismissOverlay then
+        local o = CreateFrame("Button", "RaidstratsPaletteSpecDismiss", UIParent)
+        o:SetAllPoints(UIParent)
+        o:SetFrameStrata("FULLSCREEN_DIALOG")
+        o:EnableMouse(true)
+        o:SetAlpha(0.001)
+        self._paletteSpecDismissOverlay = o
+    end
+    local o = self._paletteSpecDismissOverlay
+    o:SetScript("OnClick", nil)
+    o:SetScript("OnMouseUp", function(_, button)
+        if button == "LeftButton" or button == "RightButton" then
+            if Diar.HidePlannerTransientMenus then
+                Diar:HidePlannerTransientMenus()
+            else
+                Diar:HidePaletteSpecPicker()
+            end
+        end
+    end)
+    o:SetFrameLevel(math.max(0, (menu:GetFrameLevel() or 0) - 1))
+    o:Show()
+end
+
+function Diar:ShowPaletteSpecPicker(anchorBtn, classEntry)
+    local pf = self.plannerFrame
+    if not pf or not classEntry or not classEntry.key then return end
+    if self.IsPlannerCanvasLocked and self:IsPlannerCanvasLocked() then return end
+
+    local specs = BuildClassSpecEntries(classEntry.key)
+    if #specs == 0 then
+        print("|cffff6666[Raidstrats.gg]|r No specs found for this class.")
+        return
+    end
+
+    local menu = pf._paletteSpecMenu
+    if not menu then
+        menu = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
+        menu:SetFrameStrata("FULLSCREEN_DIALOG")
+        menu:SetFrameLevel(530)
+        menu:EnableMouse(true)
+        menu.buttons = {}
+        menu.title = menu:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        menu.title:SetPoint("TOPLEFT", menu, "TOPLEFT", 10, -8)
+        menu.title:SetTextColor(unpack(UI.ACCENT))
+        if SetBackdrop then SetBackdrop(menu, UI.PANEL, UI.BORDER, 1) end
+        menu:SetScript("OnHide", function(m)
+            if m and m.buttons then
+                for i = 1, #m.buttons do
+                    m.buttons[i]:Hide()
+                end
+            end
+            if Diar.HidePaletteSpecDismissOverlay then
+                Diar:HidePaletteSpecDismissOverlay()
+            end
+        end)
+        pf._paletteSpecMenu = menu
+    end
+
+    local rowH = 24
+    local menuW = 184
+    local menuH = 14 + rowH * #specs + 18
+    -- Force-refresh placement/content even if already open, so repeated right-click works reliably.
+    menu:Hide()
+    menu:SetSize(menuW, menuH)
+    menu:ClearAllPoints()
+    if anchorBtn then
+        menu:SetPoint("TOPLEFT", anchorBtn, "TOPRIGHT", 6, 0)
+    else
+        local x, y = GetCursorPosition()
+        local scale = UIParent:GetEffectiveScale()
+        menu:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", x / scale, y / scale)
+    end
+    menu.title:SetText(("Specs: %s"):format(classEntry.label or classEntry.key))
+
+    for i = 1, #specs do
+        local spec = specs[i]
+        local row = menu.buttons[i]
+        if not row then
+            row = CreateFrame("Button", nil, menu, "BackdropTemplate")
+            row:SetSize(menuW - 12, rowH - 2)
+            if SetBackdrop then SetBackdrop(row, UI.ROW, UI.BORDER, 1) end
+            row.icon = row:CreateTexture(nil, "ARTWORK")
+            row.icon:SetSize(16, 16)
+            row.icon:SetPoint("LEFT", row, "LEFT", 6, 0)
+            row.text = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            row.text:SetPoint("LEFT", row.icon, "RIGHT", 6, 0)
+            row.text:SetPoint("RIGHT", row, "RIGHT", -6, 0)
+            row.text:SetJustifyH("LEFT")
+            row:SetScript("OnEnter", function(s) s:SetBackdropColor(unpack(UI.ROW_HOV)) end)
+            row:SetScript("OnLeave", function(s) s:SetBackdropColor(unpack(UI.ROW)) end)
+            menu.buttons[i] = row
+        end
+        row:ClearAllPoints()
+        row:SetPoint("TOPLEFT", menu, "TOPLEFT", 6, -14 - ((i - 1) * rowH) - 14)
+        row.spec = spec
+        row.classEntry = classEntry
+        row.icon:SetTexCoord(0, 1, 0, 1)
+        if spec.iconTexture then
+            row.icon:SetTexture(spec.iconTexture)
+            row.icon:SetVertexColor(1, 1, 1, 1)
+        else
+            row.icon:SetTexture(WHITE_TEX)
+            row.icon:SetVertexColor(0.45, 0.60, 0.92, 0.95)
+        end
+        row.text:SetText(spec.label or HumanizeSpecKey(spec.key))
+        row:SetScript("OnClick", function(s)
+            local cls = s.classEntry
+            local sp = s.spec
+            if not cls or not sp then return end
+            Diar:HidePaletteSpecPicker()
+            Diar:BeginPalettePlacement({
+                kind = "icon",
+                icon = ("specs/%s/%s"):format(cls.key, sp.key),
+                w = Diar.OBJECT_PALETTE_ICON_W_PCT,
+            }, ("%s %s"):format(sp.label or HumanizeSpecKey(sp.key), cls.label or cls.key))
+        end)
+        row:Show()
+    end
+    for i = #specs + 1, #menu.buttons do
+        menu.buttons[i]:Hide()
+    end
+    menu:SetFrameStrata("FULLSCREEN_DIALOG")
+    menu:SetFrameLevel(530)
+    menu:Show()
+    if menu.Raise then menu:Raise() end
+    if self.ShowPaletteSpecDismissOverlay then
+        self:ShowPaletteSpecDismissOverlay(menu)
     end
 end
 
@@ -918,6 +1322,8 @@ function Diar:RelayoutObjectPaletteTiles(pf)
                     ApplyPaletteTilePreview(btn, btn.previewKind, tileSize)
                 elseif tile.markerKey then
                     RefreshMarkerTile(btn, tile, tileSize)
+                elseif tile.classKey then
+                    RefreshClassTile(btn, tile, tileSize)
                 elseif tile.roleKey then
                     RefreshRoleTile(btn, tile, tileSize)
                 elseif btn.icon then
@@ -1044,6 +1450,28 @@ function Diar:EnsureObjectPalettePanel(pf)
         end
     end
 
+    local classesSec = AddSection("CLASSES")
+    col, row = 0, 0
+    for _, classEntry in ipairs(CLASS_ENTRIES) do
+        local classData = classEntry
+        local btn = CreatePaletteTile(child, PALETTE_TILE, classEntry.label)
+        local classTile = { btn = btn, col = col, row = row, classKey = classEntry.key }
+        classesSec.tiles[#classesSec.tiles + 1] = classTile
+        RefreshClassTile(btn, classTile, PALETTE_TILE)
+        WirePaletteTile(btn, {
+            kind = "icon", icon = "classes/" .. classEntry.key, w = Diar.OBJECT_PALETTE_ICON_W_PCT,
+        }, classEntry.label, {
+            onRightClick = function(anchorBtn)
+                Diar:ShowPaletteSpecPicker(anchorBtn, classData)
+            end,
+        })
+        col = col + 1
+        if col >= PALETTE_COLS then
+            col = 0
+            row = row + 1
+        end
+    end
+
     self:RelayoutObjectPaletteTiles(pf)
     if C_Timer and C_Timer.After then
         C_Timer.After(0, function()
@@ -1081,6 +1509,9 @@ function Diar:ApplyObjectPaletteLockedState(pf)
             end
         end
     end
+    if locked and self.HidePaletteSpecPicker then
+        self:HidePaletteSpecPicker()
+    end
     if pf.objectPaletteHint and not pf.__palettePlacement then
         if locked then
             pf.objectPaletteHint:SetText("Objects locked")
@@ -1101,6 +1532,9 @@ function Diar:ApplyObjectPaletteLayout(pf)
     if not panel then return end
 
     if not self:IsObjectPaletteEnabled() or pf.compactMode then
+        if self.HidePaletteSpecPicker then
+            self:HidePaletteSpecPicker()
+        end
         panel:Hide()
         self:ClearPalettePlacement()
         return

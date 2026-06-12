@@ -42,12 +42,48 @@ local function ShowClickDismissOverlay(anchorFrame, onDismiss)
     o:SetScript("OnClick", nil)
     o:SetScript("OnMouseUp", function(_, button)
         if button == "LeftButton" or button == "RightButton" then
-            if onDismiss then onDismiss() end
+            if Diar and Diar.HidePlannerTransientMenus then
+                Diar:HidePlannerTransientMenus()
+            elseif onDismiss then
+                onDismiss()
+            end
             HideClickDismissOverlay()
         end
     end)
     o:SetFrameLevel(math.max(0, anchorFrame:GetFrameLevel() - 1))
     o:Show()
+end
+
+if not StaticPopupDialogs["RAIDSTRATSGG_CUSTOM_OBJECT_LABEL"] then
+    StaticPopupDialogs["RAIDSTRATSGG_CUSTOM_OBJECT_LABEL"] = {
+        text = "Custom label:",
+        button1 = _G.OKAY or "OK",
+        button2 = _G.CANCEL or "Cancel",
+        hasEditBox = true,
+        maxLetters = 64,
+        timeout = 0,
+        whileDead = 1,
+        hideOnEscape = 1,
+        OnShow = function(self)
+            local eb = self.editBox or self.EditBox
+            local current = self.data and self.data.currentLabel or ""
+            if self.text then
+                self.text:SetText((current ~= "" and "Edit label:" or "Add custom label:"))
+            end
+            if eb then
+                eb:SetText(current)
+                eb:HighlightText()
+                eb:SetFocus()
+            end
+        end,
+        OnAccept = function(self)
+            local eb = self.editBox or self.EditBox
+            local value = eb and strtrim(eb:GetText() or "") or ""
+            if Diar and Diar.ApplyCustomItemLabel and self.data and self.data.itemIndex then
+                Diar:ApplyCustomItemLabel(self.data.itemIndex, value)
+            end
+        end,
+    }
 end
 
 local function StripScrollChrome(scroll)
@@ -338,7 +374,7 @@ function Diar:GetSceneDisplayName(sceneIndex)
     if scene and scene.name and scene.name ~= "" then
         return tostring(scene.name)
     end
-    return ("Scene %d"):format(sceneIndex)
+    return tostring(sceneIndex)
 end
 
 function Diar:HideDuplicateLabelWarning()
@@ -541,11 +577,12 @@ function Diar:ShowPlannerContextMenu(anchor, itemIndex, item)
     local canEdit = self.CanEditPlannerItems and self:CanEditPlannerItems()
     local canAssign = canEdit and item and self:CanAssignPlayerToItem(item) and self:IsPlanLeader()
     local canDelete = canEdit
-    if not canAssign and not canDelete then return end
+    local canCustomLabel = canEdit and item ~= nil
+    if not canAssign and not canDelete and not canCustomLabel then return end
 
     self:HidePlannerContextMenu()
 
-    local menuH = 12 + (canAssign and 30 or 0) + (canDelete and 30 or 0)
+    local menuH = 12 + (canAssign and 30 or 0) + (canCustomLabel and 30 or 0) + (canDelete and 30 or 0)
     local menu = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
     menu:SetSize(148, menuH)
     menu:SetFrameStrata("FULLSCREEN_DIALOG")
@@ -590,6 +627,15 @@ function Diar:ShowPlannerContextMenu(anchor, itemIndex, item)
         end)
         y = y - 30
     end
+    if canCustomLabel then
+        local currentLabel = strtrim(tostring(item and item.label or ""))
+        local labelText = (currentLabel ~= "") and "Edit label" or "Add custom label"
+        makeMenuBtn(labelText, y, function()
+            Diar:HidePlannerContextMenu()
+            Diar:PromptCustomItemLabel(itemIndex, item)
+        end)
+        y = y - 30
+    end
     if canDelete then
         makeMenuBtn("Delete", y, function()
             Diar:HidePlannerContextMenu()
@@ -616,6 +662,21 @@ function Diar:HideMemberPicker()
     self:HideDuplicateLabelWarning()
     if self._memberPicker then
         self._memberPicker:Hide()
+    end
+end
+
+function Diar:HidePlannerTransientMenus()
+    if self.HidePlannerContextMenu then
+        self:HidePlannerContextMenu()
+    end
+    if self.HideMemberPicker then
+        self:HideMemberPicker()
+    end
+    if self.HideDuplicateLabelWarning then
+        self:HideDuplicateLabelWarning()
+    end
+    if self.HidePaletteSpecPicker then
+        self:HidePaletteSpecPicker()
     end
 end
 
@@ -840,6 +901,47 @@ function Diar:ApplyItemLabelRename(itemIndex, newName, iconKey)
             classNote,
             sceneNote,
             saved and " and saved locally" or (GetNumGroupMembers() > 0 and " and synced to group" or "")))
+    end
+end
+
+function Diar:PromptCustomItemLabel(itemIndex, item)
+    if not (self.CanEditPlannerItems and self:CanEditPlannerItems()) then return end
+    local current = strtrim(tostring((item and item.label) or ""))
+    StaticPopup_Show("RAIDSTRATSGG_CUSTOM_OBJECT_LABEL", nil, nil, {
+        itemIndex = itemIndex,
+        currentLabel = current,
+    })
+end
+
+function Diar:ApplyCustomItemLabel(itemIndex, newLabel)
+    if not (self.CanEditPlannerItems and self:CanEditPlannerItems()) then return end
+    local pf = self.plannerFrame
+    local data = self.plannerData
+    if not pf or not data or not data.scenes then return end
+    local sceneIdx = pf.selectedSceneIndex or 1
+    local scene = data.scenes[sceneIdx]
+    if not scene or not scene.items then return end
+    local item = scene.items[itemIndex]
+    if not item then return end
+
+    local oldLabel = strtrim(tostring(item.label or ""))
+    local normalized = strtrim(tostring(newLabel or ""))
+    if oldLabel == normalized then return end
+
+    item.label = normalized
+    if self.RefreshPlannerScene then
+        self:RefreshPlannerScene()
+    end
+    local saved = self.PersistCurrentPlanToSaved and self:PersistCurrentPlanToSaved()
+    if self.IsPlanLeader and self:IsPlanLeader() and self.BroadcastLabelChange then
+        self:BroadcastLabelChange(sceneIdx, itemIndex, normalized, nil, SanitizeIconKey(item.icon))
+    end
+    if normalized ~= "" then
+        print(("|cff00aaff[Raidstrats.gg]|r Label set to |cff00ff00%s|r%s."):format(
+            normalized,
+            saved and " and saved locally" or ""))
+    else
+        print(("|cff00aaff[Raidstrats.gg]|r Label cleared%s."):format(saved and " and saved locally" or ""))
     end
 end
 
@@ -1130,7 +1232,8 @@ function Diar:AttachPlannerItemContextMenu(widget, itemIndex, item)
         elseif button == "RightButton" then
             local canAssign = Diar:CanAssignPlayerToItem(item) and Diar:IsPlanLeader()
             local canDelete = Diar.CanEditPlannerItems and Diar:CanEditPlannerItems()
-            if not canAssign and not canDelete then return end
+            local canCustomLabel = Diar.CanEditPlannerItems and Diar:CanEditPlannerItems()
+            if not canAssign and not canDelete and not canCustomLabel then return end
             if Diar.ClearPalettePlacement then
                 Diar:ClearPalettePlacement()
             end
