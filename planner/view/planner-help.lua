@@ -18,6 +18,13 @@ local HELP_NOTE =
     "Note: This system was made for assignments, not all shapes and icons are supported from Raidstrats. "
     .. "It's recommended to simply use circles and add indexes to them."
 
+local function IsPlanLoaded()
+    local data = Diar and Diar.plannerData
+    if not data then return false end
+    if data.savedEntryId then return true end
+    return tostring(data.planName or "") ~= "No plan"
+end
+
 local HELP_SECTIONS = {
     {
         title = "Get a plan on raidstrats.gg",
@@ -123,6 +130,10 @@ function Diar:EnsurePlannerHelpButton(pf)
     if not pf.newSceneBtn then
         local newSceneBtn = CreatePlannerIconBtn(pf.toolbar, "New Scene", 86, SCENE_TAB_H + 4)
         newSceneBtn:SetScript("OnClick", function()
+            if not IsPlanLoaded() then
+                print("|cffff6666[Raidstrats.gg]|r No plan loaded. Load a plan before adding scenes.")
+                return
+            end
             if Diar.ShowCreateSceneDialog then
                 Diar:ShowCreateSceneDialog()
             elseif Diar.ShowCreatePlanDialog then
@@ -153,6 +164,19 @@ function Diar:EnsurePlannerHelpButton(pf)
         pf.sceneTabsContainer:ClearAllPoints()
         pf.sceneTabsContainer:SetPoint("TOPLEFT", pf.toolbar, "TOPLEFT", 8, -6)
         pf.sceneTabsContainer:SetPoint("BOTTOMRIGHT", pf.newSceneBtn, "BOTTOMLEFT", -10, 0)
+    end
+
+    if pf.newSceneBtn then
+        local loaded = IsPlanLoaded()
+        if loaded then
+            pf.newSceneBtn:Enable()
+            pf.newSceneBtn:SetAlpha(1)
+            if pf.newSceneBtn.label then pf.newSceneBtn.label:SetTextColor(0.92, 0.92, 0.92) end
+        else
+            pf.newSceneBtn:Disable()
+            pf.newSceneBtn:SetAlpha(0.45)
+            if pf.newSceneBtn.label then pf.newSceneBtn.label:SetTextColor(0.55, 0.55, 0.55) end
+        end
     end
 end
 

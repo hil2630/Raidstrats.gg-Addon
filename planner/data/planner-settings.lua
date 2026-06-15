@@ -14,6 +14,15 @@ local UI = PUI.UI
 local CreatePlannerIconBtn = PUI.CreatePlannerIconBtn
 local CheckboxIsChecked = PUI.CheckboxIsChecked
 local SetColorSwatchTexture = PUI.SetColorSwatchTexture
+
+local function SetPrimaryButtonStyle(btn)
+    if not btn then return end
+    btn.selected = true
+    btn:SetBackdropColor(unpack(UI.ACCENT))
+    if btn.label then
+        btn.label:SetTextColor(1, 1, 1)
+    end
+end
 function Diar:GetPlannerSettings()
     RaidstratsggSettings = RaidstratsggSettings or {}
     local s = RaidstratsggSettings
@@ -30,7 +39,9 @@ function Diar:GetPlannerSettings()
     end
     if s.debugMode == nil then s.debugMode = false end
     if s.showObjectPalette == nil then s.showObjectPalette = false end
+    if s.compactSceneArrows == nil then s.compactSceneArrows = false end
     if s.classSpecCircleMode == nil then s.classSpecCircleMode = false end
+    if s.compactPlanLibrary == nil then s.compactPlanLibrary = true end
     if s.hideRaidCheckNotifs == nil then s.hideRaidCheckNotifs = false end
     if type(s.assignMineFill) ~= "table" then s.assignMineFill = nil end
     if type(s.assignOtherFill) ~= "table" then s.assignOtherFill = nil end
@@ -202,6 +213,18 @@ function Diar:IsClassSpecCircleModeEnabled()
     return false
 end
 
+function Diar:IsCompactPlanLibraryEnabled()
+    local v = self:GetPlannerSettings().compactPlanLibrary
+    if v == true or v == 1 then return true end
+    return false
+end
+
+function Diar:IsCompactSceneArrowsEnabled()
+    local v = self:GetPlannerSettings().compactSceneArrows
+    if v == false or v == 0 then return false end
+    return true
+end
+
 function Diar:IsNsrtPopupsEnabled()
     local v = self:GetPlannerSettings().hideNsrtPlan
     if v == true or v == 1 then return false end
@@ -235,15 +258,15 @@ end
 function Diar:ShowPlannerSettingsDialog()
     local settings = self:GetPlannerSettings()
 
-    if self.plannerSettingsDialog and not self.plannerSettingsDialog.__settingsV6 then
+    if self.plannerSettingsDialog and not self.plannerSettingsDialog.__settingsV9 then
         self.plannerSettingsDialog:Hide()
         self.plannerSettingsDialog = nil
     end
 
     if not self.plannerSettingsDialog then
         local f = CreateFrame("Frame", "RaidstratsPlannerSettingsDialog", UIParent, "BackdropTemplate")
-        f.__settingsV6 = true
-        f:SetSize(440, 580)
+        f.__settingsV9 = true
+        f:SetSize(468, 668)
         f:SetFrameStrata("FULLSCREEN_DIALOG")
         f:SetFrameLevel(500)
         f:SetPoint("CENTER")
@@ -257,44 +280,63 @@ function Diar:ShowPlannerSettingsDialog()
         local closeBtn = CreateFrame("Button", nil, f, "UIPanelCloseButton")
         closeBtn:SetPoint("TOPRIGHT", -4, -4)
 
+        local header = CreateFrame("Frame", nil, f, "BackdropTemplate")
+        header:SetPoint("TOPLEFT", f, "TOPLEFT", 1, -1)
+        header:SetPoint("TOPRIGHT", f, "TOPRIGHT", -1, -1)
+        header:SetHeight(56)
+        SetBackdrop(header, UI.TOOLBAR, UI.BORDER, 1)
+
+        local headerAccent = header:CreateTexture(nil, "ARTWORK")
+        headerAccent:SetPoint("BOTTOMLEFT", header, "BOTTOMLEFT", 0, 0)
+        headerAccent:SetPoint("BOTTOMRIGHT", header, "BOTTOMRIGHT", 0, 0)
+        headerAccent:SetHeight(2)
+        headerAccent:SetColorTexture(unpack(UI.ACCENT))
+
+        local body = CreateFrame("Frame", nil, f, "BackdropTemplate")
+        body:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 8, -8)
+        body:SetPoint("TOPRIGHT", header, "BOTTOMRIGHT", -8, -8)
+        body:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 8, 48)
+        body:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -8, 48)
+        SetBackdrop(body, { 0.045, 0.048, 0.062, 0.96 }, UI.BORDER, 1)
+
         local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-        title:SetPoint("TOPLEFT", f, "TOPLEFT", 18, -16)
+        title:SetPoint("TOPLEFT", header, "TOPLEFT", 14, -12)
         title:SetText("Planner Settings")
         title:SetTextColor(0.92, 0.92, 0.92)
 
         local subtitle = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         subtitle:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -2)
         subtitle:SetText("NSRT cues, display, and compact layout")
-        subtitle:SetTextColor(0.50, 0.54, 0.60)
+        subtitle:SetTextColor(0.64, 0.68, 0.74)
 
         local function AddSectionHeader(text, y)
-            local hdr = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-            hdr:SetPoint("TOPLEFT", f, "TOPLEFT", 18, y)
+            local hdr = body:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            hdr:SetPoint("TOPLEFT", body, "TOPLEFT", 12, y)
             hdr:SetText(string.upper(text))
             hdr:SetTextColor(unpack(UI.ACCENT))
-            local line = f:CreateTexture(nil, "ARTWORK")
+            local line = body:CreateTexture(nil, "ARTWORK")
             line:SetHeight(1)
             line:SetPoint("TOPLEFT", hdr, "BOTTOMLEFT", 0, -4)
-            line:SetPoint("RIGHT", f, "RIGHT", -18, 0)
+            line:SetPoint("TOPRIGHT", body, "TOPRIGHT", -12, y - 4)
             line:SetColorTexture(unpack(UI.BORDER))
             return y - 22
         end
 
         local function AddSecondsRow(y, labelText, key)
-            local lbl = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-            lbl:SetPoint("TOPLEFT", f, "TOPLEFT", 18, y)
-            lbl:SetWidth(280)
+            local lbl = body:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            lbl:SetPoint("TOPLEFT", body, "TOPLEFT", 14, y)
+            lbl:SetWidth(300)
             lbl:SetJustifyH("LEFT")
             lbl:SetText(labelText)
-            lbl:SetTextColor(0.78, 0.80, 0.84)
+            lbl:SetTextColor(0.82, 0.84, 0.88)
 
-            local box = CreateFrame("Frame", nil, f, "BackdropTemplate")
-            box:SetSize(72, 26)
-            box:SetPoint("TOPRIGHT", f, "TOPRIGHT", -18, y + 2)
-            SetBackdrop(box, {0.05, 0.05, 0.07, 1}, UI.BORDER, 1)
+            local box = CreateFrame("Frame", nil, body, "BackdropTemplate")
+            box:SetSize(74, 24)
+            box:SetPoint("TOPRIGHT", body, "TOPRIGHT", -14, y + 2)
+            SetBackdrop(box, {0.03, 0.03, 0.05, 1}, UI.BORDER, 1)
 
             local eb = CreateFrame("EditBox", nil, box)
-            eb:SetSize(36, 20)
+            eb:SetSize(36, 18)
             eb:SetPoint("LEFT", box, "LEFT", 8, 0)
             eb:SetFontObject(GameFontHighlightSmall)
             eb:SetAutoFocus(false)
@@ -308,32 +350,32 @@ function Diar:ShowPlannerSettingsDialog()
             unit:SetTextColor(0.48, 0.52, 0.58)
 
             f[key] = eb
-            return y - 34
+            return y - 30
         end
 
         local function AddCheckbox(y, key, text)
-            local chk = CreateAnimatedCheckbox and CreateAnimatedCheckbox(f, text)
-            if not chk then return y - 30 end
-            chk:SetPoint("TOPLEFT", f, "TOPLEFT", 18, y)
+            local chk = CreateAnimatedCheckbox and CreateAnimatedCheckbox(body, text)
+            if not chk then return y - 28 end
+            chk:SetPoint("TOPLEFT", body, "TOPLEFT", 14, y)
             if chk.label then
                 chk.label:SetFontObject("GameFontHighlightSmall")
-                chk.label:SetTextColor(0.78, 0.80, 0.84)
+                chk.label:SetTextColor(0.82, 0.84, 0.88)
             end
             f[key] = chk
-            return y - 32
+            return y - 28
         end
 
         local function AddAssignmentColorRow(y, labelText, key, defaultColor)
-            local lbl = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-            lbl:SetPoint("TOPLEFT", f, "TOPLEFT", 18, y)
-            lbl:SetWidth(280)
+            local lbl = body:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            lbl:SetPoint("TOPLEFT", body, "TOPLEFT", 14, y)
+            lbl:SetWidth(300)
             lbl:SetJustifyH("LEFT")
             lbl:SetText(labelText)
-            lbl:SetTextColor(0.78, 0.80, 0.84)
+            lbl:SetTextColor(0.82, 0.84, 0.88)
 
-            local btn = CreateFrame("Button", nil, f, "BackdropTemplate")
-            btn:SetSize(54, 24)
-            btn:SetPoint("TOPRIGHT", f, "TOPRIGHT", -18, y + 2)
+            local btn = CreateFrame("Button", nil, body, "BackdropTemplate")
+            btn:SetSize(56, 24)
+            btn:SetPoint("TOPRIGHT", body, "TOPRIGHT", -14, y + 2)
             SetBackdrop(btn, { 0.05, 0.05, 0.07, 1 }, UI.BORDER, 1)
             btn.swatch = btn:CreateTexture(nil, "ARTWORK")
             btn.swatch:SetPoint("TOPLEFT", btn, "TOPLEFT", 3, -3)
@@ -347,10 +389,10 @@ function Diar:ShowPlannerSettingsDialog()
                 end)
             end)
             f[key] = btn
-            return y - 30
+            return y - 28
         end
 
-        local y = -48
+        local y = -18
         y = AddSectionHeader("NSRT timing", y)
         y = AddSecondsRow(y, "Show plan before cue", "beforeEdit")
         y = AddSecondsRow(y, "Keep plan visible after cue", "afterEdit")
@@ -360,6 +402,8 @@ function Diar:ShowPlannerSettingsDialog()
         y = AddCheckbox(y, "highlightChk", "Highlight my name on the plan")
         y = AddCheckbox(y, "compactBgChk", "Show background in compact view")
         y = AddCheckbox(y, "classSpecCircleChk", "Render class/spec icons as circles")
+        y = AddCheckbox(y, "compactSceneArrowsChk", "Arrows in compact mode")
+        y = AddCheckbox(y, "compactLibraryChk", "Compact plan library")
         y = AddCheckbox(y, "nsrtPopupChk", "Hide plan popups (even if assigned)")
         y = AddCheckbox(y, "raidCheckNotifChk", "Hide raidcheck notifications from raid leader")
         y = AddCheckbox(y, "plannerDebugChk", "Show planner debug panel")
@@ -372,15 +416,16 @@ function Diar:ShowPlannerSettingsDialog()
         y = y - 8
         y = AddSectionHeader("Compact position", y)
 
-        local compactStatus = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        compactStatus:SetPoint("TOPLEFT", f, "TOPLEFT", 18, y)
-        compactStatus:SetWidth(250)
+        local compactStatus = body:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        compactStatus:SetPoint("TOPLEFT", body, "TOPLEFT", 14, y)
+        compactStatus:SetWidth(270)
         compactStatus:SetJustifyH("LEFT")
-        compactStatus:SetTextColor(0.55, 0.60, 0.68)
+        compactStatus:SetTextColor(0.67, 0.70, 0.75)
         f.compactPosStatus = compactStatus
 
-        local previewBtn = CreatePlannerIconBtn(f, "Preview & set", 118, 26)
-        previewBtn:SetPoint("TOPRIGHT", f, "TOPRIGHT", -18, y + 4)
+        local previewBtn = CreatePlannerIconBtn(body, "Preview & set", 118, 26)
+        previewBtn:SetPoint("TOPRIGHT", body, "TOPRIGHT", -14, y + 4)
+        SetPrimaryButtonStyle(previewBtn)
         previewBtn:SetScript("OnClick", function()
             f:Hide()
             if Diar.StartCompactPositionPreview then
@@ -394,12 +439,19 @@ function Diar:ShowPlannerSettingsDialog()
         btnRow:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 18, 14)
         btnRow:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -18, 14)
 
+        local footerLine = f:CreateTexture(nil, "ARTWORK")
+        footerLine:SetHeight(1)
+        footerLine:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 8, 46)
+        footerLine:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -8, 46)
+        footerLine:SetColorTexture(unpack(UI.BORDER))
+
         local cancelBtn = CreatePlannerIconBtn(btnRow, "Cancel", 100, 28)
         cancelBtn:SetPoint("RIGHT", btnRow, "CENTER", -6, 0)
         cancelBtn:SetScript("OnClick", function() f:Hide() end)
 
         local saveBtn = CreatePlannerIconBtn(btnRow, "Save", 100, 28)
         saveBtn:SetPoint("LEFT", btnRow, "CENTER", 6, 0)
+        SetPrimaryButtonStyle(saveBtn)
         saveBtn:SetScript("OnClick", function()
             local s = Diar:GetPlannerSettings()
             local before = ParseSettingsSeconds(f.beforeEdit:GetText())
@@ -413,6 +465,8 @@ function Diar:ShowPlannerSettingsDialog()
             s.highlightMyName = CheckboxIsChecked(f.highlightChk)
             s.compactShowBackground = CheckboxIsChecked(f.compactBgChk)
             s.classSpecCircleMode = CheckboxIsChecked(f.classSpecCircleChk)
+            s.compactSceneArrows = CheckboxIsChecked(f.compactSceneArrowsChk)
+            s.compactPlanLibrary = CheckboxIsChecked(f.compactLibraryChk)
             s.hideNsrtPlan = CheckboxIsChecked(f.nsrtPopupChk)
             s.hideRaidCheckNotifs = CheckboxIsChecked(f.raidCheckNotifChk)
             s.debugMode = CheckboxIsChecked(f.plannerDebugChk)
@@ -448,6 +502,9 @@ function Diar:ShowPlannerSettingsDialog()
             if Diar.RefreshPlannerScene then
                 Diar:RefreshPlannerScene()
             end
+            if Diar.RefreshSavedPlansList then
+                Diar:RefreshSavedPlansList()
+            end
             if Diar.UpdatePlannerDebugPanel then
                 Diar:UpdatePlannerDebugPanel()
             end
@@ -470,6 +527,12 @@ function Diar:ShowPlannerSettingsDialog()
     dlg.compactBgChk:SetChecked(self:IsCompactBackgroundEnabled())
     if dlg.classSpecCircleChk then
         dlg.classSpecCircleChk:SetChecked(self:IsClassSpecCircleModeEnabled())
+    end
+    if dlg.compactSceneArrowsChk then
+        dlg.compactSceneArrowsChk:SetChecked(self:IsCompactSceneArrowsEnabled())
+    end
+    if dlg.compactLibraryChk then
+        dlg.compactLibraryChk:SetChecked(self:IsCompactPlanLibraryEnabled())
     end
     dlg.nsrtPopupChk:SetChecked(settings.hideNsrtPlan == true or settings.hideNsrtPlan == 1)
     if dlg.raidCheckNotifChk then

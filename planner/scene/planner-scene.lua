@@ -16,91 +16,199 @@ local CreateInput = Diar.CreateInput
 local SkinScrollBar = Diar.SkinScrollBar
 
 local PUI = Diar.PlannerUI
-local RIGHT_PANEL_W = PUI.RIGHT_PANEL_W
-local UI_PAD = PUI.UI_PAD
-local TITLE_TOP = PUI.TITLE_TOP
-local BRAND_TITLE_TEXT = PUI.BRAND_TITLE_TEXT
-local TruncatePlannerPlanTitle = PUI.TruncatePlannerPlanTitle
-local PositionPlannerBrandTitle = PUI.PositionPlannerBrandTitle
-local TOOLBAR_TOP = PUI.TOOLBAR_TOP
-local TOOLBAR_H = PUI.TOOLBAR_H
-local CANVAS_TOP = PUI.CANVAS_TOP
-local ROW_GAP = PUI.ROW_GAP
-local CONTROLS_H = PUI.CONTROLS_H
-local TIMELINE_H = PUI.TIMELINE_H
-local SCENE_TAB_H = PUI.SCENE_TAB_H
-local GROUP_LEADER_ICON = PUI.GROUP_LEADER_ICON
-local PATREON_BOX_H = PUI.PATREON_BOX_H
-local RIGHT_COL_GAP = PUI.RIGHT_COL_GAP
-local UI = PUI.UI
-local SkinPlannerScroll = PUI.SkinPlannerScroll
-local SetPlannerBtnText = PUI.SetPlannerBtnText
-local CreatePlannerIconBtn = PUI.CreatePlannerIconBtn
-local HIGHLIGHT_TEXT = PUI.HIGHLIGHT_TEXT
-local GetPlayerNameKey = PUI.GetPlayerNameKey
-local LabelMatchesPlayer = PUI.LabelMatchesPlayer
-local SceneHasPlayerName = PUI.SceneHasPlayerName
-local ApplyNameHighlight = PUI.ApplyNameHighlight
-local ClearNameHighlight = PUI.ClearNameHighlight
-local CheckboxIsChecked = PUI.CheckboxIsChecked
 
-local FOOTER_BTN_H = 28
-local FOOTER_BTN_GAP = 8
-local FOOTER_HEIGHT = FOOTER_BTN_H * 2 + FOOTER_BTN_GAP
-local PLANNER_CREDITS_TEXT = table.concat({
-    "Raidstrats.gg Addon Credits",
-    "",
-    "Every successful pull starts with a plan.",
-    "Every addon starts with people willing to build it.",
-    "",
-    "Raidstrats.gg:",
-    "- Created by Nairyana",
-    "",
-    "Addon Development:",
-    "- Bettiold for creating the original addon framework",
-    "- Nairyana for the madness of putting a raid planner inside WoW",
-    "",
-    "Special Thanks:",
-    "- Our Patreon supporters for keeping the project alive",
-    "- Raid Lead Exchange Discord for feedback, testing, and ideas",
-    "- Reloe, creator of NSRT, for paving the way for raid planning addons",
-    "- Viserio and Penkek from WowUtils for their help and support",
-    "",
-    "And thanks to everyone who tested things,",
-    "broke things, reported things, and helped us fix things."
-}, "\n")
+if not StaticPopupDialogs["RAIDSTRATSGG_DELETE_SCENE"] then
+    StaticPopupDialogs["RAIDSTRATSGG_DELETE_SCENE"] = {
+        text = "Delete scene %d?",
+        button1 = _G.YES or "Yes",
+        button2 = _G.NO or "No",
+        timeout = 0,
+        whileDead = 1,
+        hideOnEscape = 1,
+        OnAccept = function(self)
+            local sceneIndex = self.data
+            if sceneIndex and Diar and Diar.DeletePlannerScene then
+                Diar:DeletePlannerScene(sceneIndex)
+            end
+        end,
+    }
+end
 
-local function LayoutSavedPlansFooter(pf)
-    local footer = pf and pf.savedPlansFooter
-    if not footer then return end
-    footer:SetHeight(FOOTER_HEIGHT)
+function Diar:HideSceneTabContextDismissOverlay()
+    local o = self._sceneTabCtxDismiss
+    if not o then return end
+    o:Hide()
+    o:SetScript("OnClick", nil)
+    o:SetScript("OnMouseUp", nil)
+end
 
-    local newBtn = pf.savedPlansNewBtn
-    local importBtn = pf.savedPlansImportBtn
-    local shareBtn = pf.savedPlansShareBtn
-    local pushBtn = pf.pushUpdateBtn
-    if not newBtn or not importBtn or not shareBtn or not pushBtn then return end
+function Diar:HideSceneTabContextMenu()
+    self:HideSceneTabContextDismissOverlay()
+    local menu = self._sceneTabCtxMenu
+    if menu then
+        menu:Hide()
+    end
+end
 
-    newBtn:Show()
-    newBtn:ClearAllPoints()
-    newBtn:SetPoint("TOPLEFT", footer, "TOPLEFT", 0, 0)
-    newBtn:SetPoint("TOPRIGHT", footer, "TOP", -3, 0)
-    newBtn:SetHeight(FOOTER_BTN_H)
+function Diar:ShowSceneTabContextMenu(anchor, sceneIndex)
+    sceneIndex = tonumber(sceneIndex)
+    if not sceneIndex or sceneIndex <= 1 then return end
+    local data = self.plannerData
+    if not data or not data.scenes or not data.scenes[sceneIndex] then return end
 
-    importBtn:ClearAllPoints()
-    importBtn:SetPoint("TOPLEFT", footer, "TOP", 3, 0)
-    importBtn:SetPoint("TOPRIGHT", footer, "TOPRIGHT", 0, 0)
-    importBtn:SetHeight(FOOTER_BTN_H)
+    self:HideSceneTabContextMenu()
 
-    shareBtn:ClearAllPoints()
-    shareBtn:SetPoint("BOTTOMLEFT", footer, "BOTTOMLEFT", 0, 0)
-    shareBtn:SetPoint("BOTTOMRIGHT", footer, "BOTTOM", -3, 0)
-    shareBtn:SetHeight(FOOTER_BTN_H)
+    local menu = self._sceneTabCtxMenu
+    if not menu then
+        menu = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
+        menu:SetSize(132, 40)
+        menu:SetFrameStrata("FULLSCREEN_DIALOG")
+        menu:SetFrameLevel(540)
+        menu:EnableMouse(true)
+        if SetBackdrop then SetBackdrop(menu, UI.PANEL, UI.BORDER, 1) end
 
-    pushBtn:ClearAllPoints()
-    pushBtn:SetPoint("BOTTOMLEFT", footer, "BOTTOM", 3, 0)
-    pushBtn:SetPoint("BOTTOMRIGHT", footer, "BOTTOMRIGHT", 0, 0)
-    pushBtn:SetHeight(FOOTER_BTN_H)
+        local delBtn = CreateFrame("Button", nil, menu, "BackdropTemplate")
+        delBtn:SetPoint("TOPLEFT", menu, "TOPLEFT", 6, -6)
+        delBtn:SetPoint("BOTTOMRIGHT", menu, "BOTTOMRIGHT", -6, 6)
+        if SetBackdrop then SetBackdrop(delBtn, UI.ROW, UI.BORDER, 1) end
+        local lbl = delBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        lbl:SetPoint("CENTER")
+        lbl:SetText("Delete")
+        lbl:SetTextColor(0.92, 0.92, 0.92)
+        delBtn:SetScript("OnEnter", function(s)
+            s:SetBackdropColor(unpack(UI.ROW_HOV))
+            lbl:SetTextColor(1, 1, 1)
+        end)
+        delBtn:SetScript("OnLeave", function(s)
+            s:SetBackdropColor(unpack(UI.ROW))
+            lbl:SetTextColor(0.92, 0.92, 0.92)
+        end)
+        delBtn:SetScript("OnClick", function()
+            Diar:HideSceneTabContextMenu()
+            local idx = tonumber(menu and menu.sceneIndex)
+            if not idx then return end
+            StaticPopup_Show("RAIDSTRATSGG_DELETE_SCENE", idx, nil, idx)
+        end)
+
+        menu:SetScript("OnHide", function()
+            Diar:HideSceneTabContextDismissOverlay()
+        end)
+        self._sceneTabCtxMenu = menu
+    end
+
+    menu.sceneIndex = sceneIndex
+    menu:ClearAllPoints()
+    if anchor then
+        menu:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -4)
+    else
+        local x, y = GetCursorPosition()
+        local scale = UIParent:GetEffectiveScale()
+        menu:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", x / scale, y / scale)
+    end
+    menu:Show()
+    if menu.Raise then menu:Raise() end
+
+    if not self._sceneTabCtxDismiss then
+        local o = CreateFrame("Button", "RaidstratsSceneTabCtxDismiss", UIParent)
+        o:SetAllPoints(UIParent)
+        o:SetFrameStrata("FULLSCREEN_DIALOG")
+        o:EnableMouse(true)
+        o:SetAlpha(0.001)
+        self._sceneTabCtxDismiss = o
+    end
+    local dismiss = self._sceneTabCtxDismiss
+    dismiss:SetFrameLevel(math.max(0, (menu:GetFrameLevel() or 0) - 1))
+    dismiss:SetScript("OnClick", nil)
+    dismiss:SetScript("OnMouseUp", function(_, button)
+        if button == "LeftButton" or button == "RightButton" then
+            Diar:HideSceneTabContextMenu()
+        end
+    end)
+    dismiss:Show()
+end
+
+function Diar:DeletePlannerScene(sceneIndex)
+    sceneIndex = tonumber(sceneIndex)
+    if not sceneIndex then return false end
+    if sceneIndex <= 1 then
+        print("|cffff6666[Raidstrats.gg]|r Scene 1 cannot be deleted.")
+        return false
+    end
+
+    local pf = self.plannerFrame
+    local data = self.plannerData
+    if not pf or not data or not data.scenes or not data.scenes[sceneIndex] then
+        return false
+    end
+    local scenes = data.scenes
+    if #scenes <= 1 then
+        print("|cffff6666[Raidstrats.gg]|r Scene 1 cannot be deleted.")
+        return false
+    end
+
+    local currentIdx = pf.selectedSceneIndex or 1
+    table.remove(scenes, sceneIndex)
+    for i, scene in ipairs(scenes) do
+        local nm = tostring(scene.name or "")
+        if nm == "" or nm:match("^%d+$") or nm:match("^Scene%s+%d+$") then
+            scene.name = tostring(i)
+        end
+    end
+
+    local nextIdx = currentIdx
+    if nextIdx > #scenes then nextIdx = #scenes end
+    if currentIdx > sceneIndex then
+        nextIdx = currentIdx - 1
+    elseif currentIdx == sceneIndex then
+        nextIdx = math.max(1, math.min(sceneIndex, #scenes))
+    end
+
+    if self.PersistCurrentPlanToSaved then
+        self:PersistCurrentPlanToSaved()
+    end
+    if self.ShowPlannerViewer then
+        self:ShowPlannerViewer({ reloadOnly = true })
+    end
+    pf = self.plannerFrame
+    if pf then
+        pf.selectedSceneIndex = nextIdx
+        pf.__viewerViewportSceneIdx = nil
+    end
+    if self.StopPlannerAnimation then self:StopPlannerAnimation() end
+    if self.UpdateSceneTabHighlight then self:UpdateSceneTabHighlight() end
+    if self.RefreshPlannerScene then self:RefreshPlannerScene() end
+    if self.OnPlannerSceneChanged then self:OnPlannerSceneChanged() end
+    return true
+end
+
+function Diar:SelectPlannerScene(sceneIndex)
+    local pf = self.plannerFrame
+    local data = self.plannerData
+    if not pf or not data or not data.scenes then return false end
+    local idx = tonumber(sceneIndex)
+    if not idx then return false end
+    idx = math.max(1, math.min(#data.scenes, math.floor(idx + 0.0001)))
+    if idx == (pf.selectedSceneIndex or 1) then
+        if self.UpdateCompactSceneArrowButtons then
+            self:UpdateCompactSceneArrowButtons(pf)
+        end
+        return false
+    end
+    pf.selectedSceneIndex = idx
+    pf.__viewerViewportSceneIdx = nil
+    if not pf.nsrtSceneActive then
+        self:ApplyNsrtAssignmentForPlannerView(idx)
+    else
+        self.activeGroup = nil
+    end
+    self:StopPlannerAnimation()
+    self:UpdateSceneTabHighlight()
+    self:RefreshPlannerScene()
+    if self.OnPlannerSceneChanged then self:OnPlannerSceneChanged() end
+    if self.UpdateCompactSceneArrowButtons then
+        self:UpdateCompactSceneArrowButtons(pf)
+    end
+    return true
 end
 
 function Diar:HasSavedCompactPosition()
@@ -268,7 +376,6 @@ function Diar:StartCompactPositionPreview()
     self:ShowCompactPreviewChrome(pf, true)
     if self.UpdatePlannerModeToggleBtn then self.UpdatePlannerModeToggleBtn(pf) end
     pf:Show()
-    print("|cff00aaff[Raidstrats.gg]|r Preview: drag the compact window, then click Save.")
 end
 
 function Diar:EndCompactPositionPreview(save)
@@ -284,7 +391,6 @@ function Diar:EndCompactPositionPreview(save)
 
     if save then
         self:SavePlannerNsrtCompactLayoutState(pf)
-        print("|cff00aaff[Raidstrats.gg]|r Compact position saved for NSRT scenes.")
         if pf.compactMode and self.SetPlannerCompactMode then
             pf.nsrtSceneActive = nil
             pf.__skipCompactSaveOnce = true
@@ -455,6 +561,7 @@ function Diar:UpdatePaletteToggleButton(pf)
     local on = self:IsObjectPaletteEnabled()
     SetPlannerBtnText(btn, on and "Hide palette" or "Show palette")
     btn.selected = on
+    btn:Enable()
     if on then
         btn:SetBackdropColor(0.18, 0.38, 0.72, 1)
         if btn.label then btn.label:SetTextColor(1, 1, 1) end
@@ -745,6 +852,77 @@ local function SetCompactControlButtonsVisible(pf, visible)
     end
 end
 
+local function SetCompactSceneArrowButtonState(btn, enabled)
+    if not btn then return end
+    if enabled then
+        btn:Enable()
+        btn:SetAlpha(1)
+        btn:SetBackdropColor(unpack(UI.ROW))
+        if btn.label then btn.label:SetTextColor(0.92, 0.92, 0.92) end
+    else
+        btn:Disable()
+        btn:SetAlpha(0.5)
+        btn:SetBackdropColor(0.08, 0.09, 0.11, 0.92)
+        if btn.label then btn.label:SetTextColor(0.50, 0.50, 0.50) end
+    end
+end
+
+local function EnsureCompactSceneArrowButtons(pf)
+    if not pf then return end
+    if not pf.compactScenePrevBtn then
+        local prevBtn = CreatePlannerIconBtn(pf, "<", 28, 34)
+        prevBtn:SetScript("OnClick", function()
+            if Diar.SelectPlannerScene then
+                Diar:SelectPlannerScene((pf.selectedSceneIndex or 1) - 1)
+            end
+        end)
+        pf.compactScenePrevBtn = prevBtn
+    end
+    if not pf.compactSceneNextBtn then
+        local nextBtn = CreatePlannerIconBtn(pf, ">", 28, 34)
+        nextBtn:SetScript("OnClick", function()
+            if Diar.SelectPlannerScene then
+                Diar:SelectPlannerScene((pf.selectedSceneIndex or 1) + 1)
+            end
+        end)
+        pf.compactSceneNextBtn = nextBtn
+    end
+end
+
+function Diar:UpdateCompactSceneArrowButtons(pf)
+    pf = pf or self.plannerFrame
+    if not pf then return end
+    local data = self.plannerData
+    local sceneCount = (data and data.scenes and #data.scenes) or 0
+    local enabled = self.IsCompactSceneArrowsEnabled and self:IsCompactSceneArrowsEnabled()
+    local show = enabled
+        and pf.compactMode
+        and not pf.compactPreviewActive
+        and not pf.nsrtSceneActive
+        and sceneCount > 1
+    if not show then
+        if pf.compactScenePrevBtn then pf.compactScenePrevBtn:Hide() end
+        if pf.compactSceneNextBtn then pf.compactSceneNextBtn:Hide() end
+        return
+    end
+    EnsureCompactSceneArrowButtons(pf)
+    local prevBtn = pf.compactScenePrevBtn
+    local nextBtn = pf.compactSceneNextBtn
+    prevBtn:ClearAllPoints()
+    nextBtn:ClearAllPoints()
+    prevBtn:SetPoint("LEFT", pf, "LEFT", 6, 0)
+    nextBtn:SetPoint("RIGHT", pf, "RIGHT", -6, 0)
+    prevBtn:SetFrameStrata(pf:GetFrameStrata())
+    nextBtn:SetFrameStrata(pf:GetFrameStrata())
+    prevBtn:SetFrameLevel((pf:GetFrameLevel() or 0) + 25)
+    nextBtn:SetFrameLevel((pf:GetFrameLevel() or 0) + 25)
+    prevBtn:Show()
+    nextBtn:Show()
+    local idx = pf.selectedSceneIndex or 1
+    SetCompactSceneArrowButtonState(prevBtn, idx > 1)
+    SetCompactSceneArrowButtonState(nextBtn, idx < sceneCount)
+end
+
 local function IsMouseOverPlannerCompactChrome(pf)
     if not pf then return false end
     local check = { pf, pf.compactViewport, pf.canvas, pf.compactTopBar, pf.closeBtn, pf.modeToggleBtn }
@@ -816,9 +994,13 @@ local function UpdatePlannerModeToggleBtn(pf)
     pf.closeBtn:ClearAllPoints()
     pf.modeToggleBtn:ClearAllPoints()
     if pf.discordBtn then pf.discordBtn:ClearAllPoints() end
+    if pf.creditsBtn then pf.creditsBtn:ClearAllPoints() end
+    if pf.versionLabel then pf.versionLabel:ClearAllPoints() end
     if pf.compactMode then
         -- The Discord button is part of the expanded top bar only.
         if pf.discordBtn then pf.discordBtn:Hide() end
+        if pf.creditsBtn then pf.creditsBtn:Hide() end
+        if pf.versionLabel then pf.versionLabel:Hide() end
         if pf.compactPreviewActive then
             SetCompactControlButtonsVisible(pf, false)
             return
@@ -858,6 +1040,28 @@ local function UpdatePlannerModeToggleBtn(pf)
             pf.discordBtn:Show()
             pf.discordBtn:SetPoint("TOPRIGHT", pf.modeToggleBtn, "TOPLEFT", -2, 0)
         end
+        if pf.creditsBtn then
+            pf.creditsBtn:Show()
+            if pf.discordBtn then
+                pf.creditsBtn:SetPoint("TOPRIGHT", pf.discordBtn, "TOPLEFT", -2, 0)
+            else
+                pf.creditsBtn:SetPoint("TOPRIGHT", pf.modeToggleBtn, "TOPLEFT", -2, 0)
+            end
+        end
+        if pf.versionLabel then
+            pf.versionLabel:Show()
+            pf.versionLabel:SetJustifyH("RIGHT")
+            if pf.creditsBtn then
+                pf.versionLabel:SetPoint("RIGHT", pf.creditsBtn, "LEFT", -8, 0)
+            elseif pf.discordBtn then
+                pf.versionLabel:SetPoint("RIGHT", pf.discordBtn, "LEFT", -8, 0)
+            else
+                pf.versionLabel:SetPoint("RIGHT", pf.modeToggleBtn, "LEFT", -8, 0)
+            end
+        end
+    end
+    if Diar.UpdateCompactSceneArrowButtons then
+        Diar:UpdateCompactSceneArrowButtons(pf)
     end
 end
 
@@ -1155,6 +1359,76 @@ local PLANNER_MAX_ZOOM = 10
 
 local function GetPlannerItemRoot(pf, canvas)
     return canvas
+end
+
+local function IsNoPlanLoaded(data)
+    if not data then return true end
+    if data.savedEntryId then return false end
+    return tostring(data.planName or "") == "No plan"
+end
+
+local function SetNoPlanCanvasHint(pf, show)
+    if not pf or not pf.canvas then return end
+    if not pf.noPlanHint then
+        local hint = pf.canvas:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        hint:SetJustifyH("CENTER")
+        hint:SetJustifyV("MIDDLE")
+        hint:SetWordWrap(true)
+        hint:SetText("No plan loaded. Select a plan in the plan library on the right.")
+        hint:SetTextColor(0.62, 0.66, 0.72)
+        pf.noPlanHint = hint
+    end
+    pf.noPlanHint:ClearAllPoints()
+    pf.noPlanHint:SetPoint("CENTER", pf.canvas, "CENTER", 0, 0)
+    pf.noPlanHint:SetWidth(math.max(220, (pf.canvas:GetWidth() or 600) - 80))
+    if show then
+        pf.noPlanHint:Show()
+    else
+        pf.noPlanHint:Hide()
+    end
+end
+
+local function BuildPlannerInfoStripText()
+    local addonVer = "v0.0.2"
+    if Diar.GetAddonVersion then
+        addonVer = "v" .. tostring(Diar:GetAddonVersion() or "0.0.2")
+    end
+    return ("Raidstrats.gg - Raidplanner & Assignments   |   Author: Nairyana   |   Website: raidstrats.gg   |   %s (alpha build)"):format(addonVer)
+end
+
+local function EnsurePlannerInfoStrip(pf)
+    if not pf then return end
+    if not pf.infoStrip then
+        local strip = CreateFrame("Frame", nil, pf, "BackdropTemplate")
+        strip:SetHeight(18)
+        strip:SetPoint("TOPLEFT", pf, "BOTTOMLEFT", 0, 0)
+        strip:SetPoint("TOPRIGHT", pf, "BOTTOMRIGHT", 0, 0)
+        strip:EnableMouse(false)
+
+        local bg = strip:CreateTexture(nil, "BACKGROUND")
+        bg:SetAllPoints(strip)
+        local tb = UI.TOOLBAR or {0.05, 0.05, 0.08, 0.92}
+        bg:SetColorTexture(tb[1] or 0.05, tb[2] or 0.05, tb[3] or 0.08, tb[4] or 0.92)
+        strip.bg = bg
+
+        local txt = strip:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        txt:SetPoint("CENTER", strip, "CENTER", 0, 0)
+        txt:SetJustifyH("CENTER")
+        txt:SetTextColor(0.56, 0.60, 0.66)
+        strip.text = txt
+
+        local topLine = strip:CreateTexture(nil, "ARTWORK")
+        topLine:SetHeight(1)
+        topLine:SetPoint("TOPLEFT", strip, "TOPLEFT", 0, 0)
+        topLine:SetPoint("TOPRIGHT", strip, "TOPRIGHT", 0, 0)
+        topLine:SetColorTexture(unpack(UI.BORDER))
+        strip.topLine = topLine
+
+        pf.infoStrip = strip
+    end
+    if pf.infoStrip and pf.infoStrip.text then
+        pf.infoStrip.text:SetText(BuildPlannerInfoStripText())
+    end
 end
 
 -- Keep pan inside canvas/world bounds when zoomed in (mirrors ensureBackgroundVisible in panning.js).
@@ -2348,6 +2622,87 @@ function Diar:SanitizePlanData(data)
     for _, scene in ipairs(data.scenes) do
         if scene.items then
             for _, item in ipairs(scene.items) do
+                if type(item) == "table" then
+                    local kindLower = tostring(item.kind or ""):lower()
+                    local typeLower = tostring(item.type or item.objectType or ""):lower()
+                    local isBossObject = (kindLower == "boss")
+                        or (typeLower == "boss")
+                        or (typeLower == "bossobject")
+                        or (typeLower == "boss_icon")
+                    local isTrashObject = (kindLower == "trash")
+                        or (typeLower == "trash")
+                        or (typeLower == "trash_icon")
+                    if not isBossObject and (kindLower == "" or kindLower == "image" or kindLower == "icon") then
+                        local hasBossHints = (item.boss == true)
+                            or (item.isBoss == true)
+                            or (item.bossId ~= nil)
+                            or (item.encounterId ~= nil)
+                            or (item.bossName ~= nil)
+                            or (item.boss_image ~= nil)
+                            or (item.bossImage ~= nil)
+                            or (item.boss_render_image ~= nil)
+                            or (item.bossRenderImage ~= nil)
+                        if hasBossHints then
+                            isBossObject = true
+                        end
+                    end
+                    if isBossObject then
+                        item.kind = "shape"
+                        item.shape = "circle"
+                        item.bossBadge = true
+                        item.bossPortrait = nil
+                        item.icon = nil
+                        item.label = ""
+                        item.labelAttached = nil
+                        if type(item.x) ~= "number" then item.x = 42 end
+                        if type(item.y) ~= "number" then item.y = 28 end
+                        if type(item.w) ~= "number" then item.w = 12 end
+                        if type(item.h) ~= "number" then item.h = 12 end
+                        if type(item.fill) ~= "string" or item.fill == "" then
+                            item.fill = "#7f1d1d"
+                        end
+                        if type(item.stroke) ~= "string" or item.stroke == "" then
+                            item.stroke = "#f8fafc"
+                        end
+                        if type(item.strokeWidth) ~= "number" then
+                            item.strokeWidth = 0.7
+                        end
+                        if type(item.opacity) ~= "number" then
+                            item.opacity = 0.95
+                        end
+                    elseif isTrashObject then
+                        local rawLabel = ""
+                        if type(item.label) == "string" and item.label ~= "" then
+                            rawLabel = item.label
+                        elseif type(item.name) == "string" and item.name ~= "" then
+                            rawLabel = item.name
+                        end
+                        item.kind = "shape"
+                        item.shape = "circle"
+                        item.trashBadgeLabel = rawLabel ~= "" and rawLabel or "Trash"
+                        item.bossBadge = nil
+                        item.bossPortrait = nil
+                        item.icon = nil
+                        item.label = ""
+                        item.labelAttached = nil
+                        if type(item.x) ~= "number" then item.x = 42 end
+                        if type(item.y) ~= "number" then item.y = 28 end
+                        if type(item.w) ~= "number" then item.w = 12 end
+                        if type(item.h) ~= "number" then item.h = 12 end
+                        if type(item.fill) ~= "string" or item.fill == "" then
+                            item.fill = "#374151"
+                        end
+                        if type(item.stroke) ~= "string" or item.stroke == "" then
+                            item.stroke = "#e5e7eb"
+                        end
+                        if type(item.strokeWidth) ~= "number" then
+                            item.strokeWidth = 0.6
+                        end
+                        if type(item.opacity) ~= "number" then
+                            item.opacity = 0.95
+                        end
+                    end
+                end
                 item.widget = nil
                 item.currentX = nil
                 item.currentY = nil
@@ -2435,6 +2790,14 @@ end
 -- Fallback (nothing numbered): circle/ellipse reading order (rows top->bottom,
 -- left->right), dropping any oversized "container" circle (area >= 2x median area).
 -- Returns map[itemIndex] = spotNumber, or nil when there are no spots.
+local function IsAutoSpotExcludedItem(item)
+    if not item then return false end
+    if item.bossBadge == true then return true end
+    if type(item.trashBadgeLabel) == "string" and item.trashBadgeLabel ~= "" then return true end
+    local k = tostring(item.kind or ""):lower()
+    return k == "boss" or k == "trash"
+end
+
 local function ResolveSceneSpots(scene)
     if not scene or not scene.items then return nil end
 
@@ -2468,9 +2831,10 @@ local function ResolveSceneSpots(scene)
     end
 
     -- Fallback: auto-order circles by reading position.
+    -- Exclude boss/add badges from auto spots; they only get spots when explicitly indexed in import.
     local circles = {}
     for i, item in ipairs(scene.items) do
-        if item.kind == "shape" then
+        if item.kind == "shape" and not IsAutoSpotExcludedItem(item) then
             local shp = tostring(item.shape or ""):lower()
             if shp == "circle" or shp == "ellipse" then
                 local iw = tonumber(item.w) or 0
@@ -2768,11 +3132,58 @@ function Diar.RenderSceneItem(addon, pf, root, cw, ch, vc, minSize, item, itemIn
     local shp = tostring(item.shape or ""):lower()
     item.currentX = nil
     item.currentY = nil
+    local xp = (type(item.x) == "number" and item.x or 0) / 100
+    local yp = (type(item.y) == "number" and item.y or 0) / 100
 
     local isStatic = (k == "line")
         or (k == "shape" and (IsFrontalItem(item) or HasQuadCorners(item) or shp == "donut" or shp == "triangle" or shp == "cone"))
+    local allowStaticDragProxy = (k == "shape" and (shp == "triangle" or shp == "cone"))
 
     if isStatic then
+        if allowStaticDragProxy and not IsFrontalItem(item) then
+            local wp = (type(item.w) == "number" and item.w or 4) / 100
+            local hp = (type(item.h) == "number" and item.h or 4) / 100
+            local w = item.widget
+            if not IsPlannerWidgetFrame(w) then
+                item.widget = nil
+                w = CreateFrame("Frame", nil, root, "BackdropTemplate")
+                item.widget = w
+            end
+            ActivatePlannerWidget(w, root)
+            w:SetFrameLevel(ResolveItemFrameLevel(root, item, itemIndex, 35))
+            w:ClearAllPoints()
+            w.baseWorldW = math.max(minSize, cw * wp)
+            w.baseWorldH = math.max(minSize, ch * hp)
+            local iw = math.max(minSize, SceneViewScale(vc, w.baseWorldW))
+            local ih = math.max(minSize, SceneViewScale(vc, w.baseWorldH))
+            w:SetSize(iw, ih)
+            w.basePixelW = iw
+            w.basePixelH = ih
+            local px, py = SceneViewPctToCanvas(vc, cw, ch, xp, yp)
+            w:SetPoint("TOPLEFT", root, "TOPLEFT", px, -py)
+            if w.tex then
+                w.tex:Hide()
+            end
+            HideWidgetStroke(w)
+            ClearBackdropStroke(w)
+            if w.text then w.text:Hide() end
+            if w.label then w.label:Hide() end
+            w.__suppressed = nil
+            w.__ringOverride = nil
+            w.__groupSpotMine = nil
+            w.itemIndex = itemIndex
+            w.baseX = xp
+            w.baseY = yp
+            item.currentX = xp
+            item.currentY = yp
+            if addon.AttachPlannerItemContextMenu then
+                addon:AttachPlannerItemContextMenu(w, itemIndex, item)
+            end
+            if w.slotBadge then
+                w.slotBadge:Hide()
+            end
+            return
+        end
         if IsPlannerWidgetFrame(item.widget) then
             ReleasePlannerWidget(pf, item.widget)
         end
@@ -2783,8 +3194,6 @@ function Diar.RenderSceneItem(addon, pf, root, cw, ch, vc, minSize, item, itemIn
     local wp = (type(item.w) == "number" and item.w or 4) / 100
     local hp = (type(item.h) == "number" and item.h or 4) / 100
     local label = (item.label and item.label ~= "") and item.label or ""
-    local xp = (type(item.x) == "number" and item.x or 0) / 100
-    local yp = (type(item.y) == "number" and item.y or 0) / 100
 
     local w = item.widget
     if not IsPlannerWidgetFrame(w) then
@@ -2873,7 +3282,26 @@ function Diar.RenderSceneItem(addon, pf, root, cw, ch, vc, minSize, item, itemIn
             w.tex:SetColorTexture(r, g, b, a)
             w.tex:Show()
         end
-        Diar.ApplyWidgetLabel(w, item, label, sceneCtx.hasSelfOnPlan, sceneCtx.playerKey, addon:IsPlannerPreviewNamesVisible())
+        if item.bossBadge == true or item.trashBadgeLabel then
+            if not w.text then
+                w.text = w:CreateFontString(nil, "OVERLAY")
+                w.text:SetPoint("CENTER", w, "CENTER", 0, 0)
+                w.text:SetJustifyH("CENTER")
+                w.text:SetJustifyV("MIDDLE")
+            end
+            local area = math.max(10, math.min(w:GetWidth() or 10, w:GetHeight() or 10))
+            local fontSize = math.max(8, math.floor(area * 0.24))
+            w.text:SetFont(STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF", fontSize, "OUTLINE")
+            w.text:SetTextColor(1, 1, 1, 1)
+            if item.bossBadge == true then
+                w.text:SetText("Boss")
+            else
+                w.text:SetText(tostring(item.trashBadgeLabel or "Trash"))
+            end
+            w.text:Show()
+        else
+            Diar.ApplyWidgetLabel(w, item, label, sceneCtx.hasSelfOnPlan, sceneCtx.playerKey, addon:IsPlannerPreviewNamesVisible())
+        end
     else
         Diar.RenderIconWidget(addon, w, item, label, sceneCtx.hasSelfOnPlan, sceneCtx.playerKey, spotNum, isMySpot, ch)
     end
@@ -2961,7 +3389,7 @@ local function SetPlannerChromeVisible(pf, visible)
     if not pf then return end
     local elems = {
         pf.title, pf.brandTitle, pf.versionLabel, pf.creditsBtn, pf.toolbar, pf.controls, pf.timeline,
-        pf.patreonPanel, pf.savedPlansPanel, pf.objectPalettePanel,
+        pf.patreonPanel, pf.savedPlansPanel, pf.objectPalettePanel, pf.infoStrip,
     }
     for _, el in ipairs(elems) do
         if el then
@@ -3117,21 +3545,14 @@ local function ApplyPlannerNormalLayout(pf, keepFrameSize)
 
     if pf.versionLabel then
         pf.versionLabel:Show()
-        pf.versionLabel:ClearAllPoints()
-        pf.versionLabel:SetPoint("BOTTOMRIGHT", pf, "BOTTOMRIGHT", -UI_PAD, 8)
         pf.versionLabel:SetJustifyH("RIGHT")
         if Diar.UpdatePlannerVersionLabel then
             Diar:UpdatePlannerVersionLabel(pf)
         end
     end
+    EnsurePlannerInfoStrip(pf)
     if pf.creditsBtn then
         pf.creditsBtn:Show()
-        pf.creditsBtn:ClearAllPoints()
-        if pf.versionLabel then
-            pf.creditsBtn:SetPoint("BOTTOMRIGHT", pf.versionLabel, "TOPRIGHT", 0, 6)
-        else
-            pf.creditsBtn:SetPoint("BOTTOMRIGHT", pf, "BOTTOMRIGHT", -UI_PAD, 24)
-        end
     end
     if pf.brandTitle then
         pf.brandTitle:Show()
@@ -3174,7 +3595,7 @@ local function ApplyPlannerNormalLayout(pf, keepFrameSize)
         pf.savedPlansPanel:Show()
         pf.savedPlansPanel:ClearAllPoints()
         pf.savedPlansPanel:SetPoint("TOPLEFT", pf.patreonPanel, "BOTTOMLEFT", 0, -RIGHT_COL_GAP)
-        pf.savedPlansPanel:SetPoint("BOTTOMLEFT", pf.timeline, "BOTTOMRIGHT", 12, 0)
+        pf.savedPlansPanel:SetPoint("BOTTOMLEFT", pf.timeline, "BOTTOMRIGHT", 12, RIGHT_PANEL_BOTTOM_GAP)
     end
     if pf.resizeGrip then
         pf.resizeGrip:Show()
@@ -3621,21 +4042,13 @@ function Diar:ShowPlannerViewer(opts)
         pf.title:SetJustifyH("LEFT")
         pf.title:SetTextColor(0.95, 0.95, 0.95)
 
-        pf.versionLabel = pf:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        pf.versionLabel:SetPoint("BOTTOMRIGHT", pf, "BOTTOMRIGHT", -UI_PAD, 8)
-        pf.versionLabel:SetJustifyH("RIGHT")
-        pf.versionLabel:SetTextColor(0.45, 0.48, 0.52)
-        if Diar.UpdatePlannerVersionLabel then
-            Diar:UpdatePlannerVersionLabel(pf)
-        else
-            pf.versionLabel:SetText("Version 0.0.2")
-        end
         local creditsBtn = CreatePlannerIconBtn(pf, "Credits", 72, 22)
-        creditsBtn:SetPoint("BOTTOMRIGHT", pf.versionLabel, "TOPRIGHT", 0, 6)
+        creditsBtn:SetPoint("TOPRIGHT", discordBtn, "TOPLEFT", -2, 0)
         creditsBtn:SetScript("OnClick", function()
             if Diar.ShowPlannerCreditsDialog then Diar:ShowPlannerCreditsDialog() end
         end)
         pf.creditsBtn = creditsBtn
+        EnsurePlannerInfoStrip(pf)
 
         -- Toolbar: scene tabs (left) + plan link (right), spanning the canvas width
         local toolbar = CreateFrame("Frame", nil, pf, "BackdropTemplate")
@@ -3821,18 +4234,44 @@ function Diar:ShowPlannerViewer(opts)
         savedCount:SetTextColor(0.45, 0.50, 0.58)
         pf.savedPlansCount = savedCount
 
-        local savedSubtitle = rightPanel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        savedSubtitle:SetPoint("TOPLEFT", savedTitle, "BOTTOMLEFT", 0, -2)
-        savedSubtitle:SetPoint("RIGHT", rightPanel, "RIGHT", -12, 0)
-        savedSubtitle:SetJustifyH("LEFT")
-        savedSubtitle:SetWordWrap(true)
-        savedSubtitle:SetTextColor(0.48, 0.52, 0.58)
-        savedSubtitle:SetText("Click a plan to load it")
-        pf.savedPlansSubtitle = savedSubtitle
+        local savedSearchBoxWrap = CreateFrame("Frame", nil, rightPanel, "BackdropTemplate")
+        savedSearchBoxWrap:SetPoint("TOPLEFT", savedTitle, "BOTTOMLEFT", 0, -8)
+        savedSearchBoxWrap:SetPoint("RIGHT", rightPanel, "RIGHT", -12, 0)
+        savedSearchBoxWrap:SetHeight(22)
+        SetBackdrop(savedSearchBoxWrap, {0.05, 0.05, 0.07, 1}, UI.BORDER, 1)
+        pf.savedPlansSearchBoxWrap = savedSearchBoxWrap
+
+        local savedSearchBox = CreateFrame("EditBox", nil, savedSearchBoxWrap)
+        savedSearchBox:SetAutoFocus(false)
+        savedSearchBox:SetPoint("TOPLEFT", savedSearchBoxWrap, "TOPLEFT", 8, -2)
+        savedSearchBox:SetPoint("BOTTOMRIGHT", savedSearchBoxWrap, "BOTTOMRIGHT", -8, 2)
+        savedSearchBox:SetTextInsets(0, 0, 0, 0)
+        savedSearchBox:SetMaxLetters(80)
+        savedSearchBox:SetText("")
+        savedSearchBox:SetFontObject(GameFontHighlightSmall)
+        savedSearchBox:SetTextColor(0.92, 0.92, 0.92)
+        savedSearchBox:SetScript("OnEditFocusGained", function()
+            savedSearchBoxWrap:SetBackdropBorderColor(unpack(UI.ACCENT))
+        end)
+        savedSearchBox:SetScript("OnEditFocusLost", function()
+            savedSearchBoxWrap:SetBackdropBorderColor(unpack(UI.BORDER))
+        end)
+        savedSearchBox:SetScript("OnEscapePressed", function(s)
+            s:ClearFocus()
+        end)
+        savedSearchBox:SetScript("OnEnterPressed", function(s)
+            s:ClearFocus()
+        end)
+        pf.savedPlansSearchBox = savedSearchBox
+
+        local savedRaidFilterBtn = CreatePlannerIconBtn(rightPanel, "Raid: All", 184, 22)
+        savedRaidFilterBtn:SetPoint("TOPLEFT", savedSearchBoxWrap, "BOTTOMLEFT", 0, -6)
+        savedRaidFilterBtn:SetPoint("RIGHT", savedSearchBoxWrap, "RIGHT", 0, 0)
+        pf.savedPlansRaidFilterBtn = savedRaidFilterBtn
 
         local savedDivider = rightPanel:CreateTexture(nil, "ARTWORK")
         savedDivider:SetHeight(1)
-        savedDivider:SetPoint("TOP", savedSubtitle, "BOTTOM", 0, -8)
+        savedDivider:SetPoint("TOP", savedRaidFilterBtn, "BOTTOM", 0, -8)
         savedDivider:SetPoint("LEFT", rightPanel, "LEFT", 10, 0)
         savedDivider:SetPoint("RIGHT", rightPanel, "RIGHT", -10, 0)
         savedDivider:SetColorTexture(unpack(UI.BORDER))
@@ -3971,81 +4410,83 @@ function Diar:ShowPlannerViewer(opts)
     self:UpdatePlannerPlanLink()
 
     local scenes = data.scenes
+    local showSceneTabs = not IsNoPlanLoaded(data)
     -- Build scene tab buttons (reuse existing buttons to avoid leaking frames)
     local container = pf.sceneTabsContainer
     local tabButtons = pf.sceneTabButtons or {}
     pf.sceneTabButtons = {}
     local prevBtn = nil
-    for i, scene in ipairs(scenes) do
-        local name = (scene.name and scene.name ~= "") and scene.name or tostring(i)
-        local btn = tabButtons[i]
-        if not btn then
-            btn = CreatePlannerIconBtn(container, name, 56, SCENE_TAB_H)
-        else
-            btn:Show()
-            btn:ClearAllPoints()
-            btn:SetHeight(SCENE_TAB_H)
-            SetPlannerBtnText(btn, name)
-        end
-        btn:SetScript("OnClick", function()
-            pf.selectedSceneIndex = i
-            pf.__viewerViewportSceneIdx = nil
-            if not pf.nsrtSceneActive then
-                Diar:ApplyNsrtAssignmentForPlannerView(i)
+    local visibleSceneCount = 0
+    if showSceneTabs then
+        for i, scene in ipairs(scenes) do
+            local name = (scene.name and scene.name ~= "") and scene.name or tostring(i)
+            local btn = tabButtons[i]
+            if not btn then
+                btn = CreatePlannerIconBtn(container, name, 56, SCENE_TAB_H)
             else
-                self.activeGroup = nil
+                btn:Show()
+                btn:ClearAllPoints()
+                btn:SetHeight(SCENE_TAB_H)
+                SetPlannerBtnText(btn, name)
             end
-            self:StopPlannerAnimation()
-            self:UpdateSceneTabHighlight()
-            self:RefreshPlannerScene()
-            if self.OnPlannerSceneChanged then self:OnPlannerSceneChanged() end
-        end)
-        if btn.leaderBadge and btn.leaderBadge.GetObjectType and btn.leaderBadge:GetObjectType() ~= "Texture" then
-            btn.leaderBadge:Hide()
-            btn.leaderBadge = nil
-        end
-        if not btn.leaderBadge then
-            local icon = btn:CreateTexture(nil, "OVERLAY")
-            icon:SetSize(11, 11)
-            icon:SetPoint("TOPRIGHT", btn, "TOPRIGHT", -1, -2)
-            icon:SetTexture(GROUP_LEADER_ICON)
-            icon:Hide()
-            btn.leaderBadge = icon
-        end
-        btn:SetScript("OnEnter", function(s)
-            s:SetBackdropColor(unpack(UI.ROW_HOV))
-            if s.selected then
-                s.label:SetTextColor(1, 1, 1)
-            elseif s.leaderScene then
-                s.label:SetTextColor(0.65, 1, 0.72)
+            btn:SetScript("OnClick", function()
+                self:SelectPlannerScene(i)
+            end)
+            btn:SetScript("OnMouseUp", function(s, button)
+                if button ~= "RightButton" then return end
+                if i <= 1 then return end
+                if Diar.ShowSceneTabContextMenu then
+                    Diar:ShowSceneTabContextMenu(s, i)
+                end
+            end)
+            if btn.leaderBadge and btn.leaderBadge.GetObjectType and btn.leaderBadge:GetObjectType() ~= "Texture" then
+                btn.leaderBadge:Hide()
+                btn.leaderBadge = nil
+            end
+            if not btn.leaderBadge then
+                local icon = btn:CreateTexture(nil, "OVERLAY")
+                icon:SetSize(11, 11)
+                icon:SetPoint("TOPRIGHT", btn, "TOPRIGHT", -1, -2)
+                icon:SetTexture(GROUP_LEADER_ICON)
+                icon:Hide()
+                btn.leaderBadge = icon
+            end
+            btn:SetScript("OnEnter", function(s)
+                s:SetBackdropColor(unpack(UI.ROW_HOV))
+                if s.selected then
+                    s.label:SetTextColor(1, 1, 1)
+                elseif s.leaderScene then
+                    s.label:SetTextColor(0.65, 1, 0.72)
+                else
+                    s.label:SetTextColor(1, 1, 1)
+                end
+                if s.leaderScene and GameTooltip then
+                    GameTooltip:SetOwner(s, "ANCHOR_BOTTOM")
+                    GameTooltip:SetText("Raid leader scene", 0.55, 0.98, 0.62)
+                    GameTooltip:AddLine("Your leader is viewing this scene.", 0.78, 0.80, 0.84, true)
+                    GameTooltip:Show()
+                end
+            end)
+            btn:SetScript("OnLeave", function(s)
+                if GameTooltip then GameTooltip:Hide() end
+                Diar:UpdateSceneTabHighlight()
+            end)
+            if prevBtn then
+                btn:SetPoint("LEFT", prevBtn, "RIGHT", 3, 0)
             else
-                s.label:SetTextColor(1, 1, 1)
+                btn:SetPoint("LEFT", container, "LEFT", 0, 0)
             end
-            if s.leaderScene and GameTooltip then
-                GameTooltip:SetOwner(s, "ANCHOR_BOTTOM")
-                GameTooltip:SetText("Raid leader scene", 0.55, 0.98, 0.62)
-                GameTooltip:AddLine("Your leader is viewing this scene.", 0.78, 0.80, 0.84, true)
-                GameTooltip:Show()
+            do
+                local w = 44
+                if btn.label then w = btn.label:GetStringWidth() + 18 end
+                btn:SetWidth(math.min(math.max(w, 40), 110))
             end
-        end)
-        btn:SetScript("OnLeave", function(s)
-            if GameTooltip then GameTooltip:Hide() end
-            Diar:UpdateSceneTabHighlight()
-        end)
-        if prevBtn then
-            btn:SetPoint("LEFT", prevBtn, "RIGHT", 3, 0)
-        else
-            btn:SetPoint("LEFT", container, "LEFT", 0, 0)
+            tinsert(pf.sceneTabButtons, btn)
+            prevBtn = btn
+            visibleSceneCount = visibleSceneCount + 1
         end
-        do
-            local w = 44
-            if btn.label then w = btn.label:GetStringWidth() + 18 end
-            btn:SetWidth(math.min(math.max(w, 40), 110))
-        end
-        tinsert(pf.sceneTabButtons, btn)
-        prevBtn = btn
     end
-    for i = #scenes + 1, #tabButtons do
+    for i = visibleSceneCount + 1, #tabButtons do
         if tabButtons[i] then tabButtons[i]:Hide() end
     end
     -- Control buttons (under canvas): Stop and Play/Pause
@@ -4340,12 +4781,16 @@ function Diar:RefreshPlannerScene()
     local pf = self.plannerFrame
     local data = self.plannerData
     if not pf or not data or not data.scenes then return end
+    local noPlanLoaded = IsNoPlanLoaded(data)
 
     local idx = pf.selectedSceneIndex or 1
     if idx < 1 or idx > #data.scenes then
         idx = 1
         pf.selectedSceneIndex = idx
         self:UpdateSceneTabHighlight()
+    end
+    if self.UpdateCompactSceneArrowButtons then
+        self:UpdateCompactSceneArrowButtons(pf)
     end
     local scene = data.scenes[idx]
     if not scene then
@@ -4366,10 +4811,15 @@ function Diar:RefreshPlannerScene()
         pf.sceneViewContext = nil
         pf.viewerViewport = nil
         pf.__viewerViewportSceneIdx = nil
+        SetNoPlanCanvasHint(pf, noPlanLoaded)
         Diar:UpdatePlannerControlButtons()
         Diar:UpdatePlannerPlayhead()
+        if self.UpdateCompactSceneArrowButtons then
+            self:UpdateCompactSceneArrowButtons(pf)
+        end
         return
     end
+    SetNoPlanCanvasHint(pf, noPlanLoaded)
     scene.items = scene.items or {}
 
     local canvas = pf.canvas
@@ -4471,6 +4921,9 @@ function Diar:RefreshPlannerScene()
     if pf.nsrtSceneActive and pf.compactMode then
         ApplyPlannerChromeTransparent(pf)
         UpdatePlannerModeToggleBtn(pf)
+    end
+    if self.UpdateCompactSceneArrowButtons then
+        self:UpdateCompactSceneArrowButtons(pf)
     end
 end
 
@@ -4778,6 +5231,9 @@ function Diar:ClearPlannerDisplay()
     pf.animPaused = false
     pf.pausedTime = nil
     pf.animStart = nil
+    if pf.noPlanHint then
+        pf.noPlanHint:Hide()
+    end
     self:UpdatePlannerControlButtons()
     GameTooltip:Hide()
     -- Clear all item widget refs so we don't hold references to frames we're removing

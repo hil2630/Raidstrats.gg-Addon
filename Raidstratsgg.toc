@@ -23,6 +23,7 @@ version-check.lua
 minimap-button.lua
 nsrt-integration.lua
 planner\core\planner-shared.lua
+planner\scene\planner-scene-shared.lua
 planner\scene\planner-scene.lua
 planner\anim\planner-path.lua
 planner\anim\planner-stationary.lua

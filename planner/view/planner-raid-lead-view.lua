@@ -21,7 +21,6 @@ local RAID_VIEW_MIN_H = 96
 local RAID_CHECK_BAR_H = 26
 local RAID_NOTIF_BTN_H = 28
 local ROW_H = 22
-local NOTIF_COOLDOWN = 30
 local POLL_ACK_WAIT = 4
 
 local UI = {
@@ -99,6 +98,9 @@ function Diar:SetRaidCheckEnabled(pf, enabled)
     end
     if self.ApplyRaidLeadViewLayout then
         self:ApplyRaidLeadViewLayout(pf)
+    end
+    if not enabled and self.SetRaidCheckAutoSwitchEnabled then
+        self:SetRaidCheckAutoSwitchEnabled(pf, false)
     end
     if enabled then
         self:SendPlanViewPoll()
@@ -181,6 +183,17 @@ function Diar:SetPlanViewPresence(sender, open, activePlanKey, hasPlan, targetPl
         existing.activeSceneIndex = nil
     end
     existing.t = GetTime()
+    self._planViewPresence[key] = existing
+end
+
+function Diar:SetPlanViewAutoSwitchState(sender, planKey, approved)
+    local key = PlayerNameKey(sender and (Ambiguate and Ambiguate(sender, "short") or sender) or sender)
+    if not key then return end
+    self._planViewPresence = self._planViewPresence or {}
+    local existing = self._planViewPresence[key] or {}
+    existing.autoSwitchPlanKey = planKey or ""
+    existing.autoSwitchApproved = approved and true or false
+    existing.autoSwitchAt = GetTime()
     self._planViewPresence[key] = existing
 end
 
@@ -416,6 +429,10 @@ end
 
 function Diar:OnPlannerSceneChanged()
     self:BroadcastPlanViewPresence(self.plannerFrame and self.plannerFrame:IsShown())
+    if self.BroadcastRaidCheckSceneSwitch and self:IsRaidCheckAutoSwitchEnabled() then
+        local pf = self.plannerFrame
+        self:BroadcastRaidCheckSceneSwitch((pf and pf.selectedSceneIndex) or 1)
+    end
     if self.UpdateSceneTabHighlight then
         self:UpdateSceneTabHighlight()
     end
@@ -517,6 +534,7 @@ function Diar:RefreshRaidLeadView(pf)
     local iAmViewing = pf:IsShown()
     local iHavePlan = self:PlayerHasPlanKey(currentKey, currentPlanId)
     local debugMode = self.IsRsggDebug and self:IsRsggDebug()
+    local showAutoSwitchState = self:IsRaidCheckAutoSwitchEnabled(pf)
 
     local sorted = {}
     for i, member in ipairs(members) do
@@ -531,10 +549,27 @@ function Diar:RefreshRaidLeadView(pf)
             )
         end
         if status == "viewing" then viewingCount = viewingCount + 1 end
+        local key = PlayerNameKey(member.name)
+        local entry = key and presence[key] or nil
+        local autoSwitchApproved = nil
+        if showAutoSwitchState and status == "viewing" then
+            if isMe then
+                autoSwitchApproved = true
+            elseif entry and PresenceEntryFresh(entry) then
+                if currentKey == "" or entry.autoSwitchPlanKey == "" or entry.autoSwitchPlanKey == currentKey then
+                    autoSwitchApproved = entry.autoSwitchApproved == true
+                else
+                    autoSwitchApproved = false
+                end
+            else
+                autoSwitchApproved = false
+            end
+        end
         sorted[#sorted + 1] = {
             name = member.name,
             status = status,
             statusLabel = label,
+            autoSwitchApproved = autoSwitchApproved,
         }
     end
 
@@ -560,6 +595,24 @@ function Diar:RefreshRaidLeadView(pf)
             row.statusText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
             row.statusText:SetPoint("RIGHT", row, "RIGHT", -2, 0)
             row.statusText:SetJustifyH("RIGHT")
+
+            local autoSwitchBtn = CreateFrame("Button", nil, row)
+            autoSwitchBtn:SetSize(14, 14)
+            autoSwitchBtn:SetPoint("RIGHT", row.statusText, "LEFT", -4, 0)
+            autoSwitchBtn:EnableMouse(true)
+            autoSwitchBtn.icon = autoSwitchBtn:CreateTexture(nil, "OVERLAY")
+            autoSwitchBtn.icon:SetAllPoints(autoSwitchBtn)
+            autoSwitchBtn:Hide()
+            autoSwitchBtn:SetScript("OnEnter", function(s)
+                if not s.tooltipText then return end
+                GameTooltip:SetOwner(s, "ANCHOR_LEFT")
+                GameTooltip:SetText(s.tooltipText, 1, 1, 1)
+                GameTooltip:Show()
+            end)
+            autoSwitchBtn:SetScript("OnLeave", function()
+                GameTooltip:Hide()
+            end)
+            row.autoSwitchBtn = autoSwitchBtn
             pf.raidLeadRows[i] = row
         end
         row:Show()
@@ -590,6 +643,21 @@ function Diar:RefreshRaidLeadView(pf)
             row.statusText:SetTextColor(unpack(UI.IDLE))
         end
         row.statusText:SetText(member.statusLabel)
+        if row.autoSwitchBtn then
+            if showAutoSwitchState and status == "viewing" then
+                row.autoSwitchBtn:Show()
+                if member.autoSwitchApproved then
+                    row.autoSwitchBtn.icon:SetTexture("Interface\\RaidFrame\\ReadyCheck-Ready")
+                    row.autoSwitchBtn.tooltipText = "Auto-switch enabled"
+                else
+                    row.autoSwitchBtn.icon:SetTexture("Interface\\RaidFrame\\ReadyCheck-NotReady")
+                    row.autoSwitchBtn.tooltipText = "Auto-switch not enabled"
+                end
+            else
+                row.autoSwitchBtn:Hide()
+                row.autoSwitchBtn.tooltipText = nil
+            end
+        end
 
         y = y + ROW_H
     end
@@ -613,19 +681,301 @@ function Diar:CanSendRaidCheckNotif()
     return true
 end
 
+function Diar:IsRaidCheckAutoSwitchEnabled(pf)
+    pf = pf or self.plannerFrame
+    return pf and pf.raidCheckAutoSwitchEnabled == true
+end
+
+local function IsSenderGroupLeader(sender)
+    local senderKey = PlayerNameKey(sender and (Ambiguate and Ambiguate(sender, "short") or sender) or sender)
+    if not senderKey then return false end
+    return senderKey == Diar:GetGroupLeaderNameKey()
+end
+
+function Diar:BuildRaidCheckAutoSwitchMsg(enabled)
+    local planKey = SanitizeCommField(self:GetCurrentPlanPresenceKey())
+    return table.concat({ "RASC", enabled and "1" or "0", planKey }, SEP)
+end
+
+function Diar:BuildRaidCheckAutoSwitchResponseMsg(planKey, approved)
+    return table.concat({ "RASR", approved and "1" or "0", SanitizeCommField(planKey) }, SEP)
+end
+
+function Diar:BroadcastRaidCheckAutoSwitchState(enabled)
+    if not self:CanSendRaidCheckNotif() then return false end
+    local chan = self.GetGroupChatChannel and self:GetGroupChatChannel()
+    if not chan then return false end
+    local prefix = self.COMM_PLAN_PREFIX or "RAIDSTRATS_PLAN"
+    self:SendCommMessage(prefix, self:BuildRaidCheckAutoSwitchMsg(enabled), chan)
+    return true
+end
+
+function Diar:BroadcastRaidCheckAutoSwitchResponse(planKey, approved)
+    if not IsInGroup() then return false end
+    local chan = self.GetGroupChatChannel and self:GetGroupChatChannel()
+    if not chan then return false end
+    local prefix = self.COMM_PLAN_PREFIX or "RAIDSTRATS_PLAN"
+    self:SendCommMessage(prefix, self:BuildRaidCheckAutoSwitchResponseMsg(planKey, approved), chan)
+    return true
+end
+
+function Diar:BuildRaidCheckSceneSwitchMsg(sceneIndex)
+    sceneIndex = tonumber(sceneIndex) or 1
+    sceneIndex = math.max(1, math.floor(sceneIndex + 0.0001))
+    local planKey = SanitizeCommField(self:GetCurrentPlanPresenceKey())
+    return table.concat({ "RSSC", tostring(sceneIndex), planKey }, SEP)
+end
+
+function Diar:BroadcastRaidCheckSceneSwitch(sceneIndex)
+    if not self:IsRaidCheckAutoSwitchEnabled() then return false end
+    if not self:CanSendRaidCheckNotif() then return false end
+    local chan = self.GetGroupChatChannel and self:GetGroupChatChannel()
+    if not chan then return false end
+    local prefix = self.COMM_PLAN_PREFIX or "RAIDSTRATS_PLAN"
+    self:SendCommMessage(prefix, self:BuildRaidCheckSceneSwitchMsg(sceneIndex), chan)
+    return true
+end
+
+function Diar:SetRaidCheckAutoSwitchEnabled(pf, enabled, opts)
+    pf = pf or self.plannerFrame
+    if not pf then return false end
+    enabled = not not enabled
+    opts = opts or {}
+
+    if enabled and not self:CanSendRaidCheckNotif() then
+        print("|cffff6666[Raidstrats.gg]|r Only the raid leader can enable Auto-switch scene for all.")
+        enabled = false
+    end
+    if enabled and not self:IsRaidCheckEnabled(pf) then
+        enabled = false
+    end
+
+    local changed = (pf.raidCheckAutoSwitchEnabled == true) ~= enabled
+    pf.raidCheckAutoSwitchEnabled = enabled
+    if pf.raidCheckAutoSwitchChk then
+        pf.raidCheckAutoSwitchChk:SetChecked(enabled)
+    end
+    if pf.raidCheckAutoSwitchLabel then
+        if enabled then
+            pf.raidCheckAutoSwitchLabel:SetTextColor(0.78, 0.95, 0.82)
+        else
+            pf.raidCheckAutoSwitchLabel:SetTextColor(0.66, 0.69, 0.74)
+        end
+    end
+
+    if changed and opts.broadcast ~= false then
+        if self:BroadcastRaidCheckAutoSwitchState(enabled) then
+            local stateText = enabled and "enabled" or "disabled"
+            print(("|cff00aaff[Raidstrats.gg]|r Auto-switch scene for all %s."):format(stateText))
+        end
+    end
+
+    if changed and enabled then
+        local key = self:GetCurrentPlanPresenceKey() or ""
+        self:SetPlanViewAutoSwitchState(UnitName("player"), key, true)
+    elseif changed and not enabled then
+        local key = self:GetCurrentPlanPresenceKey() or ""
+        self:SetPlanViewAutoSwitchState(UnitName("player"), key, false)
+    end
+    if pf:IsShown() and self:IsRaidLeadViewActive() and self.RefreshRaidLeadView then
+        self:RefreshRaidLeadView(pf)
+    end
+    return changed
+end
+
+function Diar:HideRaidCheckAutoSwitchPrompt()
+    if self._raidCheckAutoSwitchPopup then
+        self._raidCheckAutoSwitchPopup:Hide()
+    end
+end
+
+function Diar:ShowRaidCheckAutoSwitchPrompt(sender, planKey)
+    self:HideRaidCheckAutoSwitchPrompt()
+    local who = sender and (Ambiguate and Ambiguate(sender, "short") or sender) or "Raid leader"
+
+    local f = CreateFrame("Frame", "RaidstratsAutoSwitchPromptPopup", UIParent, "BackdropTemplate")
+    f:SetSize(390, 168)
+    f:SetFrameStrata("FULLSCREEN_DIALOG")
+    f:EnableMouse(true)
+    if SetBackdrop then SetBackdrop(f, UI.PANEL, UI.BORDER, 2) end
+    tinsert(UISpecialFrames, "RaidstratsAutoSwitchPromptPopup")
+
+    local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    title:SetPoint("TOP", 0, -14)
+    title:SetText("Auto-switch scene request")
+    title:SetTextColor(0.92, 0.92, 0.92)
+
+    local msg = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    msg:SetPoint("TOP", title, "BOTTOM", 0, -10)
+    msg:SetWidth(338)
+    msg:SetJustifyH("CENTER")
+    msg:SetText(("%s enabled auto-switch scene for the group.\nAllow scene changes from raid lead?"):format(who))
+    msg:SetTextColor(0.78, 0.80, 0.84)
+
+    local function MakeBtn(text, x, onClick)
+        local b = CreateFrame("Button", nil, f, "BackdropTemplate")
+        b:SetSize(126, 28)
+        b:SetPoint("BOTTOM", x, 16)
+        if SetBackdrop then SetBackdrop(b, UI.ROW, UI.BORDER, 1) end
+        local lbl = b:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        lbl:SetPoint("CENTER")
+        lbl:SetText(text)
+        lbl:SetTextColor(0.9, 0.9, 0.9)
+        b:SetScript("OnEnter", function(s)
+            s:SetBackdropColor(unpack(UI.ROW_HOV))
+            lbl:SetTextColor(1, 1, 1)
+        end)
+        b:SetScript("OnLeave", function(s)
+            s:SetBackdropColor(unpack(UI.ROW))
+            lbl:SetTextColor(0.9, 0.9, 0.9)
+        end)
+        b:SetScript("OnClick", onClick)
+        return b
+    end
+
+    MakeBtn("Deny", -70, function()
+        Diar._raidCheckRemoteAutoSwitchEnabled = false
+        Diar._raidCheckRemoteAutoSwitchApproved = false
+        Diar._raidCheckRemoteAutoSwitchPlanKey = planKey or ""
+        Diar:BroadcastRaidCheckAutoSwitchResponse(planKey, false)
+        Diar:HideRaidCheckAutoSwitchPrompt()
+        print("|cff00aaff[Raidstrats.gg]|r Auto-switch scene denied.")
+    end)
+    MakeBtn("Approve", 70, function()
+        Diar._raidCheckRemoteAutoSwitchEnabled = true
+        Diar._raidCheckRemoteAutoSwitchApproved = true
+        Diar._raidCheckRemoteAutoSwitchPlanKey = planKey or ""
+        Diar:BroadcastRaidCheckAutoSwitchResponse(planKey, true)
+        Diar:HideRaidCheckAutoSwitchPrompt()
+        print("|cff00aaff[Raidstrats.gg]|r Auto-switch scene approved.")
+    end)
+
+    f:SetScript("OnHide", function()
+        if Diar._raidCheckAutoSwitchPopup == f then
+            Diar._raidCheckAutoSwitchPopup = nil
+        end
+    end)
+
+    self._raidCheckAutoSwitchPopup = f
+    if self.PrepareModal then
+        self:PrepareModal(f, self.plannerFrame or self.frame)
+    end
+    f:ClearAllPoints()
+    f:SetPoint("CENTER")
+    f:Show()
+    if PlaySound then PlaySound(3190, "master") end
+end
+
+function Diar:HandleRaidCheckAutoSwitchComm(msg, sender)
+    if type(msg) ~= "string" or msg:sub(1, 4) ~= "RASC" then return end
+    if not IsSenderGroupLeader(sender) then return end
+    local parts = SplitSep(msg, SEP)
+    if parts[1] ~= "RASC" then return end
+    local enabled = parts[2] == "1"
+    local planKey = parts[3] or ""
+    local senderName = sender and (Ambiguate and Ambiguate(sender, "short") or sender) or "Raid leader"
+    local stateText = enabled and "enabled" or "disabled"
+    print(("|cff00aaff[Raidstrats.gg]|r %s %s Auto-switch scene for all."):format(senderName, stateText))
+    if enabled then
+        self._raidCheckRemoteAutoSwitchEnabled = false
+        self._raidCheckRemoteAutoSwitchApproved = false
+        self._raidCheckRemoteAutoSwitchPlanKey = planKey
+        self:ShowRaidCheckAutoSwitchPrompt(sender, planKey)
+    else
+        self._raidCheckRemoteAutoSwitchEnabled = false
+        self._raidCheckRemoteAutoSwitchApproved = false
+        self._raidCheckRemoteAutoSwitchPlanKey = planKey
+        self:HideRaidCheckAutoSwitchPrompt()
+    end
+end
+
+function Diar:ApplyRaidCheckRemoteSceneSwitch(sceneIndex)
+    local pf = self.plannerFrame
+    local data = self.plannerData
+    if not pf or not pf:IsShown() or not data or not data.scenes then return false end
+    local idx = tonumber(sceneIndex)
+    if not idx then return false end
+    idx = math.floor(idx + 0.0001)
+    if idx < 1 or idx > #data.scenes then return false end
+    if (pf.selectedSceneIndex or 1) == idx then return false end
+
+    pf.selectedSceneIndex = idx
+    pf.__viewerViewportSceneIdx = nil
+    if not pf.nsrtSceneActive then
+        self:ApplyNsrtAssignmentForPlannerView(idx)
+    else
+        self.activeGroup = nil
+    end
+    self:StopPlannerAnimation()
+    self:UpdateSceneTabHighlight()
+    self:RefreshPlannerScene()
+    if self.OnPlannerSceneChanged then self:OnPlannerSceneChanged() end
+    return true
+end
+
+function Diar:HandleRaidCheckSceneSwitchComm(msg, sender)
+    if type(msg) ~= "string" or msg:sub(1, 4) ~= "RSSC" then return end
+    if not IsSenderGroupLeader(sender) then return end
+    if not self._raidCheckRemoteAutoSwitchEnabled or not self._raidCheckRemoteAutoSwitchApproved then return end
+    local parts = SplitSep(msg, SEP)
+    if parts[1] ~= "RSSC" then return end
+    local sceneIndex = tonumber(parts[2] or "")
+    local planKey = parts[3] or ""
+    if not sceneIndex then return end
+    local approvedPlanKey = self._raidCheckRemoteAutoSwitchPlanKey or ""
+    if approvedPlanKey ~= "" and planKey ~= "" and planKey ~= approvedPlanKey then
+        return
+    end
+    if planKey ~= "" then
+        local currentKey = self:GetCurrentPlanPresenceKey() or ""
+        if currentKey ~= "" and currentKey ~= planKey then
+            return
+        end
+    end
+    self:ApplyRaidCheckRemoteSceneSwitch(sceneIndex)
+end
+
+function Diar:HandleRaidCheckAutoSwitchResponseComm(msg, sender)
+    if type(msg) ~= "string" or msg:sub(1, 4) ~= "RASR" then return end
+    if not self:CanSendRaidCheckNotif() then return end
+    local parts = SplitSep(msg, SEP)
+    if parts[1] ~= "RASR" then return end
+    local approved = parts[2] == "1"
+    local planKey = parts[3] or ""
+    self:SetPlanViewAutoSwitchState(sender, planKey, approved)
+    local pf = self.plannerFrame
+    if pf and pf:IsShown() and self:IsRaidLeadViewActive() and self.RefreshRaidLeadView then
+        self:RefreshRaidLeadView(pf)
+    end
+end
+
 function Diar:UpdateRaidCheckNotifBtn(pf)
     pf = pf or self.plannerFrame
     local btn = pf and pf.raidCheckNotifBtn
     local scroll = pf and pf.raidLeadScroll
     local box = pf and pf.raidLeadPanel
+    local autoChk = pf and pf.raidCheckAutoSwitchChk
+    local autoLbl = pf and pf.raidCheckAutoSwitchLabel
     if not btn or not scroll or not box then return end
 
     local show = self:IsRaidLeadViewActive() and self:CanSendRaidCheckNotif()
+    if autoChk and autoLbl then
+        if show then
+            autoChk:Show()
+            autoLbl:Show()
+        else
+            autoChk:Hide()
+            autoLbl:Hide()
+            if self:IsRaidCheckAutoSwitchEnabled(pf) then
+                self:SetRaidCheckAutoSwitchEnabled(pf, false, { broadcast = false })
+            end
+        end
+    end
     if show then
         btn:Show()
         scroll:ClearAllPoints()
         scroll:SetPoint("TOPLEFT", box, "TOPLEFT", 6, -6)
-        scroll:SetPoint("BOTTOMRIGHT", box, "BOTTOMRIGHT", -6, 6 + RAID_NOTIF_BTN_H)
+        scroll:SetPoint("BOTTOMRIGHT", box, "BOTTOMRIGHT", -6, 6 + RAID_NOTIF_BTN_H + 26)
     else
         btn:Hide()
         scroll:ClearAllPoints()
@@ -637,12 +987,6 @@ end
 function Diar:SendRaidCheckNotif()
     if not self:CanSendRaidCheckNotif() then
         print("|cffff6666[Raidstrats.gg]|r Only the raid leader can send raidcheck notifications.")
-        return
-    end
-    local now = GetTime()
-    if self._raidCheckNotifSentAt and (now - self._raidCheckNotifSentAt) < NOTIF_COOLDOWN then
-        local left = math.ceil(NOTIF_COOLDOWN - (now - self._raidCheckNotifSentAt))
-        print(("|cffff6666[Raidstrats.gg]|r Wait %d sec before sending another notification."):format(left))
         return
     end
 
@@ -681,7 +1025,6 @@ function Diar:SendRaidCheckNotif()
         SanitizeCommField(transferId), SanitizeCommField(owner),
     }, SEP)
     self:SendCommMessage(prefix, msg, chan)
-    self._raidCheckNotifSentAt = now
     print(("|cff00aaff[Raidstrats.gg]|r Sent raidcheck notification for \"%s\" to %s."):format(
         planName, chan == "RAID" and "raid" or (chan == "PARTY" and "party" or "group")))
 end
@@ -867,11 +1210,13 @@ function Diar:ApplyRaidLeadViewLayout(pf)
     local title = pf.savedPlansTitle
     local count = pf.savedPlansCount
     local subtitle = pf.savedPlansSubtitle
+    local searchBox = pf.savedPlansSearchBoxWrap or pf.savedPlansSearchBtn
+    local raidFilterBtn = pf.savedPlansRaidFilterBtn
     local divider = pf.savedPlansDivider
     local scroll = pf.savedPlansScroll
     local bar = pf.raidCheckBar
 
-    if not (panel and footer and title and subtitle and divider and scroll) then return end
+    if not (panel and footer and title and divider and scroll) then return end
 
     local showBar = self:ShouldShowRaidCheckBar()
     local active = showBar and self:IsRaidCheckEnabled(pf)
@@ -928,11 +1273,36 @@ function Diar:ApplyRaidLeadViewLayout(pf)
     end
     count:ClearAllPoints()
     count:SetPoint("LEFT", title, "RIGHT", 6, 0)
-    subtitle:ClearAllPoints()
-    subtitle:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -2)
-    subtitle:SetPoint("RIGHT", panel, "RIGHT", -12, 0)
+    if searchBox then
+        searchBox:ClearAllPoints()
+        searchBox:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
+        searchBox:SetPoint("RIGHT", panel, "RIGHT", -12, 0)
+    end
+    if raidFilterBtn then
+        raidFilterBtn:ClearAllPoints()
+        if searchBox then
+            raidFilterBtn:SetPoint("TOPLEFT", searchBox, "BOTTOMLEFT", 0, -6)
+            raidFilterBtn:SetPoint("RIGHT", searchBox, "RIGHT", 0, 0)
+        else
+            raidFilterBtn:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
+            raidFilterBtn:SetPoint("RIGHT", panel, "RIGHT", -12, 0)
+        end
+    end
+    if subtitle then
+        subtitle:ClearAllPoints()
+        subtitle:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -2)
+        subtitle:SetPoint("RIGHT", panel, "RIGHT", -12, 0)
+    end
     divider:ClearAllPoints()
-    divider:SetPoint("TOP", subtitle, "BOTTOM", 0, -8)
+    if raidFilterBtn then
+        divider:SetPoint("TOP", raidFilterBtn, "BOTTOM", 0, -8)
+    elseif searchBox then
+        divider:SetPoint("TOP", searchBox, "BOTTOM", 0, -8)
+    elseif subtitle then
+        divider:SetPoint("TOP", subtitle, "BOTTOM", 0, -8)
+    else
+        divider:SetPoint("TOP", title, "BOTTOM", 0, -10)
+    end
     divider:SetPoint("LEFT", panel, "LEFT", 10, 0)
     divider:SetPoint("RIGHT", panel, "RIGHT", -10, 0)
     scroll:ClearAllPoints()
@@ -946,6 +1316,26 @@ function Diar:ApplyRaidLeadViewLayout(pf)
 end
 
 local function CreateRaidCheckNotifBtn(box, pf)
+    local autoChk = CreateAnimatedCheckbox and CreateAnimatedCheckbox(box, nil)
+    if autoChk then
+        autoChk:SetSize(20, 20)
+        autoChk:SetPoint("BOTTOMLEFT", box, "BOTTOMLEFT", 10, 37)
+        autoChk:SetScript("OnClick", function(s)
+            s.isChecked = not s.isChecked
+            if s.UpdateVisuals then s:UpdateVisuals() end
+            Diar:SetRaidCheckAutoSwitchEnabled(pf, s.isChecked)
+        end)
+        pf.raidCheckAutoSwitchChk = autoChk
+
+        local autoLbl = box:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        autoLbl:SetPoint("LEFT", autoChk, "RIGHT", 6, 0)
+        autoLbl:SetText("Auto-switch scene for all")
+        autoLbl:SetTextColor(0.66, 0.69, 0.74)
+        autoChk:Hide()
+        autoLbl:Hide()
+        pf.raidCheckAutoSwitchLabel = autoLbl
+    end
+
     local notifBtn = CreateFrame("Button", nil, box, "BackdropTemplate")
     notifBtn:SetHeight(RAID_NOTIF_BTN_H)
     notifBtn:SetPoint("BOTTOMLEFT", box, "BOTTOMLEFT", 8, 8)

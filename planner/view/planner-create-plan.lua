@@ -69,7 +69,8 @@ local ARENAS = {
     { key = "midnight_falls_p2", label = "Midnight Falls (P2)", raid = "March on Quel'Danas", boss = "Midnight Falls", expansion = "Midnight" },
     { key = "midnight_falls_phase3_soaks", label = "Midnight Falls (Phase 3 Soaks)", raid = "March on Quel'Danas", boss = "Midnight Falls", expansion = "Midnight" },
     { key = "vaelgor_ezzorak", label = "Vaelgor & Ezzorak", raid = "The Voidspire", boss = "Vaelgor & Ezzorak", expansion = "Midnight" },
-    { key = "cosmos", label = "Crown of the Cosmos", raid = "The Voidspire", boss = "Crown of the Cosmos", expansion = "Midnight" }
+    { key = "cosmos", label = "Crown of the Cosmos", raid = "The Voidspire", boss = "Crown of the Cosmos", expansion = "Midnight" },
+    { key = "rotmire_arena", label = "Rotmire", raid = "Sporefall", boss = "Rotmire", expansion = "Midnight" }
 }
 
 local function GetBackgroundLookupKeys(bgKey)
@@ -292,6 +293,15 @@ local function SuggestedPlanName(arena)
     return "Untitled Plan"
 end
 
+local function SetPrimaryButtonStyle(btn)
+    if not btn then return end
+    btn.selected = true
+    btn:SetBackdropColor(unpack(UI.ACCENT))
+    if btn.label then
+        btn.label:SetTextColor(1, 1, 1)
+    end
+end
+
 if not StaticPopupDialogs["RAIDSTRATSGG_CREATE_PLAN_NAME"] then
     StaticPopupDialogs["RAIDSTRATSGG_CREATE_PLAN_NAME"] = {
         text = "Plan name:",
@@ -328,11 +338,115 @@ end
 
 function Diar:PromptCreatePlanName(arena, dialog)
     if type(arena) ~= "table" or not arena.key then return end
-    StaticPopup_Show("RAIDSTRATSGG_CREATE_PLAN_NAME", nil, nil, {
+    if not self.createPlanNameDialog then
+        local f = CreateFrame("Frame", "RaidstratsCreatePlanNameDialog", UIParent, "BackdropTemplate")
+        f:SetSize(420, 170)
+        f:SetFrameStrata("FULLSCREEN_DIALOG")
+        f:SetFrameLevel(650)
+        f:EnableMouse(true)
+        SetBackdrop(f, UI.PANEL, UI.BORDER, 2)
+        tinsert(UISpecialFrames, "RaidstratsCreatePlanNameDialog")
+
+        local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+        title:SetPoint("TOPLEFT", f, "TOPLEFT", 16, -16)
+        title:SetText("Name your plan")
+        title:SetTextColor(0.92, 0.92, 0.92)
+
+        local subtitle = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        subtitle:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -4)
+        subtitle:SetText("Choose a plan name before creating it.")
+        subtitle:SetTextColor(0.55, 0.60, 0.66)
+
+        local nameWrap = CreateFrame("Frame", nil, f, "BackdropTemplate")
+        nameWrap:SetPoint("TOPLEFT", subtitle, "BOTTOMLEFT", 0, -12)
+        nameWrap:SetPoint("TOPRIGHT", f, "TOPRIGHT", -16, -62)
+        nameWrap:SetHeight(28)
+        SetBackdrop(nameWrap, {0.05, 0.05, 0.07, 1}, UI.BORDER, 1)
+
+        local nameEdit = CreateFrame("EditBox", nil, nameWrap)
+        nameEdit:SetAutoFocus(false)
+        nameEdit:SetPoint("TOPLEFT", nameWrap, "TOPLEFT", 8, -2)
+        nameEdit:SetPoint("BOTTOMRIGHT", nameWrap, "BOTTOMRIGHT", -8, 2)
+        nameEdit:SetTextInsets(0, 0, 0, 0)
+        nameEdit:SetMaxLetters(64)
+        nameEdit:SetFontObject(GameFontHighlightSmall)
+        nameEdit:SetTextColor(0.92, 0.92, 0.92)
+        nameEdit:SetScript("OnEditFocusGained", function()
+            nameWrap:SetBackdropBorderColor(unpack(UI.ACCENT))
+        end)
+        nameEdit:SetScript("OnEditFocusLost", function()
+            nameWrap:SetBackdropBorderColor(unpack(UI.BORDER))
+        end)
+
+        local btnRow = CreateFrame("Frame", nil, f)
+        btnRow:SetHeight(30)
+        btnRow:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 16, 16)
+        btnRow:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -16, 16)
+
+        local okBtn = CreatePlannerIconBtn(btnRow, "Okay", 190, 30)
+        okBtn:SetPoint("LEFT", btnRow, "LEFT", 0, 0)
+        okBtn:SetPoint("RIGHT", btnRow, "CENTER", -4, 0)
+        SetPrimaryButtonStyle(okBtn)
+
+        local cancelBtn = CreatePlannerIconBtn(btnRow, "Cancel", 190, 30)
+        cancelBtn:SetPoint("LEFT", btnRow, "CENTER", 4, 0)
+        cancelBtn:SetPoint("RIGHT", btnRow, "RIGHT", 0, 0)
+        cancelBtn:SetScript("OnClick", function()
+            f:Hide()
+        end)
+
+        local function SubmitName()
+            local data = f._createPlanNameData
+            if not data or not data.arena then return end
+            local name = strtrim(tostring(nameEdit:GetText() or ""))
+            if name == "" then
+                name = SuggestedPlanName(data.arena)
+            end
+            if Diar:CreateNewPlan(data.arena, { planName = name }) then
+                if data.dialog then data.dialog:Hide() end
+                f:Hide()
+            end
+        end
+
+        okBtn:SetScript("OnClick", SubmitName)
+        nameEdit:SetScript("OnEnterPressed", SubmitName)
+        nameEdit:SetScript("OnEscapePressed", function()
+            f:Hide()
+        end)
+
+        f.nameWrap = nameWrap
+        f.nameEdit = nameEdit
+        f.okBtn = okBtn
+        f.cancelBtn = cancelBtn
+        f.title = title
+        self.createPlanNameDialog = f
+    end
+
+    local f = self.createPlanNameDialog
+    f._createPlanNameData = {
         arena = arena,
         dialog = dialog,
         suggestedName = SuggestedPlanName(arena),
-    })
+    }
+    if self.PrepareModal then
+        self:PrepareModal(f, dialog or self.createPlanDialog or self.plannerFrame or self.frame)
+    end
+    f:ClearAllPoints()
+    if dialog and dialog.IsShown and dialog:IsShown() then
+        f:SetPoint("CENTER", dialog, "CENTER", 0, 0)
+        f:SetFrameLevel((dialog:GetFrameLevel() or 500) + 60)
+    else
+        f:SetPoint("CENTER")
+        f:SetFrameLevel(650)
+    end
+    if f.nameEdit then
+        f.nameEdit:SetText(f._createPlanNameData.suggestedName or "Untitled Plan")
+        f.nameEdit:HighlightText()
+    end
+    f:Show()
+    if f.nameEdit then
+        f.nameEdit:SetFocus()
+    end
 end
 
 function Diar:CreateNewPlan(arena, opts)
@@ -389,7 +503,6 @@ function Diar:CreateNewPlan(arena, opts)
         self:ApplyObjectPaletteLayout(self.plannerFrame)
     end
 
-    print(("|cff00aaff[Raidstrats.gg]|r Created new plan \"%s\" with arena %s."):format(planName, arena.label or arena.key))
     return true
 end
 
@@ -399,6 +512,10 @@ function Diar:AddSceneFromArena(arena)
     end
     local data = self.plannerData
     if not data then return false end
+    if tostring(data.planName or "") == "No plan" then
+        print("|cffff6666[Raidstrats.gg]|r No plan loaded. Load a plan before adding scenes.")
+        return false
+    end
     data.scenes = data.scenes or {}
     local nextIndex = #data.scenes + 1
     data.scenes[nextIndex] = {
@@ -421,11 +538,15 @@ function Diar:AddSceneFromArena(arena)
     if self.UpdateSceneTabHighlight then self:UpdateSceneTabHighlight() end
     if self.RefreshPlannerScene then self:RefreshPlannerScene() end
     if self.OnPlannerSceneChanged then self:OnPlannerSceneChanged() end
-    print(("|cff00aaff[Raidstrats.gg]|r Added scene %d with background %s."):format(nextIndex, arena.label or arena.key))
     return true
 end
 
 function Diar:ShowCreateSceneDialog()
+    local data = self.plannerData
+    if not data or tostring(data.planName or "") == "No plan" then
+        print("|cffff6666[Raidstrats.gg]|r No plan loaded. Load a plan before adding scenes.")
+        return
+    end
     self:ShowCreatePlanDialog({ sceneMode = true })
 end
 
@@ -535,6 +656,8 @@ function Diar:ShowCreatePlanDialog(opts)
         createBtn:SetPoint("LEFT", btnRow, "LEFT", 0, 0)
         createBtn:SetPoint("RIGHT", btnRow, "CENTER", -4, 0)
         createBtn:Disable()
+        createBtn:SetAlpha(0.45)
+        if createBtn.label then createBtn.label:SetTextColor(0.55, 0.55, 0.55) end
 
         local cancelBtn = CreatePlannerIconBtn(btnRow, "Cancel", 200, 36)
         cancelBtn:SetPoint("LEFT", btnRow, "CENTER", 4, 0)
@@ -602,8 +725,14 @@ function Diar:ShowCreatePlanDialog(opts)
         if f.createBtn then
             if f.selectedArena then
                 f.createBtn:Enable()
+                f.createBtn:SetAlpha(1)
+                SetPrimaryButtonStyle(f.createBtn)
             else
                 f.createBtn:Disable()
+                f.createBtn.selected = false
+                f.createBtn:SetAlpha(0.45)
+                f.createBtn:SetBackdropColor(unpack(UI.ROW))
+                if f.createBtn.label then f.createBtn.label:SetTextColor(0.55, 0.55, 0.55) end
             end
         end
     end

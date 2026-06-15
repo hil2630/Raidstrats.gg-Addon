@@ -18,6 +18,7 @@ local UI = {
     ROW_HOV = {0.14, 0.16, 0.20, 1},
     ACCENT  = {0.23, 0.51, 0.96, 1},
 }
+local CONE_LIVE_DRAG_FPS = 30
 
 local function HideClickDismissOverlay()
     if Diar._clickDismissOverlay then
@@ -666,6 +667,9 @@ function Diar:HideMemberPicker()
 end
 
 function Diar:HidePlannerTransientMenus()
+    if self.HideSceneTabContextMenu then
+        self:HideSceneTabContextMenu()
+    end
     if self.HidePlannerContextMenu then
         self:HidePlannerContextMenu()
     end
@@ -1054,12 +1058,22 @@ function Diar:BeginPlannerItemDrag(widget)
     local cw, ch = canvas:GetSize()
     if cw <= 0 or ch <= 0 then return end
 
+    local data = self.plannerData
+    local sceneIdx = pf and (pf.selectedSceneIndex or 1) or 1
+    local scene = data and data.scenes and data.scenes[sceneIdx]
+    local item = scene and scene.items and scene.items[widget.itemIndex] or nil
+    local shapeKey = item and tostring(item.shape or ""):lower() or ""
+    local liveStaticShape = item and item.kind == "shape" and (shapeKey == "triangle" or shapeKey == "cone")
+
     self._plannerDrag = {
         widget = widget,
         itemIndex = widget.itemIndex,
         canvas = canvas,
         cw = cw,
         ch = ch,
+        sceneIndex = sceneIdx,
+        liveStaticShape = liveStaticShape and true or false,
+        liveNextAt = 0,
     }
     widget:SetFrameLevel(canvas:GetFrameLevel() + 24)
     widget:SetScript("OnUpdate", function(w)
@@ -1092,6 +1106,32 @@ function Diar:UpdatePlannerItemDrag(widget)
 
     widget:ClearAllPoints()
     widget:SetPoint("TOPLEFT", canvas, "TOPLEFT", relX, -relY)
+
+    if drag.liveStaticShape then
+        local now = GetTime() or 0
+        if now < (drag.liveNextAt or 0) then
+            return
+        end
+        drag.liveNextAt = now + (1 / CONE_LIVE_DRAG_FPS)
+        local pf = self.plannerFrame
+        local vc = pf and pf.sceneViewContext
+        local screenToWorld = Diar.PlannerView and Diar.PlannerView.ScreenToWorld
+        local sx, sy = relX, relY
+        local wx, wy = sx, sy
+        if screenToWorld then
+            wx, wy = screenToWorld(vc, sx, sy)
+        elseif vc then
+            wx = (sx - vc.panX) / vc.zoom
+            wy = (sy - vc.panY) / vc.zoom
+        end
+        local xp = math.max(0, math.min(100, math.floor((wx / drag.cw) * 10000 + 0.5) / 100))
+        local yp = math.max(0, math.min(100, math.floor((wy / drag.ch) * 10000 + 0.5) / 100))
+        self:ApplyItemPositionChange(drag.itemIndex, xp, yp, {
+            skipPersist = true,
+            skipBroadcast = true,
+            skipRefresh = false,
+        })
+    end
 end
 
 function Diar:EndPlannerItemDrag(widget)
@@ -1164,10 +1204,27 @@ function Diar:ApplyItemPositionChange(itemIndex, xPct, yPct, opts)
     local item = scene.items[itemIndex]
     if not item then return end
 
+    local oldX = tonumber(item.x) or xPct
+    local oldY = tonumber(item.y) or yPct
+    local dx = xPct - oldX
+    local dy = yPct - oldY
+
     item.x = xPct
     item.y = yPct
     item.currentX = xPct / 100
     item.currentY = yPct / 100
+    if type(item.corners) == "table" and #item.corners >= 3 and (math.abs(dx) > 0.0001 or math.abs(dy) > 0.0001) then
+        for _, p in ipairs(item.corners) do
+            if type(p) == "table" then
+                local px = tonumber(p.x)
+                local py = tonumber(p.y)
+                if px and py then
+                    p.x = math.max(0, math.min(100, px + dx))
+                    p.y = math.max(0, math.min(100, py + dy))
+                end
+            end
+        end
+    end
 
     if pf:IsShown() and self.RefreshPlannerScene and not opts.skipRefresh then
         self:RefreshPlannerScene()

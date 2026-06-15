@@ -162,6 +162,13 @@ local PALETTE_ICON_CURSOR_OFFSET_Y = -10
 -- Matches planner SETTINGS_ROW_H + UI_PAD so palette bottom aligns with timeline bottom.
 local PALETTE_BOTTOM_INSET = 16
 
+local function HasLoadedPlan(data)
+    if not data then return false end
+    if tostring(data.planName or "") == "No plan" then return false end
+    if type(data.scenes) ~= "table" or #data.scenes == 0 then return false end
+    return true
+end
+
 local function GetReferenceCanvasSize()
     local pf = Diar.plannerFrame
     local cw, ch = 1115, 627
@@ -736,9 +743,7 @@ function Diar:FinishPaletteDragDraw()
     end
     self:CancelPaletteDragDraw()
     self:ClearPalettePlacement()
-    if self:AddPlannerItemToScene(template, xPct, yPct, { wPct = wPct, hPct = hPct }) then
-        print("|cff00aaff[Raidstrats.gg]|r Shape added to scene.")
-    end
+    self:AddPlannerItemToScene(template, xPct, yPct, { wPct = wPct, hPct = hPct })
 end
 
 function Diar:AddPlannerItemToScene(template, xPct, yPct, opts)
@@ -784,6 +789,7 @@ end
 function Diar:IsPlannerPaletteActive()
     local pf = self.plannerFrame
     if not pf or pf.compactMode or pf.nsrtSceneActive then return false end
+    if not HasLoadedPlan(self.plannerData) then return false end
     if not self.IsObjectPaletteEnabled or not self:IsObjectPaletteEnabled() then return false end
     return true
 end
@@ -882,9 +888,7 @@ function Diar:TryPaletteCanvasMouseDown(button)
     local xPct, yPct = CanvasLocalToItemPercent(pf, lx, ly, cw, ch)
     local placement = CopyTemplate(template)
     self:ClearPalettePlacement()
-    if self:AddPlannerItemToScene(placement, xPct, yPct) then
-        print("|cff00aaff[Raidstrats.gg]|r Object added to scene.")
-    end
+    self:AddPlannerItemToScene(placement, xPct, yPct)
     return true
 end
 
@@ -1486,7 +1490,8 @@ function Diar:ApplyObjectPaletteLockedState(pf)
     pf = pf or self.plannerFrame
     local refs = pf and pf.objectPaletteTileRefs
     if not refs then return end
-    local locked = self.IsPlannerCanvasLocked and self:IsPlannerCanvasLocked()
+    local noPlan = not HasLoadedPlan(self.plannerData)
+    local locked = noPlan or (self.IsPlannerCanvasLocked and self:IsPlannerCanvasLocked())
     for _, section in ipairs(refs) do
         if section.header then
             section.header:SetAlpha(locked and 0.42 or 1)
@@ -1513,7 +1518,10 @@ function Diar:ApplyObjectPaletteLockedState(pf)
         self:HidePaletteSpecPicker()
     end
     if pf.objectPaletteHint and not pf.__palettePlacement then
-        if locked then
+        if noPlan then
+            pf.objectPaletteHint:SetText("Load a plan to use the palette")
+            pf.objectPaletteHint:SetTextColor(0.40, 0.43, 0.48)
+        elseif locked then
             pf.objectPaletteHint:SetText("Objects locked")
             pf.objectPaletteHint:SetTextColor(0.40, 0.43, 0.48)
         else
@@ -1525,6 +1533,7 @@ end
 
 function Diar:ApplyObjectPaletteLayout(pf)
     if not pf then return end
+    local hasPlan = HasLoadedPlan(self.plannerData)
     if not pf.compactMode and self:IsObjectPaletteEnabled() then
         self:EnsureObjectPalettePanel(pf)
     end

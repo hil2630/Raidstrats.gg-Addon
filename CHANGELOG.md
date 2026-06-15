@@ -1,5 +1,31 @@
 # Changelog
 
+## [Alpha v0.0.37] Delete scenes, Rotmire added, auto-scene switch as raid-lead and much more.
+
+- Fixed an issue where you couldn't remove or even move cone objects.
+- Fixed an issue where plan wouldn't correctly categorize into the correct expansions or raids
+- Fixed an issue where when pushing updated plans, any new scenes wouldn't correctly be shown until refresh.
+- Fixed an issue where "share to group" and "New scene" were active even when no plan was loaded.
+- Fixed an issue where when moving Cones specifically, it wouldn't move it with a live preview due to how it's rendered.
+- Fixed an issue where the palette was still usable even though no plan was loaded.
+- Fixed an issue where arrows would not be exported correctly from the website to the addon.
+
+- Updated the planner to now also include Sporefall - Rotmire backgrounds.
+- Updated the plan list to be a little more compact. You can disable compact view in the settings, enabled by default.
+- Updated the char limits of the plan name on top to 50 from 20.
+
+- Added a "Search for plan" and plan filter by expansion.
+- Added a fallback to boss images, since we do not plan to implement boss-images. Boss images will not be a circle with "Boss" text.
+- Added a way to delete scenes, right click a scene -> Delete.
+  - Note: Scene 1 cannot be deleted. This would just delete the plan, so just delete the plan from your plan library instead.
+- Added a way for raidleaders to decide the scene to look at.
+  - Members of the group will be asked to approve or deny auto-switch and the raidlead will be able to see who have it enabled/disabled in the raid-check overview. Checkmark = Enabled, X = Disabled
+- Added a info strip at the bottom of the planner window with basic info, and moved the version, etc. down there.
+- Added a way to change scene in compact mode using arrows (enable this from settings)
+
+- Removed the 30 second cooldown for "Send notif" in the raid checker.
+  - Note that users may disable the notification popup from their settings in the addon.
+
 ## [Alpha v0.0.36] going live today.
 
 - Fixed an issue where spec-icons were not properly mapped on import
@@ -16,6 +42,7 @@
 - Added a "Change background" which will allow you to change the background of the current plan.
 - Added new backgrounds for Midnight intermission, p2 and p3 Soaks
 
+- Updated the icons to now have a ghost-version of the icon follow your mouse before placing it.
 - Updated the Preview names to also work on imported plans where labels are attached to objects.
 - Updated some allignment issues for arrows, text, etc.
 

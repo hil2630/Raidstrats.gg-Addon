@@ -321,6 +321,58 @@ function Raidstrats:SaveImportedPlan(data)
     if not data then return end
     self:EnsurePlanInstanceKey(data)
     RaidstratsggSavedPlans = RaidstratsggSavedPlans or { list = {}, nextId = 1 }
+    local function cleanMeta(value)
+        if type(value) ~= "string" then return nil end
+        local out = strtrim(value)
+        if out == "" then return nil end
+        return out
+    end
+    local function canonicalMeta(value)
+        local out = cleanMeta(value)
+        if not out then return nil end
+        if strlower(out) == "other" then return nil end
+        return out
+    end
+    local function inferExpansion(importData)
+        local explicit = canonicalMeta(importData and importData.expansion)
+        if explicit then return explicit end
+        local raid = canonicalMeta(importData and importData.raid)
+        local boss = canonicalMeta(importData and importData.boss)
+        local byRaid = {
+            ["the voidspire"] = "Midnight",
+            ["the dreamrift"] = "Midnight",
+            ["march on quel'danas"] = "Midnight",
+            ["sporefall"] = "Midnight",
+            ["manaforge omega"] = "The War Within",
+            ["liberation of undermine"] = "The War Within",
+            ["nerub-ar palace"] = "The War Within",
+        }
+        if raid then
+            local hit = byRaid[strlower(raid)]
+            if hit then return hit end
+        end
+        local byBoss = {
+            ["imperator averzian"] = "Midnight",
+            ["vorasius"] = "Midnight",
+            ["fallen-king salhadaar"] = "Midnight",
+            ["vaelgor & ezzorak"] = "Midnight",
+            ["lightblinded vanguard"] = "Midnight",
+            ["crown of the cosmos"] = "Midnight",
+            ["chimaerus the undreamt god"] = "Midnight",
+            ["belo'ren, child of al'ar"] = "Midnight",
+            ["midnight falls"] = "Midnight",
+            ["rotmire"] = "Midnight",
+        }
+        if boss then
+            local hit = byBoss[strlower(boss)]
+            if hit then return hit end
+        end
+        if raid then return raid end
+        return "Other"
+    end
+    data.expansion = inferExpansion(data)
+    data.raid = cleanMeta(data.raid) or "Other"
+    data.boss = cleanMeta(data.boss) or "Unknown"
     if type(data.instanceKey) == "string" and data.instanceKey ~= "" then
         for _, entry in ipairs(RaidstratsggSavedPlans.list) do
             if entry.data and entry.data.instanceKey == data.instanceKey then
@@ -329,9 +381,9 @@ function Raidstrats:SaveImportedPlan(data)
                 if type(data.planName) == "string" and data.planName ~= "" then
                     entry.planName = data.planName
                 end
-                if data.expansion then entry.expansion = data.expansion end
-                if data.raid then entry.raid = data.raid end
-                if data.boss then entry.boss = data.boss end
+                entry.expansion = data.expansion or "Other"
+                entry.raid = data.raid or "Other"
+                entry.boss = data.boss or "Unknown"
                 if self.SanitizePlanData then self:SanitizePlanData(entry.data) end
                 data.savedEntryId = entry.id
                 self:SetLastLoadedPlanId(entry.id)
@@ -418,6 +470,51 @@ function Raidstrats:ImportPlanFromPasteString(raw)
     return true
 end
 
+local function CoerceNumber(v)
+    local n = tonumber(v)
+    if not n then return nil end
+    return n
+end
+
+local function EnsureImportedBossPortraitFallback(data)
+    if type(data) ~= "table" or type(data.scenes) ~= "table" then return end
+    local hasBossImageMeta = (data.boss_image ~= nil) or (data.bossImage ~= nil)
+        or (data.boss_render_image ~= nil) or (data.bossRenderImage ~= nil)
+    if not hasBossImageMeta then
+        return
+    end
+    for _, scene in ipairs(data.scenes) do
+        scene.items = scene.items or {}
+        if #scene.items == 0 then
+            scene.items[1] = {
+                kind = "icon",
+                x = 42,
+                y = 28,
+                w = 16,
+                h = 24,
+                bossPortrait = true,
+                label = "",
+            }
+        else
+            for _, item in ipairs(scene.items) do
+                if type(item) == "table" then
+                    local looksLikeImageItem = (item.kind == "image") or (item.kind == "icon" and not item.icon)
+                    local hasImageRef = (item.image ~= nil) or (item.src ~= nil) or (item.url ~= nil)
+                        or (item.boss_image ~= nil) or (item.bossImage ~= nil)
+                    if looksLikeImageItem and hasImageRef then
+                        item.bossPortrait = true
+                        if item.kind ~= "icon" then item.kind = "icon" end
+                        item.x = CoerceNumber(item.x) or 42
+                        item.y = CoerceNumber(item.y) or 28
+                        item.w = CoerceNumber(item.w) or 16
+                        item.h = CoerceNumber(item.h) or 24
+                    end
+                end
+            end
+        end
+    end
+end
+
 function Raidstrats:DecodePlanFromBase64(raw)
     if not raw or raw == "" then return nil end
     local b64 = raw:gsub("^%s+", ""):gsub("%s+$", "")
@@ -437,6 +534,7 @@ function Raidstrats:DecodePlanFromBase64(raw)
     end
     local data = DecodeJSON(json)
     if not data or SceneCount(data.scenes) == 0 then return nil end
+    EnsureImportedBossPortraitFallback(data)
     if self.SanitizePlanData then self:SanitizePlanData(data) end
     return data
 end
@@ -1720,6 +1818,18 @@ function Raidstrats:OnCommReceived(p, m, d, s)
     end
     if m:sub(1, 4) == "RNOT" then
         if self.HandleRaidCheckNotifComm then self:HandleRaidCheckNotifComm(m, s) end
+        return
+    end
+    if m:sub(1, 4) == "RASC" then
+        if self.HandleRaidCheckAutoSwitchComm then self:HandleRaidCheckAutoSwitchComm(m, s) end
+        return
+    end
+    if m:sub(1, 4) == "RSSC" then
+        if self.HandleRaidCheckSceneSwitchComm then self:HandleRaidCheckSceneSwitchComm(m, s) end
+        return
+    end
+    if m:sub(1, 4) == "RASR" then
+        if self.HandleRaidCheckAutoSwitchResponseComm then self:HandleRaidCheckAutoSwitchResponseComm(m, s) end
         return
     end
 end

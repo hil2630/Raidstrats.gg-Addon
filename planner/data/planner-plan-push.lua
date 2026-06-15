@@ -212,6 +212,13 @@ function Diar:ApplyPlanUpdateFromData(newData, planKey)
         newData.savedEntryId = entryId or (self.plannerData and self.plannerData.savedEntryId)
         self.plannerData = CopyPlanData(newData)
         if pf and pf:IsShown() then
+            -- Rebuild planner chrome/tabs so new scenes appear immediately after push updates.
+            if self.ShowPlannerViewer then
+                self:ShowPlannerViewer({ reloadOnly = true })
+            end
+            pf = self.plannerFrame
+        end
+        if pf and pf:IsShown() then
             if not pf.nsrtSceneActive and self.ApplyNsrtAssignmentForPlannerView then
                 self:ApplyNsrtAssignmentForPlannerView(sceneIdx)
             end
@@ -515,11 +522,26 @@ end
 function Diar:UpdatePushUpdateButton()
     local pf = self.plannerFrame
     local btn = pf and pf.pushUpdateBtn
+    local shareBtn = pf and pf.savedPlansShareBtn
+    local hasActivePlan = self:HasActiveSavedPlan()
+
+    if shareBtn then
+        if hasActivePlan then
+            shareBtn:Enable()
+            shareBtn:SetAlpha(1)
+            if shareBtn.label then shareBtn.label:SetTextColor(0.92, 0.92, 0.92) end
+        else
+            shareBtn:Disable()
+            shareBtn:SetAlpha(0.45)
+            if shareBtn.label then shareBtn.label:SetTextColor(0.55, 0.55, 0.55) end
+        end
+    end
+
     if not btn then return end
-    local allowed = self:HasActiveSavedPlan()
+    local pushAllowed = hasActivePlan
         and self.IsPushUpdateLeader
         and self:IsPushUpdateLeader()
-    if allowed then
+    if pushAllowed then
         btn:Enable()
         btn:SetAlpha(1)
         if btn.label then btn.label:SetTextColor(0.92, 0.92, 0.92) end
