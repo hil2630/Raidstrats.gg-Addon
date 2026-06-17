@@ -1218,6 +1218,15 @@ function Diar:ApplyRaidLeadViewLayout(pf)
 
     if not (panel and footer and title and divider and scroll) then return end
 
+    -- Compact mode is canvas-only. Never show raidcheck/saved-plan side chrome here,
+    -- even if this layout function is called by a later refresh.
+    if pf.compactMode then
+        if pf.raidCheckBar then pf.raidCheckBar:Hide() end
+        if pf.raidLeadPanel then pf.raidLeadPanel:Hide() end
+        if pf.raidLeadBottomDivider then pf.raidLeadBottomDivider:Hide() end
+        return
+    end
+
     local showBar = self:ShouldShowRaidCheckBar()
     local active = showBar and self:IsRaidCheckEnabled(pf)
 

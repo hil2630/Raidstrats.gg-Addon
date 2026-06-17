@@ -16,6 +16,7 @@ local CreateInput = Diar.CreateInput
 local SkinScrollBar = Diar.SkinScrollBar
 
 local PUI = Diar.PlannerUI
+local SetPlannerBtnShadowHidden = PUI and PUI.SetPlannerBtnShadowHidden
 
 if not StaticPopupDialogs["RAIDSTRATSGG_DELETE_SCENE"] then
     StaticPopupDialogs["RAIDSTRATSGG_DELETE_SCENE"] = {
@@ -29,6 +30,23 @@ if not StaticPopupDialogs["RAIDSTRATSGG_DELETE_SCENE"] then
             local sceneIndex = self.data
             if sceneIndex and Diar and Diar.DeletePlannerScene then
                 Diar:DeletePlannerScene(sceneIndex)
+            end
+        end,
+    }
+end
+
+if not StaticPopupDialogs["RAIDSTRATSGG_NSRT_OVERRIDE_BLOCK"] then
+    StaticPopupDialogs["RAIDSTRATSGG_NSRT_OVERRIDE_BLOCK"] = {
+        text = "Active NSRT note already has an rsggNote from another plan.\n\nOverride that block with this plan?",
+        button1 = "Yes, override",
+        button2 = _G.NO or "No",
+        timeout = 0,
+        whileDead = 1,
+        hideOnEscape = 1,
+        OnAccept = function(self)
+            local data = self and self.data
+            if type(data) == "table" and type(data.onAccept) == "function" then
+                data.onAccept()
             end
         end,
     }
@@ -224,6 +242,7 @@ end
 
 function Diar:SavePlannerFramePosition(pf)
     if not pf or pf.compactPreviewActive then return end
+    if pf.__suspendPositionSave then return end
     local point, _, relPoint, x, y = pf:GetPoint(1)
     if not point then return end
     if pf.compactMode and pf.__skipCompactSaveOnce then
@@ -428,17 +447,71 @@ function Diar:IsPlannerPreviewIndexVisible()
     return pf and pf.previewIndexVisible == true
 end
 
+local PREVIEW_INDEX_EYE_ICON = "|TInterface\\Common\\Help-i:36:36:0:0|t"
+
+local function ApplyPreviewIndexCornerStyle(btn)
+    if not btn then return end
+    if btn.SetBackdrop then
+        btn:SetBackdrop(nil)
+    end
+    if btn.shadow then
+        btn.shadow:SetAlpha(0)
+        btn.shadow:Hide()
+    end
+    btn:SetSize(40, 40)
+    if not btn.icon then
+        btn.icon = btn:CreateTexture(nil, "ARTWORK")
+        btn.icon:SetTexture("Interface\\Common\\Help-i")
+    end
+    btn.icon:ClearAllPoints()
+    btn.icon:SetPoint("TOPLEFT", btn, "TOPLEFT", 2, -2)
+    btn.icon:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", -2, 2)
+    btn.icon:SetTexCoord(0, 1, 0, 1)
+    btn.icon:Show()
+    if btn.label then
+        btn.label:Hide()
+    end
+    local pf = Diar and Diar.plannerFrame
+    if pf and pf.GetFrameStrata and btn.SetFrameStrata then
+        btn:SetFrameStrata(pf:GetFrameStrata() or "DIALOG")
+    end
+    if pf and pf.GetFrameLevel then
+        btn:SetFrameLevel((pf:GetFrameLevel() or 1) + 120)
+    end
+end
+
+local function CanShowNsrtToolbarButton()
+    if not IsInGroup() then return true end
+    return UnitIsGroupLeader("player") == true
+end
+
 function Diar:UpdatePreviewIndexButton(pf)
     pf = pf or self.plannerFrame
     if not pf or not pf.previewIndexBtn then return end
     local on = pf.previewIndexVisible == true
     pf.previewIndexBtn.selected = on
     if on then
-        pf.previewIndexBtn:SetBackdropColor(0.18, 0.38, 0.72, 1)
-        pf.previewIndexBtn.label:SetTextColor(1, 1, 1)
+        if pf.previewIndexBtn.SetBackdropColor then
+            pf.previewIndexBtn:SetBackdropColor(0.18, 0.38, 0.72, 1)
+        end
+        if pf.previewIndexBtn.label then
+            pf.previewIndexBtn.label:SetTextColor(1, 1, 1)
+        end
+        if pf.previewIndexBtn.icon then
+            pf.previewIndexBtn.icon:SetVertexColor(1, 1, 1, 1)
+        end
+        pf.previewIndexBtn:SetAlpha(1)
     else
-        pf.previewIndexBtn:SetBackdropColor(unpack(UI.ROW))
-        pf.previewIndexBtn.label:SetTextColor(0.92, 0.92, 0.92)
+        if pf.previewIndexBtn.SetBackdropColor then
+            pf.previewIndexBtn:SetBackdropColor(unpack(UI.ROW))
+        end
+        if pf.previewIndexBtn.label then
+            pf.previewIndexBtn.label:SetTextColor(0.92, 0.92, 0.92)
+        end
+        if pf.previewIndexBtn.icon then
+            pf.previewIndexBtn.icon:SetVertexColor(0.90, 0.93, 1, 0.92)
+        end
+        pf.previewIndexBtn:SetAlpha(0.78)
     end
 end
 
@@ -504,6 +577,105 @@ function Diar:EnsurePreviewNamesButton(pf)
     self:UpdatePreviewNamesButton(pf)
 end
 
+function Diar:UpdatePlannerAssignmentButton(pf)
+    pf = pf or self.plannerFrame
+    local btn = pf and pf.assignmentBtn
+    if not pf or not btn or not pf.canvas then return end
+    if pf.compactMode or pf.nsrtSceneActive then
+        btn:Hide()
+        return
+    end
+    local sceneIndex = tonumber(pf.selectedSceneIndex) or 1
+    local options, selectedIndex, total = nil, nil, 0
+    if self.GetSelectedPlannerSceneAssignment then
+        local selected
+        selected, selectedIndex, total = self:GetSelectedPlannerSceneAssignment(sceneIndex)
+        options = selected and true or nil
+    end
+    if not options or (total or 0) <= 1 then
+        btn:Hide()
+        return
+    end
+
+    SetPlannerBtnText(btn, ("Assignment: %d"):format(tonumber(selectedIndex) or 1))
+    btn:Show()
+    btn:ClearAllPoints()
+    if pf.previewNamesBtn and pf.previewNamesBtn:IsShown() then
+        btn:SetPoint("TOPRIGHT", pf.previewNamesBtn, "BOTTOMRIGHT", 0, -4)
+    else
+        btn:SetPoint("TOPRIGHT", pf.canvas, "TOPRIGHT", -6, -32)
+    end
+    btn:SetFrameLevel((pf.canvas:GetFrameLevel() or pf:GetFrameLevel()) + 6)
+end
+
+function Diar:EnsurePlannerAssignmentButton(pf)
+    if not pf or not pf.canvas then return end
+    local btn = pf.assignmentBtn
+    if not btn then
+        btn = CreatePlannerIconBtn(pf, "Assignment: 1", 110, 22)
+        btn:SetScript("OnClick", function(selfBtn)
+            local pf2 = Diar.plannerFrame
+            if not pf2 then return end
+            local sceneIndex = tonumber(pf2.selectedSceneIndex) or 1
+            if not Diar.GetPlannerSceneAssignmentOptions then return end
+            local options, defaultIdx = Diar:GetPlannerSceneAssignmentOptions(sceneIndex)
+            if type(options) ~= "table" or #options <= 1 then return end
+            local _, selectedIdx = Diar:GetSelectedPlannerSceneAssignment(sceneIndex)
+            selectedIdx = tonumber(selectedIdx) or tonumber(defaultIdx) or 1
+            local menu = {}
+            for i, opt in ipairs(options) do
+                local t = (opt and opt.time and opt.time < math.huge) and tostring(opt.time) or "?"
+                local ph = tostring((opt and opt.phase) or "?")
+                menu[#menu + 1] = {
+                    text = ("Assignment %d  (t=%s, ph=%s)"):format(i, t, ph),
+                    checked = (i == selectedIdx),
+                    notCheckable = false,
+                    keepShownOnClick = false,
+                    func = function()
+                        if Diar.SetPlannerSceneAssignmentChoice then
+                            Diar:SetPlannerSceneAssignmentChoice(sceneIndex, i)
+                        end
+                    end,
+                }
+            end
+            if not pf2.assignmentDropDown then
+                pf2.assignmentDropDown = CreateFrame("Frame", "RaidstratsPlannerAssignmentDropDown", pf2, "UIDropDownMenuTemplate")
+            end
+            if type(EasyMenu) == "function" then
+                EasyMenu(menu, pf2.assignmentDropDown, selfBtn, 0, 0, "MENU")
+            elseif type(UIDropDownMenu_Initialize) == "function"
+                and type(UIDropDownMenu_CreateInfo) == "function"
+                and type(UIDropDownMenu_AddButton) == "function"
+                and type(ToggleDropDownMenu) == "function" then
+                UIDropDownMenu_Initialize(pf2.assignmentDropDown, function(_, level)
+                    if level ~= 1 then return end
+                    for _, item in ipairs(menu) do
+                        local info = UIDropDownMenu_CreateInfo()
+                        info.text = item.text
+                        info.checked = item.checked
+                        info.notCheckable = item.notCheckable
+                        info.keepShownOnClick = item.keepShownOnClick
+                        info.func = item.func
+                        UIDropDownMenu_AddButton(info, level)
+                    end
+                end, "MENU")
+                ToggleDropDownMenu(1, nil, pf2.assignmentDropDown, selfBtn, 0, 0)
+            else
+                -- Fallback for clients where EasyMenu is unavailable: cycle choices.
+                local nextIdx = (selectedIdx % #options) + 1
+                if Diar.SetPlannerSceneAssignmentChoice then
+                    Diar:SetPlannerSceneAssignmentChoice(sceneIndex, nextIdx)
+                end
+            end
+        end)
+        pf.assignmentBtn = btn
+    end
+    if btn:GetParent() ~= pf then
+        btn:SetParent(pf)
+    end
+    self:UpdatePlannerAssignmentButton(pf)
+end
+
 function Diar:EnsurePlannerControlsButtons(pf)
     if not pf or not pf.controls then return end
     if not pf.settingsBtn then
@@ -516,10 +688,25 @@ function Diar:EnsurePlannerControlsButtons(pf)
         pf.settingsBtn:SetHeight(CONTROLS_H)
     end
     if not pf.previewIndexBtn then
-        pf.previewIndexBtn = CreatePlannerIconBtn(pf.controls, "Preview index", 104, CONTROLS_H)
+        pf.previewIndexBtn = CreatePlannerIconBtn(pf, PREVIEW_INDEX_EYE_ICON, 40, 40)
         pf.previewIndexBtn:SetScript("OnClick", function()
             Diar:TogglePlannerPreviewIndex()
         end)
+    else
+        SetPlannerBtnText(pf.previewIndexBtn, PREVIEW_INDEX_EYE_ICON)
+    end
+    if pf.previewIndexBtn:GetParent() ~= pf then
+        pf.previewIndexBtn:SetParent(pf)
+    end
+    ApplyPreviewIndexCornerStyle(pf.previewIndexBtn)
+    if not pf.nsrtExportBtn then
+        pf.nsrtExportBtn = CreatePlannerIconBtn(pf.controls, "NSRT", 72, CONTROLS_H)
+        pf.nsrtExportBtn:SetScript("OnClick", function()
+            Diar:ShowPlannerNsrtExportDialog()
+        end)
+    else
+        SetPlannerBtnText(pf.nsrtExportBtn, "NSRT")
+        pf.nsrtExportBtn:SetWidth(72)
     end
     self:UpdatePreviewIndexButton(pf)
 end
@@ -648,13 +835,28 @@ function Diar:PositionPlannerControlsBar(pf)
     self:EnsurePaletteToggleButton(pf)
     self:EnsureCanvasLockButton(pf)
     if pf.compactMode then
+        if pf.controls then pf.controls:Hide() end
+        if pf.playPauseBtn then pf.playPauseBtn:Hide() end
+        if pf.stopBtn then pf.stopBtn:Hide() end
+        if pf.timeline then pf.timeline:Hide() end
+        if pf.patreonPanel then pf.patreonPanel:Hide() end
+        if pf.savedPlansPanel then pf.savedPlansPanel:Hide() end
+        if pf.savedPlansFooter then pf.savedPlansFooter:Hide() end
+        if pf.raidCheckBar then pf.raidCheckBar:Hide() end
+        if pf.raidLeadPanel then pf.raidLeadPanel:Hide() end
+        if pf.raidLeadBottomDivider then pf.raidLeadBottomDivider:Hide() end
         if pf.settingsBtn then pf.settingsBtn:Hide() end
         if pf.previewIndexBtn then pf.previewIndexBtn:Hide() end
+        if pf.nsrtExportBtn then pf.nsrtExportBtn:Hide() end
         if pf.paletteToggleBtn then pf.paletteToggleBtn:Hide() end
         if pf.canvasLockBtn then pf.canvasLockBtn:Hide() end
         if pf.previewNamesBtn then pf.previewNamesBtn:Hide() end
+        if pf.assignmentBtn then pf.assignmentBtn:Hide() end
         return
     end
+    if pf.controls then pf.controls:Show() end
+    if pf.playPauseBtn then pf.playPauseBtn:Show() end
+    if pf.stopBtn then pf.stopBtn:Show() end
     if pf.paletteToggleBtn then
         pf.paletteToggleBtn:Show()
         pf.paletteToggleBtn:ClearAllPoints()
@@ -682,11 +884,931 @@ function Diar:PositionPlannerControlsBar(pf)
     if pf.previewIndexBtn then
         pf.previewIndexBtn:Show()
         pf.previewIndexBtn:ClearAllPoints()
-        pf.previewIndexBtn:SetPoint("RIGHT", pf.settingsBtn, "LEFT", -6, 0)
-        pf.previewIndexBtn:SetHeight(CONTROLS_H)
+        if pf.canvas then
+            pf.previewIndexBtn:SetPoint("BOTTOMRIGHT", pf.canvas, "BOTTOMRIGHT", -8, 8)
+        else
+            pf.previewIndexBtn:SetPoint("BOTTOMRIGHT", pf, "BOTTOMRIGHT", -24, 24)
+        end
         self:UpdatePreviewIndexButton(pf)
     end
+    if pf.nsrtExportBtn then
+        if CanShowNsrtToolbarButton() then
+            pf.nsrtExportBtn:Show()
+            pf.nsrtExportBtn:ClearAllPoints()
+            pf.nsrtExportBtn:SetPoint("RIGHT", pf.settingsBtn, "LEFT", -6, 0)
+            pf.nsrtExportBtn:SetHeight(CONTROLS_H)
+        else
+            pf.nsrtExportBtn:Hide()
+        end
+    end
     self:UpdatePreviewNamesButton(pf)
+    self:UpdatePlannerAssignmentButton(pf)
+end
+
+local ResolveSceneSpots
+local RSGG_NOTE_MARKER_PREFIX = "# rsggNoteStart"
+local RSGG_NOTE_MARKER_END = "# rsggNoteEnd"
+local RSGG_NOTE_LEGACY_MARKER_PREFIX = "# rsggNote:"
+local RSGG_NOTE_LEGACY_MARKER_END = "# /rsggNote"
+
+local function SplitNonEmptyLines(text)
+    local out = {}
+    text = tostring(text or "")
+    if text == "" then return out end
+    if not text:match("\n$") then text = text .. "\n" end
+    for line in text:gmatch("([^\n]*)\n") do
+        line = strtrim(line or "")
+        if line ~= "" then
+            out[#out + 1] = line
+        end
+    end
+    return out
+end
+
+local function GetRsggLineKey(line)
+    if type(line) ~= "string" then return nil end
+    if not line:find("rsgg", 1, true) then return nil end
+    local scene = line:match("scene:(%d+)")
+    if not scene then return nil end
+    local phase = line:match("ph:(%d+)") or line:match(";ph:(%d+)") or line:match(";ph(%d+)") or line:match("ph(%d+)")
+    phase = tonumber(phase) or 1
+    scene = tonumber(scene)
+    if not scene then return nil end
+    return ("ph:%d;scene:%d"):format(phase, scene)
+end
+
+local function GetPlanTokenForMarker(data)
+    if type(data) ~= "table" then return nil end
+    if Diar and Diar.GetPlanIdentityKey then
+        local ok, key = pcall(function() return Diar:GetPlanIdentityKey(data) end)
+        if ok and type(key) == "string" and key ~= "" then
+            return key:gsub("%s+", "_")
+        end
+    end
+    local instanceKey = strtrim(tostring(data.instanceKey or ""))
+    if instanceKey ~= "" then return "inst:" .. instanceKey end
+    local planId = strtrim(tostring(data.planId or ""))
+    if planId ~= "" then return "id:" .. planId end
+    local planName = strtrim(tostring(data.planName or ""))
+    if planName ~= "" then return "name:" .. strlower(planName):gsub("%s+", "_") end
+    return nil
+end
+
+local function IsManagedStartLine(line)
+    return type(line) == "string" and (
+        line:find(RSGG_NOTE_MARKER_PREFIX, 1, true) == 1
+        or line:find(RSGG_NOTE_LEGACY_MARKER_PREFIX, 1, true) == 1
+    )
+end
+
+local function IsManagedEndLine(line)
+    return line == RSGG_NOTE_MARKER_END or line == RSGG_NOTE_LEGACY_MARKER_END
+end
+
+local function ParsePlanTokenFromManagedStart(line)
+    if type(line) ~= "string" then return nil end
+    local token = line:match("plan=([^%s]+)")
+    if token and token ~= "" then return token end
+    return nil
+end
+
+local function ReplaceManagedRsggBlock(lines, newManagedLines, targetPlanToken)
+    local out = {}
+    local i = 1
+    local replaced = false
+    lines = lines or {}
+    while i <= #lines do
+        local line = lines[i]
+        if IsManagedStartLine(line) then
+            local startLine = line
+            local block = { startLine }
+            local j = i + 1
+            while j <= #lines do
+                block[#block + 1] = lines[j]
+                if IsManagedEndLine(lines[j]) then
+                    break
+                end
+                j = j + 1
+            end
+            local blockPlanToken = ParsePlanTokenFromManagedStart(startLine)
+            local matches = false
+            if targetPlanToken and targetPlanToken ~= "" then
+                matches = (blockPlanToken == targetPlanToken)
+            else
+                matches = (not replaced)
+            end
+            if matches and not replaced then
+                for _, newLine in ipairs(newManagedLines) do
+                    out[#out + 1] = newLine
+                end
+                replaced = true
+            else
+                for _, keepLine in ipairs(block) do
+                    out[#out + 1] = keepLine
+                end
+            end
+            i = j + 1
+        else
+            out[#out + 1] = line
+            i = i + 1
+        end
+    end
+    if not replaced then
+        for _, newLine in ipairs(newManagedLines) do
+            out[#out + 1] = newLine
+        end
+    end
+    return out, replaced
+end
+
+local function ExtractManagedRsggBlock(noteText, targetPlanToken)
+    local lines = SplitNonEmptyLines(noteText)
+    local i = 1
+    local fallbackLines = nil
+    while i <= #lines do
+        local line = lines[i]
+        if IsManagedStartLine(line) then
+            local blockPlanToken = ParsePlanTokenFromManagedStart(line)
+            local blockLines = {}
+            local j = i + 1
+            while j <= #lines do
+                if IsManagedEndLine(lines[j]) then break end
+                blockLines[#blockLines + 1] = lines[j]
+                j = j + 1
+            end
+            if targetPlanToken and blockPlanToken == targetPlanToken then
+                return blockLines, blockPlanToken
+            end
+            if not fallbackLines then
+                fallbackLines = blockLines
+            end
+            i = j + 1
+        else
+            i = i + 1
+        end
+    end
+    return fallbackLines, nil
+end
+
+local function ParseSceneTimingFromRsggLines(lines)
+    local byScene = {}
+    for _, line in ipairs(lines or {}) do
+        if type(line) == "string" and line:find("rsgg", 1, true) then
+            local scene = tonumber(line:match("scene:(%d+)"))
+            if scene and scene >= 1 then
+                byScene[scene] = {
+                    -- Keep dialog loading tolerant of malformed "time4" as well.
+                    time = strtrim(tostring(line:match("time:([^;]+)") or line:match("time(%d*%.?%d+)") or "")),
+                    phase = strtrim(tostring(line:match("ph:([^;]+)") or "")),
+                    duration = strtrim(tostring(line:match("dur:([^;]+)") or "")),
+                }
+            end
+        end
+    end
+    return byScene
+end
+
+local function MergeNoteWithRsggBlock(baseText, rsggBlock, planToken, forceReplaceFirstManagedBlock)
+    baseText = strtrim(tostring(baseText or ""))
+    rsggBlock = strtrim(tostring(rsggBlock or ""))
+    if rsggBlock == "" then return baseText, false end
+
+    local incomingLines = SplitNonEmptyLines(rsggBlock)
+    if #incomingLines == 0 then
+        return baseText, false
+    end
+
+    local versionStamp = date("%Y%m%d%H%M%S")
+    local header = RSGG_NOTE_MARKER_PREFIX .. ":" .. versionStamp
+    if type(planToken) == "string" and planToken ~= "" then
+        header = header .. ";plan=" .. planToken
+    end
+    local managedLines = { header }
+    for _, line in ipairs(incomingLines) do
+        managedLines[#managedLines + 1] = line
+    end
+    managedLines[#managedLines + 1] = RSGG_NOTE_MARKER_END
+    if baseText == "" then
+        return table.concat(managedLines, "\n"), true
+    end
+
+    local baseLines = SplitNonEmptyLines(baseText)
+    local replaceTargetToken = planToken
+    if forceReplaceFirstManagedBlock then
+        replaceTargetToken = nil
+    end
+    local mergedWithBlocks = ReplaceManagedRsggBlock(baseLines, managedLines, replaceTargetToken)
+    if mergedWithBlocks and #mergedWithBlocks > 0 then
+        local mergedManaged = table.concat(mergedWithBlocks, "\n")
+        if mergedManaged == baseText then
+            return baseText, false
+        end
+        return mergedManaged, true
+    end
+
+    -- Replace existing rsgg scene entries by key (phase+scene) so repeated
+    -- exports update lines instead of appending duplicates. This also migrates
+    -- older notes into the marker-based managed block format.
+    local incomingByKey = {}
+    local hasKeyedIncoming = false
+    for _, line in ipairs(incomingLines) do
+        local key = GetRsggLineKey(line)
+        if key then
+            hasKeyedIncoming = true
+            incomingByKey[key] = line
+        end
+    end
+
+    if not hasKeyedIncoming then
+        if baseText:find(rsggBlock, 1, true) then
+            return baseText, false
+        end
+        local mergedNoKeys = baseText .. "\n" .. table.concat(managedLines, "\n")
+        return mergedNoKeys, true
+    end
+
+    local preserved = {}
+    for _, line in ipairs(baseLines) do
+        local key = GetRsggLineKey(line)
+        if not (key and incomingByKey[key]) then
+            preserved[#preserved + 1] = line
+        end
+    end
+
+    -- Keep incoming line order and write it under one managed marker block.
+    for _, line in ipairs(managedLines) do
+        preserved[#preserved + 1] = line
+    end
+
+    local merged = table.concat(preserved, "\n")
+    if merged == baseText then
+        return baseText, false
+    end
+    return merged, true
+end
+
+local _cachedNsrtInternal = nil
+local function ResolveNsrtInternal()
+    if _cachedNsrtInternal then return _cachedNsrtInternal end
+    if NSI and type(NSI) == "table" then
+        _cachedNsrtInternal = NSI
+        return _cachedNsrtInternal
+    end
+    if not NSAPI or not debug or not debug.getupvalue then
+        return nil
+    end
+    local function isValidNsrtCore(t)
+        if type(t) ~= "table" then return false end
+        -- Same signature the addon's proven FindNSI() uses, so we land on the
+        -- exact internal NSI namespace.
+        if type(t.StartReminders) == "function" and type(t.EventHandler) == "function" then
+            return true
+        end
+        return type(t.SetReminder) == "function" and type(t.Broadcast) == "function"
+    end
+    local function probeFunction(fn)
+        if type(fn) ~= "function" then return nil end
+        for i = 1, 128 do
+            local _, val = debug.getupvalue(fn, i)
+            if not val then break end
+            if isValidNsrtCore(val) then
+                _cachedNsrtInternal = val
+                return val
+            end
+        end
+        return nil
+    end
+    local probeFns = {
+        NSAPI.GetReminderString,
+        NSAPI.DebugEncounter,
+        NSAPI.RegisterCallback,
+        NSRT and NSRT.NSUI and NSRT.NSUI.reminders_frame and NSRT.NSUI.reminders_frame.SelectReminder,
+        NSRT and NSRT.NSUI and NSRT.NSUI.personal_reminders_frame and NSRT.NSUI.personal_reminders_frame.SelectReminder,
+    }
+    for _, fn in ipairs(probeFns) do
+        local hit = probeFunction(fn)
+        if hit then return hit end
+    end
+    return nil
+end
+
+local function AppendRsggToActiveNsrtNoteAndSend(rsggBlock, opts)
+    if type(rsggBlock) ~= "string" or strtrim(rsggBlock) == "" then
+        return false, false, false, "empty"
+    end
+
+    if not C_AddOns.IsAddOnLoaded("NorthernSkyRaidTools") then
+        return false, false, false, "nsrt_not_loaded"
+    end
+
+    if not (NSRT and NSRT.ActiveReminder and NSRT.Reminders and type(NSRT.Reminders[NSRT.ActiveReminder]) == "string") then
+        return false, false, false, "no_active_reminder"
+    end
+
+    opts = type(opts) == "table" and opts or nil
+    local activeName = NSRT.ActiveReminder
+    local planToken = GetPlanTokenForMarker(Diar and Diar.plannerData or nil)
+    local merged, changed = MergeNoteWithRsggBlock(
+        NSRT.Reminders[activeName],
+        rsggBlock,
+        planToken,
+        opts and opts.forceReplaceFirstManagedBlock
+    )
+    if changed then
+        NSRT.Reminders[activeName] = merged
+    end
+    NSRT.StoredSharedReminder = NSRT.Reminders[activeName]
+
+    local nsi = ResolveNsrtInternal()
+    if nsi and nsi.SetReminder then
+        -- Re-apply active note through NSRT's own state pipeline.
+        nsi:SetReminder(activeName, false)
+    end
+
+    -- NSRT broadcasts over AceComm (prefix "NSI_MSG"), NOT raw C_ChatInfo.SendAddonMessage.
+    -- AceComm adds its own multipart framing; a raw SendAddonMessage with the same prefix
+    -- is silently dropped by every receiver's AceComm handler. We must use AceComm too and
+    -- replicate the exact arg encoding NSI:Broadcast produces for "NSI_REM_SHARE":
+    --   event:unitID(string):reminderString(string):(string):true(boolean)
+    -- (args after event = unitID, reminderstring, assigntable[nil->""], skipcheck[true])
+    local function sendViaAceComm(reminderText)
+        if type(reminderText) ~= "string" then return false end
+        local AceComm = LibStub and LibStub("AceComm-3.0", true)
+        local LibDeflate = LibStub and LibStub("LibDeflate", true)
+        if not AceComm or not LibDeflate then return false end
+        local channel = IsInRaid() and "RAID" or (IsInGroup() and "PARTY" or nil)
+        if not channel then return false end
+        local delim = ":"
+        local unitID = (UnitInRaid("player") and ("raid" .. UnitInRaid("player"))) or UnitName("player") or "player"
+        local msg = "NSI_REM_SHARE" .. delim .. unitID .. "(string)"
+        msg = msg .. delim .. reminderText .. "(string)"   -- reminderstring
+        msg = msg .. delim .. "(string)"                    -- assigntable (nil -> "")
+        msg = msg .. delim .. "true(boolean)"               -- skipcheck
+        local compressed = LibDeflate:CompressDeflate(msg)
+        local encoded = compressed and LibDeflate:EncodeForWoWAddonChannel(compressed)
+        if not encoded then return false end
+        AceComm:SendCommMessage("NSI_MSG", encoded, channel)
+        return true
+    end
+
+    local sent = false
+    local canSend = UnitIsGroupLeader("player") or UnitIsGroupAssistant("player")
+    if canSend then
+        if nsi and nsi.Broadcast then
+            -- Preferred: NSRT's own code path (also refreshes locally via SetReminder above).
+            local channel = IsInRaid() and "RAID" or (IsInGroup() and "PARTY" or "RAID")
+            nsi:Broadcast("NSI_REM_SHARE", channel, NSRT.Reminders[activeName], nil, true)
+            sent = true
+        else
+            sent = sendViaAceComm(NSRT.Reminders[activeName])
+        end
+    end
+
+    return true, sent, changed, activeName, (nsi ~= nil)
+end
+
+local function BuildSceneNsrtTagBody(scene, fallbackSpotNames)
+    if not scene or type(scene.items) ~= "table" or #scene.items == 0 then return "" end
+    local sceneSpots = ResolveSceneSpots(scene)
+    if not sceneSpots then return "" end
+
+    local labelsBySlot = {}
+    local seenBySlot = {}
+    local function addLabelForSlot(slot, rawLabel)
+        slot = tonumber(slot)
+        local label = strtrim(tostring(rawLabel or ""))
+        if not slot or slot < 1 or label == "" then return end
+        labelsBySlot[slot] = labelsBySlot[slot] or {}
+        seenBySlot[slot] = seenBySlot[slot] or {}
+        local key = strlower(label)
+        if seenBySlot[slot][key] then return end
+        seenBySlot[slot][key] = true
+        labelsBySlot[slot][#labelsBySlot[slot] + 1] = label
+    end
+
+    local function getItemCenter(item)
+        if type(item) ~= "table" then return nil, nil end
+        local x = tonumber(item.x)
+        local y = tonumber(item.y)
+        if not x or not y then return nil, nil end
+        local w = tonumber(item.w) or 0
+        local h = tonumber(item.h) or 0
+        return x + w * 0.5, y + h * 0.5
+    end
+
+    for itemIndex, slot in pairs(sceneSpots) do
+        local item = scene.items[itemIndex]
+        addLabelForSlot(slot, (item and item.label) or "")
+    end
+
+    -- Imported plans may keep player names as standalone text objects near each
+    -- numbered spot, without copying the name onto the spot object itself.
+    -- Map nearby text labels onto unlabeled slots so tag preview/export stays
+    -- plan-driven without pulling stale NSRT note names.
+    do
+        local textCandidates = {}
+        for i, item in ipairs(scene.items) do
+            local label = strtrim(tostring((item and item.label) or ""))
+            if label ~= "" and tostring(item.kind or ""):lower() == "text" and not sceneSpots[i] then
+                local cx, cy = getItemCenter(item)
+                if cx and cy then
+                    textCandidates[#textCandidates + 1] = { index = i, label = label, cx = cx, cy = cy, used = false }
+                end
+            end
+        end
+        if #textCandidates > 0 then
+            local missingSlots = {}
+            for itemIndex, slot in pairs(sceneSpots) do
+                if not (labelsBySlot[slot] and #labelsBySlot[slot] > 0) then
+                    missingSlots[#missingSlots + 1] = { itemIndex = itemIndex, slot = slot }
+                end
+            end
+            table.sort(missingSlots, function(a, b) return a.slot < b.slot end)
+            for _, miss in ipairs(missingSlots) do
+                local spotItem = scene.items[miss.itemIndex]
+                local sx, sy = getItemCenter(spotItem)
+                if sx and sy then
+                    local bestIdx, bestDist = nil, nil
+                    for idx, cand in ipairs(textCandidates) do
+                        if not cand.used then
+                            local dx = cand.cx - sx
+                            local dy = cand.cy - sy
+                            local d2 = dx * dx + dy * dy
+                            if not bestDist or d2 < bestDist then
+                                bestDist = d2
+                                bestIdx = idx
+                            end
+                        end
+                    end
+                    if bestIdx then
+                        textCandidates[bestIdx].used = true
+                        addLabelForSlot(miss.slot, textCandidates[bestIdx].label)
+                    end
+                end
+            end
+        end
+    end
+
+    if type(fallbackSpotNames) == "table" then
+        -- Fallback assignments should only fill slots that have no scene labels.
+        -- If a scene label changed, it must be authoritative and must not keep
+        -- stale names from the previously loaded NSRT note.
+        for slot, label in pairs(fallbackSpotNames) do
+            local idx = tonumber(slot)
+            local hasSceneLabel = idx and labelsBySlot[idx] and #labelsBySlot[idx] > 0
+            if idx and not hasSceneLabel then
+                addLabelForSlot(idx, label)
+            end
+        end
+    end
+
+    local slots = {}
+    for slot, labels in pairs(labelsBySlot) do
+        if labels and #labels > 0 then
+            slots[#slots + 1] = slot
+        end
+    end
+    table.sort(slots)
+    if #slots == 0 then return "" end
+
+    local parts = {}
+    for _, slot in ipairs(slots) do
+        parts[#parts + 1] = ("%d: %s"):format(slot, table.concat(labelsBySlot[slot], " "))
+    end
+    return table.concat(parts, " ")
+end
+
+function Diar:BuildPlannerNsrtNoteText(sceneTiming)
+    local data = self.plannerData
+    if not data or type(data.scenes) ~= "table" or #data.scenes == 0 then return nil end
+
+    sceneTiming = type(sceneTiming) == "table" and sceneTiming or {}
+    local lines = {}
+    for i, scene in ipairs(data.scenes) do
+        local timing = sceneTiming[i] or {}
+        local rawTime = strtrim(tostring(timing.time or ""))
+        local rawPhase = strtrim(tostring(timing.phase or ""))
+        local rawDuration = strtrim(tostring(timing.duration or ""))
+        local timeVal = rawTime ~= "" and rawTime or "__TIME__"
+        local phaseVal = rawPhase ~= "" and rawPhase or "__PHASE__"
+        local durationVal = rawDuration ~= "" and rawDuration or "6"
+
+        local line = ("time:%s;ph:%s;rsgg;scene:%d;dur:%s"):format(timeVal, phaseVal, i, durationVal)
+        local tagBody = BuildSceneNsrtTagBody(scene, nil)
+        if tagBody ~= "" then
+            line = line .. ";tag " .. tagBody
+        end
+        lines[#lines + 1] = line
+    end
+
+    return table.concat(lines, "\n")
+end
+
+function Diar:ShowPlannerNsrtExportDialog()
+    local data = self.plannerData
+    if not data or type(data.scenes) ~= "table" or #data.scenes == 0 then
+        print("|cffff6666[Raidstrats.gg]|r No plan loaded to export.")
+        return
+    end
+
+    local function CreateNumberInput(parent, width)
+        local box = CreateFrame("Frame", nil, parent, "BackdropTemplate")
+        box:SetSize(width or 72, 22)
+        SetBackdrop(box, {0.05, 0.05, 0.07, 1}, UI.BORDER, 1)
+
+        local eb = CreateFrame("EditBox", nil, box)
+        eb:SetAutoFocus(false)
+        eb:SetPoint("TOPLEFT", box, "TOPLEFT", 5, -1)
+        eb:SetPoint("BOTTOMRIGHT", box, "BOTTOMRIGHT", -5, 1)
+        eb:SetFontObject("GameFontHighlightSmall")
+        eb:SetTextColor(0.92, 0.92, 0.96)
+        eb:SetJustifyH("LEFT")
+        eb:SetMaxLetters(10)
+        eb:SetNumeric(false)
+        eb:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+        eb:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
+
+        return box, eb
+    end
+
+    if not self.plannerNsrtExportDialog then
+        local f = CreateFrame("Frame", "RaidstratsPlannerNsrtExportDialog", UIParent, "BackdropTemplate")
+        f:SetSize(900, 620)
+        f:SetPoint("CENTER")
+        f:SetMovable(true)
+        f:EnableMouse(true)
+        SetBackdrop(f)
+        tinsert(UISpecialFrames, "RaidstratsPlannerNsrtExportDialog")
+        f:SetScript("OnMouseDown", function(s, b) if b == "LeftButton" then s:StartMoving() end end)
+        f:SetScript("OnMouseUp", function(s) s:StopMovingOrSizing() end)
+
+        local closeBtn = CreateFrame("Button", nil, f, "UIPanelCloseButton")
+        closeBtn:SetPoint("TOPRIGHT", -5, -5)
+
+        local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+        title:SetPoint("TOPLEFT", 16, -16)
+        title:SetTextColor(0.92, 0.92, 0.92)
+        title:SetText("Build NSRT Note")
+
+        local hint = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        hint:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -6)
+        hint:SetPoint("TOPRIGHT", f, "TOPRIGHT", -16, -6)
+        hint:SetJustifyH("LEFT")
+        hint:SetTextColor(0.58, 0.62, 0.7)
+        hint:SetText("Set time/ph/dur per scene, then copy the generated lines into your NSRT note.")
+
+        local rowsWrap = CreateFrame("Frame", nil, f, "BackdropTemplate")
+        rowsWrap:SetPoint("TOPLEFT", f, "TOPLEFT", 16, -64)
+        rowsWrap:SetPoint("TOPRIGHT", f, "TOPRIGHT", -16, -64)
+        rowsWrap:SetHeight(216)
+        SetBackdrop(rowsWrap, {0.05, 0.05, 0.07, 1}, UI.BORDER, 1)
+
+        local sceneListHint = rowsWrap:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        sceneListHint:SetPoint("TOPLEFT", rowsWrap, "TOPLEFT", 10, -8)
+        sceneListHint:SetPoint("TOPRIGHT", rowsWrap, "TOPRIGHT", -10, -8)
+        sceneListHint:SetJustifyH("LEFT")
+        sceneListHint:SetTextColor(0.72, 0.76, 0.84)
+        f.sceneListHint = sceneListHint
+
+        local headerRow = CreateFrame("Frame", nil, rowsWrap)
+        headerRow:SetHeight(16)
+        headerRow:SetPoint("TOPLEFT", rowsWrap, "TOPLEFT", 6, -26)
+        headerRow:SetPoint("TOPRIGHT", rowsWrap, "TOPRIGHT", -26, -26)
+        f.nsrtHeaderRow = headerRow
+
+        local function MakeHeader(text, x, w)
+            local fs = headerRow:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            fs:SetPoint("LEFT", headerRow, "LEFT", x, 0)
+            fs:SetWidth(w)
+            fs:SetJustifyH("LEFT")
+            fs:SetTextColor(0.78, 0.82, 0.90)
+            fs:SetText(text)
+            return fs
+        end
+        MakeHeader("Scene", 8, 180)
+        MakeHeader("Time", 196, 78)
+        MakeHeader("Phase", 282, 78)
+        MakeHeader("Dur", 368, 60)
+        local tagHeader = headerRow:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        tagHeader:SetPoint("LEFT", headerRow, "LEFT", 438, 0)
+        tagHeader:SetPoint("RIGHT", headerRow, "RIGHT", -8, 0)
+        tagHeader:SetJustifyH("LEFT")
+        tagHeader:SetTextColor(0.78, 0.82, 0.90)
+        tagHeader:SetText("Tag Preview")
+
+        local rowsScroll = CreateFrame("ScrollFrame", nil, rowsWrap, "UIPanelScrollFrameTemplate")
+        rowsScroll:SetPoint("TOPLEFT", rowsWrap, "TOPLEFT", 6, -44)
+        rowsScroll:SetPoint("BOTTOMRIGHT", rowsWrap, "BOTTOMRIGHT", -26, 6)
+        SkinPlannerScroll(rowsScroll)
+        local rowsChild = CreateFrame("Frame", nil, rowsScroll)
+        rowsChild:SetSize(1, 1)
+        rowsScroll:SetScrollChild(rowsChild)
+        f.rowsScroll = rowsScroll
+        f.rowsChild = rowsChild
+        f.sceneRows = {}
+
+        local previewHint = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        previewHint:SetPoint("TOPLEFT", rowsWrap, "BOTTOMLEFT", 2, -10)
+        previewHint:SetPoint("TOPRIGHT", rowsWrap, "BOTTOMRIGHT", -2, -10)
+        previewHint:SetJustifyH("LEFT")
+        previewHint:SetTextColor(0.82, 0.85, 0.9)
+        previewHint:SetText("You can copy this block manually, or use Add+Send to auto-fill your active NSRT note and send it to your group.")
+
+        local textWrap = CreateFrame("Frame", nil, f, "BackdropTemplate")
+        textWrap:SetPoint("TOPLEFT", previewHint, "BOTTOMLEFT", -2, -6)
+        textWrap:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -38, 54)
+        SetBackdrop(textWrap, {0.05, 0.05, 0.07, 1}, UI.BORDER, 1)
+
+        local scroll = CreateFrame("ScrollFrame", nil, textWrap, "UIPanelScrollFrameTemplate")
+        scroll:SetPoint("TOPLEFT", textWrap, "TOPLEFT", 6, -6)
+        scroll:SetPoint("BOTTOMRIGHT", textWrap, "BOTTOMRIGHT", -26, 6)
+        SkinPlannerScroll(scroll)
+
+        local eb = CreateFrame("EditBox", nil, scroll)
+        eb:SetMultiLine(true)
+        eb:SetAutoFocus(false)
+        eb:EnableMouse(true)
+        eb:SetMaxLetters(0)
+        eb:SetFontObject("GameFontHighlightSmall")
+        eb:SetTextInsets(2, 2, 2, 2)
+        eb:SetTextColor(0.90, 0.92, 0.96, 1)
+        eb:SetJustifyH("LEFT")
+        eb:SetJustifyV("TOP")
+        eb:SetWidth(790)
+        eb:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+        eb:SetScript("OnTextChanged", function(self)
+            local textH = 0
+            if type(self.GetStringHeight) == "function" then
+                local ok, h = pcall(self.GetStringHeight, self)
+                textH = (ok and tonumber(h)) or 0
+            elseif type(self.GetTextHeight) == "function" then
+                local ok, h = pcall(self.GetTextHeight, self)
+                textH = (ok and tonumber(h)) or 0
+            end
+            local h = textH + 16
+            self:SetHeight(math.max(1, h))
+            if self:GetParent() and self:GetParent().UpdateScrollChildRect then
+                self:GetParent():UpdateScrollChildRect()
+            end
+        end)
+        scroll:SetScrollChild(eb)
+
+        local btnRow = CreateFrame("Frame", nil, f)
+        btnRow:SetHeight(34)
+        btnRow:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 16, 14)
+        btnRow:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -16, 14)
+
+        local selectBtn = CreatePlannerIconBtn(btnRow, "Select All", 104, 30)
+        selectBtn:SetPoint("LEFT", btnRow, "LEFT", 0, 0)
+        selectBtn:SetScript("OnClick", function()
+            eb:SetFocus()
+            eb:HighlightText()
+        end)
+
+        local refreshBtn = CreatePlannerIconBtn(btnRow, "Refresh", 92, 30)
+        refreshBtn:SetPoint("LEFT", selectBtn, "RIGHT", 6, 0)
+
+        local addSendBtn = CreatePlannerIconBtn(btnRow, "Add+Send", 100, 30)
+        addSendBtn:SetPoint("LEFT", refreshBtn, "RIGHT", 6, 0)
+
+        local closeBottomBtn = CreatePlannerIconBtn(btnRow, "Close", 80, 30)
+        closeBottomBtn:SetPoint("RIGHT", btnRow, "RIGHT", 0, 0)
+        closeBottomBtn:SetScript("OnClick", function() f:Hide() end)
+
+        f.editBox = eb
+        f.refreshBtn = refreshBtn
+        f.addSendBtn = addSendBtn
+        f.createNumberInput = CreateNumberInput
+        self.plannerNsrtExportDialog = f
+    end
+
+    if self.ReloadRsggCuesFromActiveNote then
+        self:ReloadRsggCuesFromActiveNote()
+    end
+
+    local dlg = self.plannerNsrtExportDialog
+    local scenes = data.scenes
+    dlg.sceneRows = dlg.sceneRows or {}
+    local currentPlanToken = GetPlanTokenForMarker(data)
+
+    local existingSceneTiming = {}
+    local loadedManagedBlock = false
+    do
+        local activeNoteText = nil
+        if NSRT and NSRT.ActiveReminder and NSRT.Reminders and type(NSRT.Reminders[NSRT.ActiveReminder]) == "string" then
+            activeNoteText = NSRT.Reminders[NSRT.ActiveReminder]
+        elseif NSRT and type(NSRT.StoredSharedReminder) == "string" and NSRT.StoredSharedReminder ~= "" then
+            activeNoteText = NSRT.StoredSharedReminder
+        end
+        if type(activeNoteText) == "string" and activeNoteText ~= "" then
+            local managedLines, matchedToken = ExtractManagedRsggBlock(activeNoteText, currentPlanToken)
+            if type(managedLines) == "table" and #managedLines > 0 then
+                existingSceneTiming = ParseSceneTimingFromRsggLines(managedLines)
+                loadedManagedBlock = (matchedToken == currentPlanToken) or (currentPlanToken == nil)
+            end
+        end
+    end
+
+    local function ResolveSpotNamesForScene(sceneIndex)
+        sceneIndex = tonumber(sceneIndex) or 1
+        if not self.FindNsrtAssignmentForScene then return nil end
+        local tag, tagNames, tagSpotMap = self:FindNsrtAssignmentForScene(sceneIndex)
+        local out = {}
+        if type(tagSpotMap) == "table" then
+            for slot, namesList in pairs(tagSpotMap) do
+                local idx = tonumber(slot)
+                if idx and idx >= 1 and type(namesList) == "table" and #namesList > 0 then
+                    local clean = {}
+                    for _, name in ipairs(namesList) do
+                        local txt = strtrim(tostring(name or ""))
+                        if txt ~= "" then clean[#clean + 1] = txt end
+                    end
+                    if #clean > 0 then
+                        out[idx] = table.concat(clean, "/")
+                    end
+                end
+            end
+        elseif type(tagNames) == "table" and #tagNames > 0 then
+            for i, name in ipairs(tagNames) do
+                local txt = strtrim(tostring(name or ""))
+                if txt ~= "" then out[i] = txt end
+            end
+        elseif type(tag) == "string" and tag ~= "" and type(self.rsggGroups) == "table" then
+            local roster = self.rsggGroups[strlower(tag)]
+            if type(roster) == "table" then
+                for i, name in ipairs(roster) do
+                    local txt = strtrim(tostring(name or ""))
+                    if txt ~= "" then out[i] = txt end
+                end
+            end
+        end
+        for _ in pairs(out) do return out end
+        return nil
+    end
+
+    local function refreshPreview()
+        local sceneTiming = {}
+        for i, row in ipairs(dlg.sceneRows) do
+            sceneTiming[i] = {
+                time = row.timeEdit and row.timeEdit:GetText() or "",
+                phase = row.phaseEdit and row.phaseEdit:GetText() or "",
+                duration = row.durationEdit and row.durationEdit:GetText() or "",
+                spotNames = row.spotNames,
+            }
+        end
+        dlg.editBox:SetText(Diar:BuildPlannerNsrtNoteText(sceneTiming) or "")
+    end
+
+    local names = {}
+    for i, scene in ipairs(scenes) do
+        local raw = strtrim(tostring((scene and scene.name) or ""))
+        if raw == "" or raw == tostring(i) then
+            names[#names + 1] = ("Scene %d"):format(i)
+        else
+            names[#names + 1] = ("Scene %d - %s"):format(i, raw)
+        end
+    end
+    local hintBase = ("Includes %d scenes: %s"):format(#names, table.concat(names, ", "))
+    if loadedManagedBlock then
+        hintBase = hintBase .. " |cff00cc88(loaded existing rsggNote timings)|r"
+    end
+    dlg.sceneListHint:SetText(hintBase)
+
+    local rowH = 24
+    for i = 1, #scenes do
+        local row = dlg.sceneRows[i]
+        if not row then
+            local frame = CreateFrame("Frame", nil, dlg.rowsChild)
+            frame:SetHeight(rowH)
+            local sceneLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            sceneLabel:SetPoint("LEFT", frame, "LEFT", 8, 0)
+            sceneLabel:SetWidth(180)
+            sceneLabel:SetJustifyH("LEFT")
+            sceneLabel:SetTextColor(0.88, 0.9, 0.95)
+
+            local _, timeEdit = dlg.createNumberInput(frame, 78)
+            timeEdit:GetParent():SetPoint("LEFT", frame, "LEFT", 196, 0)
+
+            local _, phaseEdit = dlg.createNumberInput(frame, 78)
+            phaseEdit:GetParent():SetPoint("LEFT", frame, "LEFT", 282, 0)
+
+            local _, durationEdit = dlg.createNumberInput(frame, 60)
+            durationEdit:GetParent():SetPoint("LEFT", frame, "LEFT", 368, 0)
+
+            local tagPreview = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            tagPreview:SetPoint("LEFT", frame, "LEFT", 438, 0)
+            tagPreview:SetPoint("RIGHT", frame, "RIGHT", -8, 0)
+            tagPreview:SetJustifyH("LEFT")
+            tagPreview:SetTextColor(0.58, 0.62, 0.7)
+
+            timeEdit:SetScript("OnTextChanged", refreshPreview)
+            phaseEdit:SetScript("OnTextChanged", refreshPreview)
+            durationEdit:SetScript("OnTextChanged", refreshPreview)
+
+            row = {
+                frame = frame,
+                sceneLabel = sceneLabel,
+                timeEdit = timeEdit,
+                phaseEdit = phaseEdit,
+                durationEdit = durationEdit,
+                tagPreview = tagPreview,
+            }
+            dlg.sceneRows[i] = row
+        end
+
+        row.frame:Show()
+        row.frame:ClearAllPoints()
+        row.frame:SetPoint("TOPLEFT", dlg.rowsChild, "TOPLEFT", 0, -((i - 1) * rowH))
+        row.frame:SetPoint("TOPRIGHT", dlg.rowsChild, "TOPRIGHT", 0, -((i - 1) * rowH))
+        row.sceneLabel:SetText(names[i] or ("Scene " .. i))
+        local existing = existingSceneTiming[i]
+        row.timeEdit:SetText((existing and existing.time) or "")
+        row.phaseEdit:SetText((existing and existing.phase) or "")
+        row.durationEdit:SetText((existing and existing.duration) or "6")
+        row.spotNames = ResolveSpotNamesForScene(i)
+        local tagBody = BuildSceneNsrtTagBody(scenes[i], nil)
+        row.tagPreview:SetText((tagBody ~= "" and tagBody) or "(no labels indexed)")
+    end
+    for i = #scenes + 1, #dlg.sceneRows do
+        local row = dlg.sceneRows[i]
+        if row and row.frame then row.frame:Hide() end
+    end
+
+    dlg.rowsChild:SetHeight(math.max(1, #scenes * rowH + 2))
+    dlg.refreshBtn:SetScript("OnClick", refreshPreview)
+    dlg.addSendBtn:SetScript("OnClick", function()
+        local block = ""
+        local function runAddSend(sendOpts)
+            local ok, sent, changed, activeNameOrReason, nsiAvailable = AppendRsggToActiveNsrtNoteAndSend(block, sendOpts)
+            if not ok then
+                if activeNameOrReason == "no_active_reminder" then
+                    print("|cffff6666[Raidstrats.gg]|r No active NSRT reminder selected. Select a shared note in NSRT first.")
+                elseif activeNameOrReason == "nsrt_not_loaded" then
+                    print("|cffff6666[Raidstrats.gg]|r NorthernSkyRaidTools is not loaded.")
+                elseif activeNameOrReason == "setreminder_missing" then
+                    print("|cffff6666[Raidstrats.gg]|r NSRT API unavailable (SetReminder missing).")
+                else
+                    print("|cffff6666[Raidstrats.gg]|r Could not append to active NSRT reminder.")
+                end
+                return
+            end
+            if sent then
+                print(("|cff00aaff[Raidstrats.gg]|r Added lines to active NSRT note (%s)%s and sent to group."):format(
+                    tostring(activeNameOrReason or "?"),
+                    changed and "" or " (already present)"
+                ))
+            else
+                print(("|cffff9900[Raidstrats.gg]|r Added lines to active NSRT note (%s)%s, but you need raid leader/assistant to send."):format(
+                    tostring(activeNameOrReason or "?"),
+                    changed and "" or " (already present)"
+                ))
+            end
+            if not nsiAvailable then
+                -- NSRT exposes no public API to re-render the active note; that only happens
+                -- via its internal NSI namespace, which this client doesn't let us reach.
+                print("|cffff9900[Raidstrats.gg]|r Note saved + broadcast, but your own NSRT view won't refresh until you reopen the note in NSRT (group members update automatically).")
+            end
+            if self.ReloadRsggCuesFromActiveNote then
+                self:ReloadRsggCuesFromActiveNote()
+            end
+        end
+
+        refreshPreview()
+        block = strtrim(tostring(dlg.editBox and dlg.editBox:GetText() or ""))
+        if block == "" then
+            print("|cffff9900[Raidstrats.gg]|r Nothing to add.")
+            return
+        end
+
+        local activeName = NSRT and NSRT.ActiveReminder
+        local activeNoteText = (activeName and NSRT and NSRT.Reminders and type(NSRT.Reminders[activeName]) == "string")
+            and NSRT.Reminders[activeName]
+            or ""
+        local currentPlanToken = GetPlanTokenForMarker(self and self.plannerData or nil)
+        local existingManagedLines, matchedToken = ExtractManagedRsggBlock(activeNoteText, currentPlanToken)
+        local hasOtherPlanManagedBlock = existingManagedLines and #existingManagedLines > 0 and not matchedToken
+
+        if hasOtherPlanManagedBlock then
+            local popup = StaticPopup_Show("RAIDSTRATSGG_NSRT_OVERRIDE_BLOCK", nil, nil, {
+                onAccept = function()
+                    runAddSend({ forceReplaceFirstManagedBlock = true })
+                end,
+            })
+            if popup then
+                return
+            end
+        end
+
+        runAddSend(nil)
+    end)
+    refreshPreview()
+
+    if self.PrepareModal then
+        self:PrepareModal(dlg, self.plannerFrame or self.frame)
+    end
+    dlg:Show()
+    dlg.editBox:SetFocus()
+    dlg.editBox:HighlightText()
 end
 
 local DEBUG_PANEL_H = 146
@@ -744,10 +1866,12 @@ local function EnsurePlannerDebugPanel(pf)
     edit:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
     edit:SetScript("OnTextChanged", function(self)
         local textH = 0
-        if self.GetStringHeight then
-            textH = self:GetStringHeight() or 0
-        elseif self.GetTextHeight then
-            textH = self:GetTextHeight() or 0
+        if type(self.GetStringHeight) == "function" then
+            local ok, h = pcall(self.GetStringHeight, self)
+            textH = (ok and tonumber(h)) or 0
+        elseif type(self.GetTextHeight) == "function" then
+            local ok, h = pcall(self.GetTextHeight, self)
+            textH = (ok and tonumber(h)) or 0
         end
         local h = math.max(scroll:GetHeight(), math.ceil(textH) + 18)
         self:SetHeight(h)
@@ -793,7 +1917,7 @@ local DEFAULT_EXPANDED_LOAD_SCALE = 0.60
 local function GetPlannerControlsMinWidth()
     local gap = 6
     local clusterGap = 12
-    -- Left: Show palette + Lock | Center: Play + Stop | Right: Preview index + Settings
+    -- Left: Show palette + Lock | Center: Play + Stop | Right: NSRT + preview-eye + Settings
     return 96 + gap + 72 + clusterGap + 110 + gap * 2 + 110 + clusterGap + 104 + gap + 72
 end
 
@@ -1343,11 +2467,23 @@ end
 local function IsFrontalAnim(anim)
     if not anim then return false end
     local flag = anim.isFrontalSweepAnimation
-    return flag == true or flag == 1
+    if flag == true or flag == 1 then return true end
+    if type(flag) == "string" then
+        local lowered = strlower(strtrim(flag))
+        return lowered == "true" or lowered == "1"
+    end
+    return false
 end
 
 local function IsFrontalItem(item)
-    return item and (item.isFrontalBeam == true or item.isFrontalBeam == 1)
+    if not item then return false end
+    local flag = item.isFrontalBeam
+    if flag == true or flag == 1 then return true end
+    if type(flag) == "string" then
+        local lowered = strlower(strtrim(flag))
+        return lowered == "true" or lowered == "1"
+    end
+    return false
 end
 
 -- Fabric viewport mirror (public/js/canvas/viewport/zooming.js):
@@ -1483,6 +2619,12 @@ end
 local function SyncViewerViewportFromScene(pf, scene)
     if not pf then return end
     local sceneIdx = pf.selectedSceneIndex or 1
+    if pf.__ignoreNextSceneViewportSync then
+        pf.__ignoreNextSceneViewportSync = nil
+        pf.viewerViewport = nil
+        pf.__viewerViewportSceneIdx = sceneIdx
+        return
+    end
     if pf.__viewerViewportSceneIdx ~= sceneIdx then
         pf.viewerViewport = ParseSceneViewport(scene)
         pf.__viewerViewportSceneIdx = sceneIdx
@@ -1668,6 +2810,153 @@ local function SceneViewPctToCanvas(vc, cw, ch, xp, yp)
     return SceneViewCoord(vc, cw * xp, ch * yp)
 end
 
+local function BuildCompactAssignmentViewport(pf, scene, sceneSpots, activeGroup)
+    if not pf or not scene or not scene.items or not sceneSpots or not activeGroup then return nil end
+    if not pf.compactMode then return nil end
+    if not (Diar.IsCompactZoomToAssignmentEnabled and Diar:IsCompactZoomToAssignmentEnabled()) then
+        return nil
+    end
+    local mySpots = activeGroup.mySpots
+    if type(mySpots) ~= "table" then return nil end
+
+    local targetSlot = nil
+    for slot in pairs(mySpots) do
+        local n = tonumber(slot)
+        if n and n >= 1 and (not targetSlot or n < targetSlot) then
+            targetSlot = n
+        end
+    end
+    if not targetSlot then return nil end
+
+    local targetItem = nil
+    for itemIndex, slot in pairs(sceneSpots) do
+        if tonumber(slot) == targetSlot then
+            targetItem = scene.items[itemIndex]
+            break
+        end
+    end
+    if type(targetItem) ~= "table" then return nil end
+
+    local x = tonumber(targetItem.x)
+    local y = tonumber(targetItem.y)
+    local w = tonumber(targetItem.w) or 0
+    local h = tonumber(targetItem.h) or 0
+    if not x or not y then return nil end
+    local xp = math.max(0, math.min(100, x + w * 0.5))
+    local yp = math.max(0, math.min(100, y + h * 0.5))
+
+    local zoom = (Diar.GetCompactAssignmentZoom and Diar:GetCompactAssignmentZoom()) or 1.7
+    local panX = 0.5 - (xp / 100) * zoom
+    local panY = 0.5 - (yp / 100) * zoom
+    return ClampViewerViewportNormalized({
+        zoom = zoom,
+        panX = panX,
+        panY = panY,
+    })
+end
+
+function Diar:PreviewCompactAssignmentZoomFromSettings(settingsDialog)
+    if not self.plannerData or not self.plannerData.scenes or #self.plannerData.scenes == 0 then
+        print("|cffff6666[Raidstrats.gg]|r Load a plan first, then preview assignment zoom.")
+        return
+    end
+    -- Apply current dialog controls immediately for live preview (without requiring Save).
+    if settingsDialog then
+        local s = self.GetPlannerSettings and self:GetPlannerSettings()
+        if s then
+            if settingsDialog.compactZoomAssignChk and settingsDialog.compactZoomAssignChk.GetChecked then
+                s.compactZoomToAssignment = settingsDialog.compactZoomAssignChk:GetChecked() and true or false
+            end
+            if settingsDialog.compactAssignZoom ~= nil then
+                local z = tonumber(settingsDialog.compactAssignZoom)
+                if z then
+                    if z < 1.0 then z = 1.0 end
+                    if z > 3.0 then z = 3.0 end
+                    s.compactAssignZoom = z
+                end
+            end
+        end
+    end
+    self:ShowPlannerViewer({ reloadOnly = self.plannerFrame and self.plannerFrame:IsShown() })
+    local pf = self.plannerFrame
+    if not pf then return end
+
+    if not self._compactZoomPreviewState then
+        local point, _, relPoint, x, y = pf:GetPoint(1)
+        self._compactZoomPreviewState = {
+            compactMode = pf.compactMode == true,
+            nsrtSceneActive = pf.nsrtSceneActive,
+            compactCanvasScale = pf.compactCanvasScale,
+            viewerViewport = pf.viewerViewport and {
+                zoom = pf.viewerViewport.zoom,
+                panX = pf.viewerViewport.panX,
+                panY = pf.viewerViewport.panY,
+            } or nil,
+            pos = point and {
+                point = point,
+                relPoint = relPoint or point,
+                x = x or 0,
+                y = y or 0,
+            } or nil,
+        }
+    end
+    pf.__suspendPositionSave = true
+
+    if not pf.compactMode and self.SetPlannerCompactMode then
+        self:SetPlannerCompactMode(true)
+    end
+    if self.ApplyNsrtAssignmentForPlannerView then
+        self:ApplyNsrtAssignmentForPlannerView(pf.selectedSceneIndex or 1)
+    end
+    if self.RefreshPlannerScene then
+        self:RefreshPlannerScene()
+    end
+    if settingsDialog and settingsDialog.IsShown and settingsDialog:IsShown() then
+        local uiScale = UIParent and UIParent.GetEffectiveScale and UIParent:GetEffectiveScale() or 1
+        local dlgScale = settingsDialog.GetEffectiveScale and settingsDialog:GetEffectiveScale() or uiScale
+        local right = settingsDialog.GetRight and settingsDialog:GetRight()
+        local centerY = settingsDialog.GetCenter and select(2, settingsDialog:GetCenter())
+        pf:ClearAllPoints()
+        if right and centerY then
+            local x = (right * dlgScale / uiScale) + 14
+            local y = (centerY * dlgScale / uiScale) + ((pf:GetHeight() or 0) * 0.5)
+            pf:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", x, y)
+        else
+            pf:SetPoint("CENTER", UIParent, "CENTER", 340, 0)
+        end
+    end
+    pf:Show()
+end
+
+function Diar:EndCompactAssignmentZoomPreviewFromSettings()
+    local state = self._compactZoomPreviewState
+    if not state then return end
+    self._compactZoomPreviewState = nil
+    local pf = self.plannerFrame
+    if not pf then return end
+    pf.__suspendPositionSave = nil
+
+    if pf.compactMode ~= state.compactMode and self.SetPlannerCompactMode then
+        pf.__skipCompactSaveOnce = true
+        self:SetPlannerCompactMode(state.compactMode)
+    end
+    pf.nsrtSceneActive = state.nsrtSceneActive
+    pf.compactCanvasScale = state.compactCanvasScale
+    pf.viewerViewport = state.viewerViewport and {
+        zoom = state.viewerViewport.zoom,
+        panX = state.viewerViewport.panX,
+        panY = state.viewerViewport.panY,
+    } or nil
+    pf.__viewerViewportSceneIdx = nil
+    if state.pos and state.pos.point then
+        pf:ClearAllPoints()
+        pf:SetPoint(state.pos.point, UIParent, state.pos.relPoint or state.pos.point, state.pos.x or 0, state.pos.y or 0)
+    end
+    if self.RefreshPlannerScene then
+        self:RefreshPlannerScene()
+    end
+end
+
 local function ResolveItemLayerIndex(item, fallbackIndex)
     local n = tonumber(item and (item.layerIndex or item.zIndex or item.layer or item.z))
     if not n then
@@ -1779,8 +3068,8 @@ Diar.PlannerView = {
 }
 
 local function CreateFrontalBeamWidget(pf, canvas, anim, cw, ch)
-    local wp = (type(anim.frontalW) == "number" and anim.frontalW or 5) / 100
-    local hp = (type(anim.frontalH) == "number" and anim.frontalH or 18) / 100
+    local wp = (tonumber(anim.frontalW) or 5) / 100
+    local hp = (tonumber(anim.frontalH) or 18) / 100
     local beamWidthPx = math.max(4, cw * wp)
     local beamLenPx = math.max(12, ch * hp)
     local shapeName = (anim.frontalShape or "rect"):lower()
@@ -2798,7 +4087,7 @@ local function IsAutoSpotExcludedItem(item)
     return k == "boss" or k == "trash"
 end
 
-local function ResolveSceneSpots(scene)
+ResolveSceneSpots = function(scene)
     if not scene or not scene.items then return nil end
 
     -- Explicit slotIndex wins, for any object type.
@@ -3045,7 +4334,16 @@ local function SetGroupSpotPreviewText(w, text, mine, item)
     local px = w:GetWidth() or 0
     local py = w:GetHeight() or 0
     local area = math.max(1, math.min(px, py))
-    local fontSize = math.max(7, math.floor(area * 0.17))
+    local zoom = 1
+    local pf = Diar and Diar.plannerFrame
+    if pf and pf.compactMode then
+        zoom = (type(pf.__viewportDisplayZoom) == "number" and pf.__viewportDisplayZoom)
+            or (pf.viewerViewport and pf.viewerViewport.zoom)
+            or 1
+    end
+    local compactBoost = (pf and pf.compactMode) and 1.30 or 1
+    local zoomBoost = 1 + math.max(0, zoom - 1) * 0.55
+    local fontSize = math.max(11, math.min(52, math.floor(area * 0.26 * compactBoost * zoomBoost)))
     w.spotPreviewText:SetFont("Fonts\\FRIZQT__.TTF", fontSize, "OUTLINE")
     w.spotPreviewText:Show()
 end
@@ -3060,6 +4358,13 @@ function Diar.ApplyWidgetLabel(w, item, label, hasSelfOnPlan, playerKey, isNames
             w.label:SetPoint("TOP", w, "BOTTOM", 0, -2)
             w.label:SetTextColor(0.85, 0.85, 0.85)
         end
+        local area = math.max(10, math.min(w:GetWidth() or 10, w:GetHeight() or 10))
+        local pf = Diar and Diar.plannerFrame
+        local zoom = (pf and pf.__viewportDisplayZoom) or (pf and pf.viewerViewport and pf.viewerViewport.zoom) or 1
+        local compactBoost = (pf and pf.compactMode) and 1.25 or 1
+        local zoomBoost = (pf and pf.compactMode) and (1 + math.max(0, zoom - 1) * 0.40) or 1
+        local fontSize = math.max(10, math.min(36, math.floor(area * 0.24 * compactBoost * zoomBoost)))
+        w.label:SetFont(STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF", fontSize, "OUTLINE")
         w.__baseTextColor = { 0.85, 0.85, 0.85 }
         w.label:SetText(label)
         w.label:Show()
@@ -3358,7 +4663,9 @@ local function FitCompactScaleInBox(availW, availH, canvasW, canvasH)
 end
 
 local function GetPlannerCompactFrameSize(pf, scale)
-    local cw, ch = GetPlannerCanvasDimensions(pf)
+    -- Compact mode uses a fixed base canvas size so it stays independent
+    -- from whatever expanded canvas size the user last used.
+    local cw, ch = PLANNER_CANVAS_W, PLANNER_CANVAS_H
     scale = scale or GetPlannerCompactScale(pf)
     return GetPlannerCompactChromeWidth() + cw * scale, GetPlannerCompactChromeHeight(pf) + ch * scale
 end
@@ -3389,7 +4696,10 @@ local function SetPlannerChromeVisible(pf, visible)
     if not pf then return end
     local elems = {
         pf.title, pf.brandTitle, pf.versionLabel, pf.creditsBtn, pf.toolbar, pf.controls, pf.timeline,
-        pf.patreonPanel, pf.savedPlansPanel, pf.objectPalettePanel, pf.infoStrip,
+        pf.sceneTabsContainer,
+        pf.playPauseBtn, pf.stopBtn,
+        pf.patreonPanel, pf.savedPlansPanel, pf.savedPlansFooter, pf.objectPalettePanel, pf.infoStrip,
+        pf.raidCheckBar, pf.raidLeadPanel, pf.raidLeadBottomDivider,
     }
     for _, el in ipairs(elems) do
         if el then
@@ -3551,6 +4861,9 @@ local function ApplyPlannerNormalLayout(pf, keepFrameSize)
         end
     end
     EnsurePlannerInfoStrip(pf)
+    if pf.infoStrip then
+        pf.infoStrip:Show()
+    end
     if pf.creditsBtn then
         pf.creditsBtn:Show()
     end
@@ -3569,6 +4882,9 @@ local function ApplyPlannerNormalLayout(pf, keepFrameSize)
         pf.toolbar:ClearAllPoints()
         pf.toolbar:SetPoint("TOPLEFT", pf, "TOPLEFT", contentLeft, -TOOLBAR_TOP)
     end
+    if pf.sceneTabsContainer then
+        pf.sceneTabsContainer:Show()
+    end
     pf.canvas:SetScale(1)
     pf.canvas:SetSize(canvasW, canvasH)
     pf.canvas:ClearAllPoints()
@@ -3580,6 +4896,8 @@ local function ApplyPlannerNormalLayout(pf, keepFrameSize)
         pf.controls:SetWidth(canvasW)
         pf.controls:ClearAllPoints()
         pf.controls:SetPoint("TOP", pf.canvas, "BOTTOM", 0, -ROW_GAP)
+        if pf.playPauseBtn then pf.playPauseBtn:Show() end
+        if pf.stopBtn then pf.stopBtn:Show() end
     end
     if pf.timeline then
         pf.timeline:SetWidth(canvasW)
@@ -3590,12 +4908,14 @@ local function ApplyPlannerNormalLayout(pf, keepFrameSize)
         pf.patreonPanel:Show()
         pf.patreonPanel:ClearAllPoints()
         pf.patreonPanel:SetPoint("TOPLEFT", pf.toolbar, "TOPRIGHT", 12, 0)
+        if pf.patreonLabel then pf.patreonLabel:Show() end
     end
     if pf.savedPlansPanel and pf.patreonPanel and pf.timeline then
         pf.savedPlansPanel:Show()
         pf.savedPlansPanel:ClearAllPoints()
         pf.savedPlansPanel:SetPoint("TOPLEFT", pf.patreonPanel, "BOTTOMLEFT", 0, -RIGHT_COL_GAP)
         pf.savedPlansPanel:SetPoint("BOTTOMLEFT", pf.timeline, "BOTTOMRIGHT", 12, RIGHT_PANEL_BOTTOM_GAP)
+        if pf.savedPlansFooter then pf.savedPlansFooter:Show() end
     end
     if pf.resizeGrip then
         pf.resizeGrip:Show()
@@ -3618,10 +4938,24 @@ Diar.ApplyPlannerNormalLayout = ApplyPlannerNormalLayout
 local function ApplyPlannerCompactLayout(pf, keepFrameSize, snapFrame)
     if not pf or not pf.canvas then return end
     SetPlannerChromeVisible(pf, false)
+    if pf.toolbar then pf.toolbar:Hide() end
+    if pf.sceneTabsContainer then pf.sceneTabsContainer:Hide() end
+    if Diar.HideSceneTabContextMenu then
+        Diar:HideSceneTabContextMenu()
+    end
+    if pf.infoStrip then pf.infoStrip:Hide() end
+    if pf.savedPlansPanel then pf.savedPlansPanel:Hide() end
+    if pf.savedPlansFooter then pf.savedPlansFooter:Hide() end
+    if pf.raidCheckBar then pf.raidCheckBar:Hide() end
+    if pf.raidLeadPanel then pf.raidLeadPanel:Hide() end
+    if pf.raidLeadBottomDivider then pf.raidLeadBottomDivider:Hide() end
+    if pf.patreonPanel then pf.patreonPanel:Hide() end
+    if pf.patreonLabel then pf.patreonLabel:Hide() end
     if pf.compactBar then pf.compactBar:Hide() end
 
-    -- Same canvas pixel size as expanded; only the display scale changes.
-    local canvasW, canvasH = GetPlannerCanvasDimensions(pf)
+    -- Compact mode always renders from the fixed planner base dimensions,
+    -- not the currently resized expanded-view canvas.
+    local canvasW, canvasH = PLANNER_CANVAS_W, PLANNER_CANVAS_H
     local scale
     if keepFrameSize then
         local fw, fh = pf:GetSize()
@@ -3712,7 +5046,7 @@ Diar.ApplyPlannerCompactLayout = ApplyPlannerCompactLayout
 
 local function BeginCompactProportionalResize(pf, grip)
     if not pf or not grip then return end
-    local canvasW = GetPlannerCanvasDimensions(pf)
+    local canvasW = PLANNER_CANVAS_W
     local scale = GetPlannerCompactScale(pf)
     pf.__compactResize = {
         startScale = scale,
@@ -3880,6 +5214,10 @@ function Diar:SetPlannerCompactMode(enabled)
             self:EndCompactPositionPreview(false)
         end
         if pf.canvas then pf.canvas:SetScale(1) end
+        pf.viewerViewport = nil
+        pf.__viewerViewportSceneIdx = nil
+        pf.__ignoreNextSceneViewportSync = true
+        pf.__viewportDisplayZoom = 1
         ApplyPlannerNormalLayout(pf)
         self:ApplyPlannerFramePosition(pf)
         if not pf.nsrtSceneActive then
@@ -3972,6 +5310,15 @@ function Diar:ShowPlannerViewer(opts)
             elseif s.canvasBg then
                 s.canvasBg:SetVertexColor(1, 1, 1, 1)
             end
+            if s.compactMode then
+                if s.infoStrip then s.infoStrip:Hide() end
+                if s.patreonPanel then s.patreonPanel:Hide() end
+                if s.patreonLabel then s.patreonLabel:Hide() end
+                if s.savedPlansFooter then s.savedPlansFooter:Hide() end
+                if s.controls then s.controls:Hide() end
+                if s.playPauseBtn then s.playPauseBtn:Hide() end
+                if s.stopBtn then s.stopBtn:Hide() end
+            end
             if Diar.UpdatePlannerDebugPanel then
                 Diar:UpdatePlannerDebugPanel()
             end
@@ -4013,6 +5360,7 @@ function Diar:ShowPlannerViewer(opts)
         modeToggleBtn:SetScript("OnClick", function()
             Diar:TogglePlannerCompactMode()
         end)
+        if SetPlannerBtnShadowHidden then SetPlannerBtnShadowHidden(modeToggleBtn) end
         pf.modeToggleBtn = modeToggleBtn
 
         local discordBtn = CreatePlannerIconBtn(pf, "Discord", 76, 22)
@@ -4020,6 +5368,7 @@ function Diar:ShowPlannerViewer(opts)
         discordBtn:SetScript("OnClick", function()
             Diar:ShowPlannerDiscordPopup()
         end)
+        if SetPlannerBtnShadowHidden then SetPlannerBtnShadowHidden(discordBtn) end
         pf.discordBtn = discordBtn
 
         local resizeGrip = CreateFrame("Button", nil, pf)
@@ -4047,6 +5396,7 @@ function Diar:ShowPlannerViewer(opts)
         creditsBtn:SetScript("OnClick", function()
             if Diar.ShowPlannerCreditsDialog then Diar:ShowPlannerCreditsDialog() end
         end)
+        if SetPlannerBtnShadowHidden then SetPlannerBtnShadowHidden(creditsBtn) end
         pf.creditsBtn = creditsBtn
         EnsurePlannerInfoStrip(pf)
 
@@ -4062,12 +5412,14 @@ function Diar:ShowPlannerViewer(opts)
         linkBtn:SetScript("OnClick", function()
             Diar:ShowPlannerPlanLinkPopup()
         end)
+        if SetPlannerBtnShadowHidden then SetPlannerBtnShadowHidden(linkBtn) end
         pf.planLinkBtn = linkBtn
 
         local helpBtn = CreatePlannerIconBtn(toolbar, "Help", 52, SCENE_TAB_H + 4)
         helpBtn:SetScript("OnClick", function()
             if Diar.ShowPlannerHelpDialog then Diar:ShowPlannerHelpDialog() end
         end)
+        if SetPlannerBtnShadowHidden then SetPlannerBtnShadowHidden(helpBtn) end
         pf.planHelpBtn = helpBtn
 
         -- Scene tabs fill the space left of the help button
@@ -4089,6 +5441,7 @@ function Diar:ShowPlannerViewer(opts)
         EnsurePlannerZoomControls(pf, canvas)
         BindPlannerCanvasViewportInput(pf, canvas)
         Diar:EnsurePreviewNamesButton(pf)
+        Diar:EnsurePlannerAssignmentButton(pf)
 
         local controls = CreateFrame("Frame", nil, pf)
         controls:SetHeight(CONTROLS_H)
@@ -4111,13 +5464,24 @@ function Diar:ShowPlannerViewer(opts)
         end)
         pf.settingsBtn = settingsBtn
 
-        local previewIndexBtn = CreatePlannerIconBtn(controls, "Preview index", 104, CONTROLS_H)
-        previewIndexBtn:SetPoint("RIGHT", settingsBtn, "LEFT", -6, 0)
+        local previewIndexBtn = CreatePlannerIconBtn(pf, PREVIEW_INDEX_EYE_ICON, 40, 40)
+        previewIndexBtn:SetPoint("BOTTOMRIGHT", canvas, "BOTTOMRIGHT", -8, 8)
         previewIndexBtn:SetScript("OnClick", function()
             Diar:TogglePlannerPreviewIndex()
         end)
+        ApplyPreviewIndexCornerStyle(previewIndexBtn)
         pf.previewIndexBtn = previewIndexBtn
         Diar:UpdatePreviewIndexButton(pf)
+
+        local nsrtExportBtn = CreatePlannerIconBtn(controls, "NSRT", 72, CONTROLS_H)
+        nsrtExportBtn:SetPoint("RIGHT", settingsBtn, "LEFT", -6, 0)
+        nsrtExportBtn:SetScript("OnClick", function()
+            Diar:ShowPlannerNsrtExportDialog()
+        end)
+        pf.nsrtExportBtn = nsrtExportBtn
+        if not CanShowNsrtToolbarButton() then
+            nsrtExportBtn:Hide()
+        end
 
         -- Import progress overlay (shown when receiving a shared plan)
         local importOverlay = CreateFrame("Frame", nil, pf, "BackdropTemplate")
@@ -4172,31 +5536,96 @@ function Diar:ShowPlannerViewer(opts)
         pf.timelineLabel:SetPoint("RIGHT", timeline, "RIGHT", -10, 0)
         pf.timelineLabel:SetTextColor(0.55, 0.58, 0.65)
 
+        local function SeekPlannerTimelineAtCursor(t)
+            local pf = Diar.plannerFrame
+            if not pf or not pf.sceneAnimations or #pf.sceneAnimations == 0 then return nil end
+            local data = Diar.plannerData
+            if not data or not data.scenes or not pf.selectedSceneIndex then return nil end
+            local scene = data.scenes[pf.selectedSceneIndex]
+            if not scene or not scene.items then return nil end
+            local totalDur = Diar.GetSceneDuration and Diar.GetSceneDuration(pf.sceneAnimations) or 0
+            if totalDur <= 0 then return nil end
+
+            local track = pf.timelineBg or t
+            local left = track:GetLeft()
+            local width = track:GetWidth()
+            if not left or not width or width <= 0 then return nil end
+
+            local x = GetCursorPosition() / pf:GetEffectiveScale()
+            local pct = (x - left) / width
+            pct = math.max(0, math.min(1, pct))
+            local seekTime = pct * totalDur
+
+            pf.animStart = GetTime() - seekTime
+            pf.animPaused = true
+            pf.animPlaying = false
+            pf.pausedTime = seekTime
+
+            local canvas = pf.canvas
+            local cw, ch = Diar.GetPlannerRenderCanvasSize(pf, canvas)
+            local root = Diar.GetPlannerItemRoot(pf, canvas)
+            if Diar.ApplyAnimPosition then
+                Diar.ApplyAnimPosition(pf, scene, root, cw, ch, seekTime)
+            end
+            Diar:UpdatePlannerPlayhead()
+            return seekTime
+        end
+
+        local function EndTimelineScrub(t)
+            local pf = Diar.plannerFrame
+            if not pf or not pf.timelineScrubbing then return end
+            pf.timelineScrubbing = false
+            t:SetScript("OnUpdate", nil)
+
+            local resumeAfterScrub = pf.timelineScrubWasPlaying == true
+            pf.timelineScrubWasPlaying = nil
+            if resumeAfterScrub then
+                Diar:PlayPlannerAnimation()
+            else
+                Diar:UpdatePlannerControlButtons()
+                Diar:UpdatePlannerPlayhead()
+            end
+        end
+
         timeline:SetScript("OnMouseDown", function(t, button)
             if button ~= "LeftButton" then return end
             local pf = Diar.plannerFrame
             if not pf or not pf.sceneAnimations or #pf.sceneAnimations == 0 then return end
-            local data = Diar.plannerData
-            if not data or not data.scenes or not pf.selectedSceneIndex then return end
-            local scene = data.scenes[pf.selectedSceneIndex]
-            if not scene or not scene.items then return end
-            local totalDur = GetSceneDuration(pf.sceneAnimations)
-            local x = GetCursorPosition() / pf:GetEffectiveScale()
-            local left = t:GetLeft()
-            local w = t:GetWidth()
-            local pct = (x - left) / w
-            pct = math.max(0, math.min(1, pct))
-            local seekTime = pct * totalDur
-            Diar:StopPlannerAnimation()
-            pf.animStart = GetTime() - seekTime
-            pf.animPlaying = true
-            Diar:UpdatePlannerControlButtons()
-            local canvas = pf.canvas
-            local cw, ch = GetPlannerRenderCanvasSize(pf, canvas)
-            local root = GetPlannerItemRoot(pf, canvas)
-            ApplyAnimPosition(pf, scene, root, cw, ch, seekTime)
-            Diar:UpdatePlannerPlayhead()
-            pf:SetScript("OnUpdate", pf.plannerOnUpdateHandler)
+
+            pf.timelineScrubbing = true
+            pf.timelineScrubWasPlaying = pf.animPlaying == true
+            if pf.animPlaying then
+                Diar:PausePlannerAnimation()
+            else
+                pf:SetScript("OnUpdate", nil)
+                pf.animPlaying = false
+                pf.animPaused = true
+                if type(pf.pausedTime) ~= "number" then pf.pausedTime = 0 end
+                Diar:UpdatePlannerControlButtons()
+            end
+
+            SeekPlannerTimelineAtCursor(t)
+            t:SetScript("OnUpdate", function(s)
+                local planner = Diar.plannerFrame
+                if not planner or not planner.timelineScrubbing then
+                    s:SetScript("OnUpdate", nil)
+                    return
+                end
+                if not IsMouseButtonDown("LeftButton") then
+                    EndTimelineScrub(s)
+                    return
+                end
+                SeekPlannerTimelineAtCursor(s)
+            end)
+        end)
+
+        timeline:SetScript("OnMouseUp", function(t, button)
+            if button == "LeftButton" then
+                EndTimelineScrub(t)
+            end
+        end)
+        timeline:SetScript("OnHide", function(t)
+            EndTimelineScrub(t)
         end)
 
         local patreonPanel = CreateFrame("Frame", nil, pf, "BackdropTemplate")
@@ -4343,6 +5772,7 @@ function Diar:ShowPlannerViewer(opts)
         pf.canvas:SetClipsChildren(true)
     end
     Diar:EnsurePreviewNamesButton(pf)
+    Diar:EnsurePlannerAssignmentButton(pf)
     Diar:EnsurePlannerControlsButtons(pf)
     if Diar.EnsurePlannerHelpButton then Diar:EnsurePlannerHelpButton(pf) end
     if Diar.EnsureRaidLeadViewPanel then Diar:EnsureRaidLeadViewPanel(pf) end
@@ -4376,6 +5806,7 @@ function Diar:ShowPlannerViewer(opts)
         modeToggleBtn:SetScript("OnClick", function()
             Diar:TogglePlannerCompactMode()
         end)
+        if SetPlannerBtnShadowHidden then SetPlannerBtnShadowHidden(modeToggleBtn) end
         pf.modeToggleBtn = modeToggleBtn
     end
     if not pf.discordBtn and pf.modeToggleBtn then
@@ -4384,6 +5815,7 @@ function Diar:ShowPlannerViewer(opts)
         discordBtn:SetScript("OnClick", function()
             Diar:ShowPlannerDiscordPopup()
         end)
+        if SetPlannerBtnShadowHidden then SetPlannerBtnShadowHidden(discordBtn) end
         pf.discordBtn = discordBtn
     end
     if not pf.resizeGrip then
@@ -4862,6 +6294,14 @@ function Diar:RefreshPlannerScene()
     -- Dynamic group assignment: when an NSRT tag is active, recolor spot circles.
     local sceneSpots = ResolveSceneSpots(scene)
     local activeGroup = self.activeGroup
+    local compactAssignViewport = BuildCompactAssignmentViewport(pf, scene, sceneSpots, activeGroup)
+    if compactAssignViewport then
+        pf.viewerViewport = compactAssignViewport
+        vc = BuildSceneViewContext(pf.viewerViewport, cw, ch)
+        pf.sceneViewContext = vc
+        pf.__viewportDisplayZoom = pf.viewerViewport and pf.viewerViewport.zoom or 1
+        ApplySceneBackground(pf, scene, vc, cw, ch)
+    end
     local groupSpots = activeGroup and sceneSpots or nil
     local groupSpotNames = activeGroup and activeGroup.spotNames or nil
     local previewNamesOn = self:IsPlannerPreviewNamesVisible() and groupSpotNames
@@ -4924,6 +6364,9 @@ function Diar:RefreshPlannerScene()
     end
     if self.UpdateCompactSceneArrowButtons then
         self:UpdateCompactSceneArrowButtons(pf)
+    end
+    if self.UpdatePlannerAssignmentButton then
+        self:UpdatePlannerAssignmentButton(pf)
     end
 end
 
@@ -5030,8 +6473,9 @@ local function GetAnimTimeState(t, startT, dur, loop)
 end
 
 local function ResolveAnimItemIndex(anim, scene, path)
-    if anim.itemIndex and anim.itemIndex >= 0 then
-        return anim.itemIndex + 1
+    local itemIndex = tonumber(anim and anim.itemIndex)
+    if itemIndex and itemIndex >= 0 then
+        return math.floor(itemIndex + 0.0001) + 1
     end
     if anim.objectId then
         local oid = tostring(anim.objectId)

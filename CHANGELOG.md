@@ -1,5 +1,31 @@
 # Changelog
 
+## [Alpha v0.0.38] Scrubbing in the timeline, frontal animations available and more
+
+- Fixed an issue where the compact-mode would show unwanted items. Should now only show the compact window.
+- Fixed a few issues with zooming in the canvas.
+- Fixed an issue where when having multiple assignments on the same plan and in the same phase, it would default to the last available assignment.
+- Fixed an issue where the compact mode were unintendedly using the main-window size as reference.
+
+- Updated the design of some buttons and areas overall.
+- Preview index' have been moved to another button in the bottom right of the planner.
+
+- Added a NSRT Export button below the canvas. Click it to quickly create a custom assignment note
+- The Export system automatically detects players in your plan and their indexes and auto-adds them to your note
+  you will have to specify timers and phases for the note to work properly
+  Note that group-tag is currently a WIP and for now it'll just tag people individually.
+  When clicking "Add + send" the note will auto-append to your current note and send the update to all in your group.
+  Notes are plan-based. Meaning it knows what note belongs to what plan, so when you open NSRT Export up, it'll load in your current assignments on this specific plan and note.
+
+- Added a way to scrub in the timeline, simply click and drag to see animations come to life.
+- Added frontal animations (most should work)
+- Added the possibility to have multiple assignments on the same scene for the same player.
+- If you have multiple assiggnments on a scene, you can switch between them in the dropdown below the "Hide names"
+  This will only show if you have more than 1 assignment.
+- Added a zoom-in-compact mode that allows you to zoom into your assignment for easier view.
+- You can enable this in the settings and control the zoom level from there.
+- Preview the zoom level by clicking "Preview zoom" - this will bring up the compact version and allow you to set the zoom levels using the +/- to your liking. It'll by default show your current assignment in the current raidplan, in the preview.
+
 ## [Alpha v0.0.37] Delete scenes, Rotmire added, auto-scene switch as raid-lead and much more.
 
 - Fixed an issue where you couldn't remove or even move cone objects.

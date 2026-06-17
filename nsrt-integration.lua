@@ -123,18 +123,23 @@ local function ParseRsggCues(noteText)
     if not noteText:match("\n$") then
         noteText = noteText .. "\n"
     end
-    local encID = 0
-    for line in noteText:gmatch("([^\n]*)\n") do
-        if line:find("EncounterID:", 1, true) then
-            local id = line:match("EncounterID:(%d+)")
-            if id then encID = tonumber(id) end
-        end
-    end
+    local activeEncID = nil
     local lineNo = 0
     for line in noteText:gmatch("([^\n]*)\n") do
         lineNo = lineNo + 1
-        if encID ~= 0 and line:find("rsgg", 1, true) then
-            local time = line:match("time:(%d*%.?%d+)")
+        if line:find("EncounterID:", 1, true) then
+            local id = line:match("EncounterID:(%d+)")
+            if id then activeEncID = tonumber(id) end
+        end
+        if line:find("rsgg", 1, true) then
+            local encID = activeEncID
+            if not encID then
+                -- Accept one-line compact forms that include EncounterID together with cue text.
+                local inline = line:match("EncounterID:(%d+)")
+                encID = inline and tonumber(inline) or nil
+            end
+            -- Be tolerant of legacy/manual typos like "time4" (missing colon).
+            local time = line:match("time:(%d*%.?%d+)") or line:match("time(%d*%.?%d+)")
             local phase = line:match("ph:(%d+)") or line:match(";ph:(%d+)") or line:match(";ph(%d+)") or line:match("ph(%d+)")
             local sceneIndex = line:match("scene:(%d+)")
             local planName = line:match("plan:([^;]+)")
@@ -144,7 +149,7 @@ local function ParseRsggCues(noteText)
             time = time and tonumber(time)
             phase = phase and tonumber(phase) or 1
             sceneIndex = sceneIndex and tonumber(sceneIndex)
-            if time and sceneIndex then
+            if encID and encID ~= 0 and time and sceneIndex then
                 cues[encID] = cues[encID] or {}
                 cues[encID][phase] = cues[encID][phase] or {}
                 cues[encID][phase][#cues[encID][phase] + 1] = {

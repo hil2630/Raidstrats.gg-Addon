@@ -40,6 +40,8 @@ function Diar:GetPlannerSettings()
     if s.debugMode == nil then s.debugMode = false end
     if s.showObjectPalette == nil then s.showObjectPalette = false end
     if s.compactSceneArrows == nil then s.compactSceneArrows = false end
+    if s.compactZoomToAssignment == nil then s.compactZoomToAssignment = false end
+    if s.compactAssignZoom == nil then s.compactAssignZoom = 1.7 end
     if s.classSpecCircleMode == nil then s.classSpecCircleMode = false end
     if s.compactPlanLibrary == nil then s.compactPlanLibrary = true end
     if s.hideRaidCheckNotifs == nil then s.hideRaidCheckNotifs = false end
@@ -225,6 +227,19 @@ function Diar:IsCompactSceneArrowsEnabled()
     return true
 end
 
+function Diar:IsCompactZoomToAssignmentEnabled()
+    local v = self:GetPlannerSettings().compactZoomToAssignment
+    if v == true or v == 1 then return true end
+    return false
+end
+
+function Diar:GetCompactAssignmentZoom()
+    local v = tonumber(self:GetPlannerSettings().compactAssignZoom) or 1.7
+    if v < 1.0 then v = 1.0 end
+    if v > 3.0 then v = 3.0 end
+    return v
+end
+
 function Diar:IsNsrtPopupsEnabled()
     local v = self:GetPlannerSettings().hideNsrtPlan
     if v == true or v == 1 then return false end
@@ -298,16 +313,17 @@ function Diar:ShowPlannerSettingsDialog()
         body:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 8, 48)
         body:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -8, 48)
         SetBackdrop(body, { 0.045, 0.048, 0.062, 0.96 }, UI.BORDER, 1)
+        header:SetFrameLevel((body:GetFrameLevel() or 1) + 5)
 
-        local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+        local title = header:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
         title:SetPoint("TOPLEFT", header, "TOPLEFT", 14, -12)
         title:SetText("Planner Settings")
-        title:SetTextColor(0.92, 0.92, 0.92)
+        title:SetTextColor(0.98, 0.98, 0.98)
 
-        local subtitle = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        local subtitle = header:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         subtitle:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -2)
         subtitle:SetText("NSRT cues, display, and compact layout")
-        subtitle:SetTextColor(0.64, 0.68, 0.74)
+        subtitle:SetTextColor(0.82, 0.86, 0.93)
 
         local function AddSectionHeader(text, y)
             local hdr = body:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -392,6 +408,13 @@ function Diar:ShowPlannerSettingsDialog()
             return y - 28
         end
 
+        local function ClampAssignZoom(v)
+            v = tonumber(v) or 1.7
+            if v < 1.0 then v = 1.0 end
+            if v > 3.0 then v = 3.0 end
+            return v
+        end
+
         local y = -18
         y = AddSectionHeader("NSRT timing", y)
         y = AddSecondsRow(y, "Show plan before cue", "beforeEdit")
@@ -403,6 +426,61 @@ function Diar:ShowPlannerSettingsDialog()
         y = AddCheckbox(y, "compactBgChk", "Show background in compact view")
         y = AddCheckbox(y, "classSpecCircleChk", "Render class/spec icons as circles")
         y = AddCheckbox(y, "compactSceneArrowsChk", "Arrows in compact mode")
+        y = AddCheckbox(y, "compactZoomAssignChk", "Zoom to my assignment in compact mode")
+        do
+            -- Keep zoom controls directly under the zoom-toggle option.
+            local rowY = y
+            local zoomLabel = body:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            zoomLabel:SetPoint("TOPLEFT", body, "TOPLEFT", 34, rowY)
+            zoomLabel:SetWidth(180)
+            zoomLabel:SetJustifyH("LEFT")
+            zoomLabel:SetText("Zoom level")
+            zoomLabel:SetTextColor(0.72, 0.75, 0.80)
+            f.compactAssignZoomLabel = zoomLabel
+
+            local previewZoomBtn = CreatePlannerIconBtn(body, "Preview zoom", 118, 24)
+            previewZoomBtn:SetPoint("TOPRIGHT", body, "TOPRIGHT", -14, rowY + 2)
+            previewZoomBtn:SetScript("OnClick", function()
+                if Diar.PreviewCompactAssignmentZoomFromSettings then
+                    Diar:PreviewCompactAssignmentZoomFromSettings(f)
+                end
+            end)
+            f.compactZoomPreviewBtn = previewZoomBtn
+
+            local plusBtn = CreatePlannerIconBtn(body, "+", 24, 24)
+            plusBtn:SetPoint("RIGHT", previewZoomBtn, "LEFT", -12, 0)
+            local zoomValue = body:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            zoomValue:SetPoint("RIGHT", plusBtn, "LEFT", -10, 0)
+            zoomValue:SetWidth(56)
+            zoomValue:SetJustifyH("CENTER")
+            zoomValue:SetTextColor(0.92, 0.92, 0.96)
+            local minusBtn = CreatePlannerIconBtn(body, "-", 24, 24)
+            minusBtn:SetPoint("RIGHT", zoomValue, "LEFT", -10, 0)
+            f.compactAssignZoomValue = zoomValue
+
+            local function RefreshAssignZoomValue()
+                f.compactAssignZoom = ClampAssignZoom(f.compactAssignZoom)
+                zoomValue:SetText(("%.2fx"):format(f.compactAssignZoom))
+            end
+            minusBtn:SetScript("OnClick", function()
+                f.compactAssignZoom = ClampAssignZoom((f.compactAssignZoom or 1.7) - 0.10)
+                RefreshAssignZoomValue()
+                if Diar._compactZoomPreviewState and Diar.PreviewCompactAssignmentZoomFromSettings then
+                    Diar:PreviewCompactAssignmentZoomFromSettings(f)
+                end
+            end)
+            plusBtn:SetScript("OnClick", function()
+                f.compactAssignZoom = ClampAssignZoom((f.compactAssignZoom or 1.7) + 0.10)
+                RefreshAssignZoomValue()
+                if Diar._compactZoomPreviewState and Diar.PreviewCompactAssignmentZoomFromSettings then
+                    Diar:PreviewCompactAssignmentZoomFromSettings(f)
+                end
+            end)
+            f.compactAssignZoomMinusBtn = minusBtn
+            f.compactAssignZoomPlusBtn = plusBtn
+            f.RefreshAssignZoomValue = RefreshAssignZoomValue
+            y = y - 30
+        end
         y = AddCheckbox(y, "compactLibraryChk", "Compact plan library")
         y = AddCheckbox(y, "nsrtPopupChk", "Hide plan popups (even if assigned)")
         y = AddCheckbox(y, "raidCheckNotifChk", "Hide raidcheck notifications from raid leader")
@@ -424,7 +502,7 @@ function Diar:ShowPlannerSettingsDialog()
         f.compactPosStatus = compactStatus
 
         local previewBtn = CreatePlannerIconBtn(body, "Preview & set", 118, 26)
-        previewBtn:SetPoint("TOPRIGHT", body, "TOPRIGHT", -14, y + 4)
+        previewBtn:SetPoint("TOPRIGHT", body, "TOPRIGHT", -14, y - 2)
         SetPrimaryButtonStyle(previewBtn)
         previewBtn:SetScript("OnClick", function()
             f:Hide()
@@ -466,6 +544,8 @@ function Diar:ShowPlannerSettingsDialog()
             s.compactShowBackground = CheckboxIsChecked(f.compactBgChk)
             s.classSpecCircleMode = CheckboxIsChecked(f.classSpecCircleChk)
             s.compactSceneArrows = CheckboxIsChecked(f.compactSceneArrowsChk)
+            s.compactZoomToAssignment = CheckboxIsChecked(f.compactZoomAssignChk)
+            s.compactAssignZoom = ClampAssignZoom(f.compactAssignZoom)
             s.compactPlanLibrary = CheckboxIsChecked(f.compactLibraryChk)
             s.hideNsrtPlan = CheckboxIsChecked(f.nsrtPopupChk)
             s.hideRaidCheckNotifs = CheckboxIsChecked(f.raidCheckNotifChk)
@@ -517,6 +597,14 @@ function Diar:ShowPlannerSettingsDialog()
             f:Hide()
         end)
 
+        if f.HookScript then
+            f:HookScript("OnHide", function()
+                if Diar.EndCompactAssignmentZoomPreviewFromSettings then
+                    Diar:EndCompactAssignmentZoomPreviewFromSettings()
+                end
+            end)
+        end
+
         self.plannerSettingsDialog = f
     end
 
@@ -530,6 +618,15 @@ function Diar:ShowPlannerSettingsDialog()
     end
     if dlg.compactSceneArrowsChk then
         dlg.compactSceneArrowsChk:SetChecked(self:IsCompactSceneArrowsEnabled())
+    end
+    if dlg.compactZoomAssignChk then
+        dlg.compactZoomAssignChk:SetChecked(self:IsCompactZoomToAssignmentEnabled())
+    end
+    if dlg.compactAssignZoomValue then
+        dlg.compactAssignZoom = self:GetCompactAssignmentZoom()
+        if dlg.RefreshAssignZoomValue then
+            dlg:RefreshAssignZoomValue()
+        end
     end
     if dlg.compactLibraryChk then
         dlg.compactLibraryChk:SetChecked(self:IsCompactPlanLibraryEnabled())
@@ -558,15 +655,10 @@ function Diar:ShowPlannerSettingsDialog()
             dlg.compactPosStatus:SetText("Not set — uses default position")
         end
     end
-    local anchor = (self.plannerFrame and self.plannerFrame:IsShown()) and self.plannerFrame
-        or (self.frame and self.frame:IsShown()) and self.frame
+    local anchor = UIParent
     Diar:PrepareModal(dlg, anchor)
     dlg:ClearAllPoints()
-    if anchor then
-        dlg:SetPoint("CENTER", anchor, "CENTER")
-    else
-        dlg:SetPoint("CENTER", UIParent, "CENTER")
-    end
+    dlg:SetPoint("CENTER", UIParent, "CENTER")
     dlg:SetFrameStrata("FULLSCREEN_DIALOG")
     dlg:SetFrameLevel((anchor and anchor:GetFrameLevel() or 0) + 100)
     dlg:Raise()

@@ -143,12 +143,38 @@ end
 local function BuildMySpots(names)
     local myKey = GetPlayerNameKey()
     local mySpots = {}
+    local playerName, playerRealm = UnitName("player")
+    local fullPlayer = (playerName and playerName ~= "" and playerRealm and playerRealm ~= "")
+        and (playerName .. "-" .. playerRealm)
+        or (playerName or "")
     if myKey and names then
         for spot, nm in ipairs(names) do
-            if RosterNameMatchesPlayer(CleanRosterName(nm), myKey) then
+            local cleaned = CleanRosterName(nm)
+            local matched = RosterNameMatchesPlayer(cleaned, myKey)
+            if matched then
                 mySpots[spot] = true
             end
+            if IsPlannerDebugEnabled() then
+                Diar:AppendPlannerDebugLine(
+                    ("BuildMySpots spot=%s player=%s full=%s myKey=%s raw=%s clean=%s matched=%s"):format(
+                        tostring(spot),
+                        tostring(playerName or "-"),
+                        tostring(fullPlayer ~= "" and fullPlayer or "-"),
+                        tostring(myKey or "-"),
+                        tostring(nm or "-"),
+                        tostring(cleaned or "-"),
+                        tostring(matched)
+                    )
+                )
+            end
         end
+    elseif IsPlannerDebugEnabled() then
+        Diar:AppendPlannerDebugLine(
+            ("BuildMySpots skipped myKey=%s namesType=%s"):format(
+                tostring(myKey or "-"),
+                tostring(type(names))
+            )
+        )
     end
     return mySpots
 end
@@ -156,12 +182,31 @@ end
 local function BuildMySpotsFromMap(spotMap)
     local myKey = GetPlayerNameKey()
     local mySpots = {}
+    local playerName, playerRealm = UnitName("player")
+    local fullPlayer = (playerName and playerName ~= "" and playerRealm and playerRealm ~= "")
+        and (playerName .. "-" .. playerRealm)
+        or (playerName or "")
     if not myKey or type(spotMap) ~= "table" then return mySpots end
     for spot, names in pairs(spotMap) do
         local s = tonumber(spot)
         if s and s >= 1 and type(names) == "table" then
             for _, nm in ipairs(names) do
-                if RosterNameMatchesPlayer(CleanRosterName(nm), myKey) then
+                local cleaned = CleanRosterName(nm)
+                local matched = RosterNameMatchesPlayer(cleaned, myKey)
+                if IsPlannerDebugEnabled() then
+                    Diar:AppendPlannerDebugLine(
+                        ("BuildMySpotsFromMap spot=%s player=%s full=%s myKey=%s raw=%s clean=%s matched=%s"):format(
+                            tostring(s),
+                            tostring(playerName or "-"),
+                            tostring(fullPlayer ~= "" and fullPlayer or "-"),
+                            tostring(myKey or "-"),
+                            tostring(nm or "-"),
+                            tostring(cleaned or "-"),
+                            tostring(matched)
+                        )
+                    )
+                end
+                if matched then
                     mySpots[s] = true
                     break
                 end
@@ -180,6 +225,109 @@ local function FindMyRosterIndex(names)
         end
     end
     return nil
+end
+
+local function CueContainsPlayer(cue, groups)
+    local myKey = GetPlayerNameKey()
+    if not myKey or type(cue) ~= "table" then return false end
+    if cue.tagSpotMap then
+        for _, names in pairs(cue.tagSpotMap) do
+            if type(names) == "table" then
+                for _, nm in ipairs(names) do
+                    if RosterNameMatchesPlayer(CleanRosterName(nm), myKey) then
+                        return true
+                    end
+                end
+            end
+        end
+        return false
+    end
+    if cue.tagNames and #cue.tagNames > 0 then
+        for _, nm in ipairs(cue.tagNames) do
+            if RosterNameMatchesPlayer(CleanRosterName(nm), myKey) then
+                return true
+            end
+        end
+        return false
+    end
+    if cue.tag and cue.tag ~= "" and type(groups) == "table" then
+        local roster = groups[tostring(cue.tag):lower()]
+        if type(roster) == "table" then
+            for _, nm in ipairs(roster) do
+                if RosterNameMatchesPlayer(CleanRosterName(nm), myKey) then
+                    return true
+                end
+            end
+        end
+    end
+    return false
+end
+
+function Diar:GetPlannerSceneAssignmentOptions(sceneIndex)
+    sceneIndex = tonumber(sceneIndex) or 1
+    local options = {}
+    local cues = self.rsggCues
+    if type(cues) ~= "table" then return options, 1 end
+
+    for _, byPhase in pairs(cues) do
+        if type(byPhase) == "table" then
+            for phaseNum, phaseCues in pairs(byPhase) do
+                if type(phaseCues) == "table" then
+                    for _, cue in ipairs(phaseCues) do
+                        if cue.sceneIndex == sceneIndex and CueContainsPlayer(cue, self.rsggGroups) then
+                            options[#options + 1] = {
+                                tag = cue.tag,
+                                tagNames = cue.tagNames,
+                                tagSpotMap = cue.tagSpotMap,
+                                time = tonumber(cue.time) or math.huge,
+                                phase = tonumber(phaseNum) or tonumber(cue.phase) or 1,
+                                sourceLineNo = tonumber(cue.sourceLineNo) or math.huge,
+                                sourceLine = cue.sourceLine,
+                            }
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    table.sort(options, function(a, b)
+        if a.time ~= b.time then return a.time < b.time end
+        if a.phase ~= b.phase then return a.phase < b.phase end
+        return a.sourceLineNo < b.sourceLineNo
+    end)
+    return options, 1
+end
+
+function Diar:GetSelectedPlannerSceneAssignment(sceneIndex)
+    local pf = self.plannerFrame
+    local options, defaultIndex = self:GetPlannerSceneAssignmentOptions(sceneIndex)
+    if #options == 0 then return nil, nil, 0 end
+    if not pf then return options[defaultIndex], defaultIndex, #options end
+    pf.assignmentChoiceByScene = pf.assignmentChoiceByScene or {}
+    local idx = tonumber(pf.assignmentChoiceByScene[sceneIndex]) or defaultIndex or 1
+    idx = math.max(1, math.min(#options, math.floor(idx + 0.0001)))
+    pf.assignmentChoiceByScene[sceneIndex] = idx
+    return options[idx], idx, #options
+end
+
+function Diar:SetPlannerSceneAssignmentChoice(sceneIndex, choiceIndex)
+    local pf = self.plannerFrame
+    if not pf then return false end
+    sceneIndex = tonumber(sceneIndex) or (pf.selectedSceneIndex or 1)
+    local _, _, count = self:GetSelectedPlannerSceneAssignment(sceneIndex)
+    if count <= 0 then return false end
+    choiceIndex = tonumber(choiceIndex) or 1
+    choiceIndex = math.max(1, math.min(count, math.floor(choiceIndex + 0.0001)))
+    pf.assignmentChoiceByScene = pf.assignmentChoiceByScene or {}
+    pf.assignmentChoiceByScene[sceneIndex] = choiceIndex
+    if self.ApplyNsrtAssignmentForPlannerView then
+        self:ApplyNsrtAssignmentForPlannerView(sceneIndex)
+    end
+    if self.RefreshPlannerScene then
+        self:RefreshPlannerScene()
+    end
+    return true
 end
 
 function Diar:SetActiveGroupAssignment(tag, tagNames, tagSpotMap)
@@ -213,6 +361,17 @@ function Diar:SetActiveGroupAssignment(tag, tagNames, tagSpotMap)
         return
     end
     self.activeGroup = { tag = tag, names = names, mySpots = mySpots, spotNames = spotNames }
+    if IsPlannerDebugEnabled() then
+        local pName, pRealm = UnitName("player")
+        local pFull = (pName and pName ~= "" and pRealm and pRealm ~= "") and (pName .. "-" .. pRealm) or (pName or "")
+        self:AppendPlannerDebugLine(
+            ("SetActiveGroupAssignment player=%s full=%s myKey=%s"):format(
+                tostring(pName or "-"),
+                tostring(pFull ~= "" and pFull or "-"),
+                tostring(GetPlayerNameKey() or "-")
+            )
+        )
+    end
     self:AppendPlannerDebugLine(
         ("SetActiveGroupAssignment tag=%s names=[%s] spotMap=%s myIndex=%s mySpots=%s (prev=%s)"):format(
             tostring(tag or "-"),
@@ -259,6 +418,34 @@ function Diar:FindNsrtAssignmentForScene(sceneIndex)
         local chosenTag, chosenTagNames, chosenTagSpotMap = nil, nil, nil
         local matchCount = 0
         local chosenCue = nil
+        local chosenLineNo = -1
+        local chosenRank = -1
+        local chosenHasPlayer = false
+        local myKey = GetPlayerNameKey()
+        local function cueRank(cue)
+            if cue and cue.tagSpotMap then return 3 end
+            if cue and cue.tagNames and #cue.tagNames > 0 then return 2 end
+            if cue and cue.tag and cue.tag ~= "" then return 1 end
+            return 0
+        end
+        local function cueHasPlayer(cue)
+            if not myKey then return false end
+            return CueContainsPlayer(cue, self.rsggGroups)
+        end
+        local function shouldChoose(cue)
+            local lineNo = tonumber(cue and cue.sourceLineNo) or 0
+            local rank = cueRank(cue)
+            local hasPlayer = cueHasPlayer(cue)
+            if not chosenCue then return true end
+            -- When multiple rsgg lines target the same scene, prefer the one
+            -- containing the current player assignment for this client.
+            if hasPlayer ~= chosenHasPlayer then
+                return hasPlayer
+            end
+            if lineNo > chosenLineNo then return true end
+            if lineNo == chosenLineNo and rank > chosenRank then return true end
+            return false
+        end
         for _, byPhase in pairs(cues) do
             if type(byPhase) == "table" then
                 for _, phaseCues in pairs(byPhase) do
@@ -266,21 +453,26 @@ function Diar:FindNsrtAssignmentForScene(sceneIndex)
                         for _, cue in ipairs(phaseCues) do
                             if cue.sceneIndex == sceneIndex then
                                 matchCount = matchCount + 1
-                                if cue.tagSpotMap then
-                                    chosenTag = nil
-                                    chosenTagNames = nil
-                                    chosenTagSpotMap = cue.tagSpotMap
-                                    chosenCue = cue
-                                elseif cue.tagNames and #cue.tagNames > 0 then
-                                    chosenTag = nil
-                                    chosenTagNames = cue.tagNames
-                                    chosenTagSpotMap = nil
-                                    chosenCue = cue
-                                elseif cue.tag and cue.tag ~= "" then
-                                    chosenTag = cue.tag
-                                    chosenTagNames = nil
-                                    chosenTagSpotMap = nil
-                                    chosenCue = cue
+                                if shouldChoose(cue) then
+                                    chosenLineNo = tonumber(cue.sourceLineNo) or 0
+                                    chosenRank = cueRank(cue)
+                                    chosenHasPlayer = cueHasPlayer(cue)
+                                    if cue.tagSpotMap then
+                                        chosenTag = nil
+                                        chosenTagNames = nil
+                                        chosenTagSpotMap = cue.tagSpotMap
+                                        chosenCue = cue
+                                    elseif cue.tagNames and #cue.tagNames > 0 then
+                                        chosenTag = nil
+                                        chosenTagNames = cue.tagNames
+                                        chosenTagSpotMap = nil
+                                        chosenCue = cue
+                                    elseif cue.tag and cue.tag ~= "" then
+                                        chosenTag = cue.tag
+                                        chosenTagNames = nil
+                                        chosenTagSpotMap = nil
+                                        chosenCue = cue
+                                    end
                                 end
                             end
                         end
@@ -291,11 +483,12 @@ function Diar:FindNsrtAssignmentForScene(sceneIndex)
         if chosenTag or (chosenTagNames and #chosenTagNames > 0) or chosenTagSpotMap then
             if self.AppendPlannerDebugLine and self.GetPlannerSettings and self:GetPlannerSettings().debugMode == true then
                 self:AppendPlannerDebugLine(
-                    ("FindNsrtAssignmentForScene scene=%s matches=%d picked=[%s] spotMap=%s line=%s raw=%s"):format(
+                    ("FindNsrtAssignmentForScene scene=%s matches=%d picked=[%s] spotMap=%s hasPlayer=%s line=%s raw=%s"):format(
                         tostring(sceneIndex),
                         matchCount,
                         JoinNames(chosenTagNames or { chosenTag or "-" }),
                         SpotNamesMapToString(chosenTagSpotMap),
+                        tostring(chosenHasPlayer),
                         tostring(chosenCue and chosenCue.sourceLineNo or "-"),
                         tostring(chosenCue and chosenCue.sourceLine or "-")
                     )
@@ -331,13 +524,23 @@ function Diar:ApplyNsrtAssignmentForPlannerView(sceneIndex)
     if self.ReloadRsggCuesFromActiveNote then
         self:ReloadRsggCuesFromActiveNote()
     end
-    local tag, tagNames, tagSpotMap = self:FindNsrtAssignmentForScene(sceneIndex)
+    local selected, selectedIndex, selectedTotal = self:GetSelectedPlannerSceneAssignment(sceneIndex)
+    local tag, tagNames, tagSpotMap
+    if selected then
+        tag = selected.tag
+        tagNames = selected.tagNames
+        tagSpotMap = selected.tagSpotMap
+    else
+        tag, tagNames, tagSpotMap = self:FindNsrtAssignmentForScene(sceneIndex)
+    end
     local dbgNames = tagNames
     if tagSpotMap then dbgNames = FlattenSpotMapNames(tagSpotMap) end
     local myIdx = FindMyRosterIndex(dbgNames)
     self:AppendPlannerDebugLine(
-        ("ApplyNsrtAssignment scene=%s tag=%s tagNames=[%s] spotMap=%s myIndexInTag=%s"):format(
+        ("ApplyNsrtAssignment scene=%s assign=%s/%s tag=%s tagNames=[%s] spotMap=%s myIndexInTag=%s"):format(
             tostring(sceneIndex or 1),
+            tostring(selectedIndex or "-"),
+            tostring(selectedTotal or "-"),
             tostring(tag or "-"),
             JoinNames(dbgNames),
             SpotNamesMapToString(tagSpotMap),
@@ -422,6 +625,11 @@ function Diar:HideRaidPlanScene()
     local closedNsrtPopup = pf and pf.nsrtSceneActive
     if closedNsrtPopup then
         pf.nsrtSceneActive = nil
+        -- Ensure NSRT compact zoom/pan never leaks into normal viewer mode.
+        pf.viewerViewport = nil
+        pf.__viewerViewportSceneIdx = nil
+        pf.__viewportDisplayZoom = 1
+        pf.__ignoreNextSceneViewportSync = true
         if pf.compactMode and pf:IsShown() then
             pf:Hide()
         end

@@ -87,16 +87,48 @@ function PUI.CreatePlannerIconBtn(parent, text, w, h)
     return b
 end
 
+function PUI.SetPlannerBtnShadowHidden(btn)
+    if not btn then return end
+    if btn.shadow then
+        btn.shadow:SetAlpha(0)
+        btn.shadow:Hide()
+    end
+end
+
 function PUI.GetPlayerNameKey()
-    local name = UnitName("player")
+    local function NormalizeNameToken(name)
+        if type(name) ~= "string" then return nil end
+        local t = name
+        -- Strip WoW color/link wrappers if they leak into parsed roster text.
+        t = t:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+        t = t:gsub("|H[^|]-|h([^|]-)|h", "%1")
+        t = t:gsub("|[^|]-|h", "")
+        t = t:gsub("[%z\1-\31\127]", "")
+        t = strtrim(t)
+        if t == "" then return nil end
+        return strlower(t)
+    end
+
+    local name, realm = UnitName("player")
     if not name or name == "" then return nil end
-    local short = name:match("^([^%-]+)") or name
-    return strlower(strtrim(short))
+    local full = name
+    if realm and realm ~= "" then
+        full = name .. "-" .. realm
+    end
+    local key = NormalizeNameToken(full) or NormalizeNameToken(name)
+    if not key then return nil end
+    local short = key:match("^([^%-]+)") or key
+    return short
 end
 
 function PUI.LabelMatchesPlayer(label, playerKey)
     if not playerKey or not label or label == "" then return false end
-    local t = strlower(strtrim(label))
+    local t = tostring(label)
+    t = t:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+    t = t:gsub("|H[^|]-|h([^|]-)|h", "%1")
+    t = t:gsub("[%z\1-\31\127]", "")
+    t = strlower(strtrim(t))
+    if t == "" then return false end
     local short = t:match("^([^%-]+)") or t
     return short == playerKey or t == playerKey
 end
@@ -104,14 +136,36 @@ end
 function PUI.RosterNameMatchesPlayer(rosterName, playerKey)
     if not playerKey or not rosterName or rosterName == "" then return false end
     if PUI.LabelMatchesPlayer(rosterName, playerKey) then return true end
-    local full = UnitName("player")
-    if not full or full == "" then return false end
-    local rosterLower = strlower(strtrim(rosterName))
-    local fullLower = strlower(strtrim(full))
-    if rosterLower == fullLower then return true end
-    local rosterShort = rosterLower:match("^([^%-]+)") or rosterLower
-    local fullShort = fullLower:match("^([^%-]+)") or fullLower
-    return rosterShort == fullShort
+
+    local function normalize(name)
+        if type(name) ~= "string" then return nil end
+        local t = name
+        t = t:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+        t = t:gsub("|H[^|]-|h([^|]-)|h", "%1")
+        t = t:gsub("|[^|]-|h", "")
+        t = t:gsub("[%z\1-\31\127]", "")
+        t = strlower(strtrim(t))
+        if t == "" then return nil end
+        return t
+    end
+
+    local roster = normalize(rosterName)
+    if not roster then return false end
+    local rosterShort = roster:match("^([^%-]+)") or roster
+    if roster == playerKey or rosterShort == playerKey then return true end
+
+    local name, realm = UnitName("player")
+    if not name or name == "" then return false end
+    local full = realm and realm ~= "" and (name .. "-" .. realm) or name
+    local fullNorm = normalize(full)
+    local nameNorm = normalize(name)
+    if fullNorm and (roster == fullNorm or rosterShort == fullNorm:match("^([^%-]+)") or fullNorm:match("^([^%-]+)") == rosterShort) then
+        return true
+    end
+    if nameNorm and (roster == nameNorm or rosterShort == nameNorm) then
+        return true
+    end
+    return false
 end
 
 function PUI.SceneHasPlayerName(scene, playerKey)

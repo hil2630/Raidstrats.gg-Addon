@@ -37,7 +37,13 @@ function Diar:UpdatePlannerPlayhead()
     if not SceneHasAnimations(pf) then return end
     local totalDur = Diar.GetSceneDuration(pf.sceneAnimations)
     if totalDur <= 0 then totalDur = 10 end
-    local t = pf.animStart and (GetTime() - pf.animStart) or 0
+    local t
+    if pf.animPaused and type(pf.pausedTime) == "number" then
+        t = pf.pausedTime
+    else
+        t = pf.animStart and (GetTime() - pf.animStart) or 0
+    end
+    t = math.min(totalDur, math.max(0, t))
     local pct = math.min(1, math.max(0, t / totalDur))
     local track = pf.timelineBg or pf.timeline
     local tw = track:GetWidth()
@@ -55,7 +61,17 @@ function Diar:PlannerOnUpdate()
     local canvas = pf.canvas
     local cw, ch = Diar.GetPlannerRenderCanvasSize(pf, canvas)
     local root = Diar.GetPlannerItemRoot(pf, canvas)
-    local t = GetTime() - pf.animStart
+    local t
+    if type(pf.animStart) == "number" then
+        t = GetTime() - pf.animStart
+    elseif pf.animPaused and type(pf.pausedTime) == "number" then
+        t = pf.pausedTime
+    else
+        -- Safety guard for transient scrub/play state races.
+        pf:SetScript("OnUpdate", nil)
+        pf.animPlaying = false
+        return
+    end
     local totalDur = Diar.GetSceneDuration(pf.sceneAnimations)
     if totalDur <= 0 or t >= totalDur then
         -- Animation ended: apply final state once, then stop without resetting scene

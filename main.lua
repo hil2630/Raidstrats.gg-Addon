@@ -476,6 +476,306 @@ local function CoerceNumber(v)
     return n
 end
 
+local function CoerceBool(v)
+    if v == true or v == 1 then return true end
+    if type(v) == "string" then
+        local lowered = strlower(strtrim(v))
+        return lowered == "true" or lowered == "1"
+    end
+    return false
+end
+
+local function ValueToPercent(v, dim)
+    local n = tonumber(v)
+    if not n then return nil end
+    if n >= 0 and n <= 100 then return n end
+    if dim and dim > 0 then
+        return (n / dim) * 100
+    end
+    return n
+end
+
+local function ResolveObjectBBoxPercent(obj, canvasW, canvasH)
+    local pct = type(obj.__percentData) == "table" and obj.__percentData or nil
+    local x = CoerceNumber(pct and pct.__bboxXPct)
+    local y = CoerceNumber(pct and pct.__bboxYPct)
+    local w = CoerceNumber(pct and pct.__bboxWPct)
+    local h = CoerceNumber(pct and pct.__bboxHPct)
+    if x and y and w and h then
+        return x, y, w, h
+    end
+
+    local left = ValueToPercent((pct and pct.left) or obj.left, canvasW)
+    local top = ValueToPercent((pct and pct.top) or obj.top, canvasH)
+    local scaleX = CoerceNumber(obj.scaleX) or 1
+    local scaleY = CoerceNumber(obj.scaleY) or 1
+    local rawW = CoerceNumber(obj.width)
+    local rawH = CoerceNumber(obj.height)
+    local widthPct = ValueToPercent(rawW and (rawW * scaleX) or nil, canvasW)
+    local heightPct = ValueToPercent(rawH and (rawH * scaleY) or nil, canvasH)
+    if not left or not top or not widthPct or not heightPct then
+        return nil, nil, nil, nil
+    end
+
+    local originX = strlower(tostring((pct and pct.originX) or obj.originX or "left"))
+    local originY = strlower(tostring((pct and pct.originY) or obj.originY or "top"))
+    local xPct = left
+    local yPct = top
+    if originX == "center" then xPct = xPct - widthPct * 0.5
+    elseif originX == "right" then xPct = xPct - widthPct end
+    if originY == "center" then yPct = yPct - heightPct * 0.5
+    elseif originY == "bottom" then yPct = yPct - heightPct end
+    return xPct, yPct, widthPct, heightPct
+end
+
+local function ResolveIconKeyFromSrc(src)
+    if type(src) ~= "string" or src == "" then return nil end
+    local clean = strlower(src:gsub("\\", "/"))
+    local marker = clean:find("/icon/", 1, true)
+    if not marker then
+        marker = clean:find("icon/", 1, true)
+        if not marker then return nil end
+    end
+    local key = clean:sub(marker + 6):gsub("^/+", ""):gsub("%.[^%.]+$", "")
+    return (key ~= "" and key) or nil
+end
+
+local function RegisterSceneItemId(map, id, index)
+    if not map or not id then return end
+    map[tostring(id)] = index
+end
+
+local function ConvertWebSceneObjects(scene, canvasW, canvasH)
+    if type(scene) ~= "table" or type(scene.objectsJSON) ~= "string" or scene.objectsJSON == "" then
+        return nil, nil, nil
+    end
+    local parsed = DecodeJSON(scene.objectsJSON)
+    if type(parsed) ~= "table" then return nil, nil, nil end
+    local objects = parsed.objects or parsed.canvasObjects or parsed
+    if type(objects) ~= "table" then return nil, nil, nil end
+
+    local items = {}
+    local idToIndex = {}
+    local pathByAnimId = {}
+    local objectById = {}
+
+    for _, obj in ipairs(objects) do
+        if type(obj) == "table" then
+            if CoerceBool(obj.__isAnimationPath) then
+                local animId = obj.__animationId or obj.id or obj.__objectGroupId
+                if animId then pathByAnimId[tostring(animId)] = obj end
+            else
+                local x, y, w, h = ResolveObjectBBoxPercent(obj, canvasW, canvasH)
+                if x and y and w and h then
+                    local item = nil
+                    local objType = strlower(tostring(obj.type or ""))
+                    if objType == "image" then
+                        item = {
+                            kind = "icon",
+                            x = x,
+                            y = y,
+                            w = w,
+                            h = h,
+                            icon = ResolveIconKeyFromSrc(obj.src),
+                            label = (type(obj.name) == "string" and obj.name ~= "") and obj.name or "",
+                        }
+                    elseif objType == "textbox" or objType == "text" or objType == "i-text" then
+                        item = {
+                            kind = "text",
+                            x = x,
+                            y = y,
+                            w = w,
+                            h = h,
+                            label = tostring(obj.text or obj.name or ""),
+                            textColor = obj.fill,
+                        }
+                        local fs = CoerceNumber(obj.fontSize)
+                        if fs then item.fontSize = ValueToPercent(fs * (CoerceNumber(obj.scaleY) or 1), canvasH) end
+                    elseif objType == "rect" or objType == "triangle" or objType == "circle" or objType == "ellipse" then
+                        item = {
+                            kind = "shape",
+                            shape = (objType == "rect" and "rect") or (objType == "triangle" and "triangle") or objType,
+                            x = x,
+                            y = y,
+                            w = w,
+                            h = h,
+                            fill = obj.fill,
+                            opacity = CoerceNumber(obj.opacity),
+                            stroke = obj.stroke,
+                            strokeWidth = ValueToPercent(CoerceNumber(obj.strokeWidth), canvasH),
+                        }
+                    end
+
+                    if item then
+                        local idx = #items + 1
+                        local itemId = obj.id or obj.__objectGroupId
+                        if itemId then item.id = tostring(itemId) end
+                        if CoerceBool(obj.__isFrontalBeam) then
+                            item.isFrontalBeam = true
+                            if obj.__frontalParentId then item.frontalParentId = tostring(obj.__frontalParentId) end
+                            local cfg = type(obj.__frontalConfig) == "table" and obj.__frontalConfig or nil
+                            if cfg and cfg.shapeType == "cone" then item.shape = "triangle" end
+                            item.startAngle = CoerceNumber((cfg and cfg.startAngle) or obj.angle) or 0
+                            item.endAngle = CoerceNumber((cfg and cfg.endAngle) or item.startAngle) or item.startAngle
+                            item.frontalAnimationType = strlower(tostring((cfg and cfg.animation and cfg.animation.type) or "sweep"))
+                            item.frontalW = w
+                            item.frontalH = h
+                            item.frontalFill = (cfg and cfg.color) or obj.fill
+                            item.frontalOpacity = CoerceNumber((cfg and cfg.opacity) or obj.opacity)
+                        end
+                        items[idx] = item
+                        RegisterSceneItemId(idToIndex, obj.id, idx)
+                        RegisterSceneItemId(idToIndex, obj.__objectGroupId, idx)
+                        if obj.id then objectById[tostring(obj.id)] = obj end
+                        if obj.__objectGroupId then objectById[tostring(obj.__objectGroupId)] = obj end
+                    end
+                end
+            end
+        end
+    end
+
+    return items, idToIndex, pathByAnimId, objectById
+end
+
+local function NormalizeAnimPathPoints(pathPoints, canvasW, canvasH)
+    if type(pathPoints) ~= "table" or #pathPoints < 4 then return nil end
+    local out = {}
+    for i = 1, #pathPoints - 1, 2 do
+        local x = CoerceNumber(pathPoints[i])
+        local y = CoerceNumber(pathPoints[i + 1])
+        if x and y then
+            if x > 100 or y > 100 then
+                x = ValueToPercent(x, canvasW)
+                y = ValueToPercent(y, canvasH)
+            end
+            out[#out + 1] = { x, y }
+        end
+    end
+    return (#out >= 2) and out or nil
+end
+
+local function ConvertWebSceneAnimations(scene, idToIndex, pathByAnimId, objectById, canvasW, canvasH)
+    if type(scene) ~= "table" or type(scene.animationsJSON) ~= "string" or scene.animationsJSON == "" then
+        return nil
+    end
+    local parsed = DecodeJSON(scene.animationsJSON)
+    if type(parsed) ~= "table" then return nil end
+    local out = {}
+    for _, anim in ipairs(parsed) do
+        if type(anim) == "table" then
+            local entry = {
+                startTime = CoerceNumber(anim.startTime) or 0,
+                duration = CoerceNumber(anim.duration) or 1000,
+            }
+
+            local objectId = anim.objectId and tostring(anim.objectId) or nil
+            local itemIndex = objectId and idToIndex and idToIndex[objectId] or nil
+            if itemIndex then
+                entry.itemIndex = itemIndex - 1
+                entry.objectId = objectId
+            end
+
+            local animPath = NormalizeAnimPathPoints(anim.pathPoints, canvasW, canvasH)
+            if not animPath and anim.pathId and pathByAnimId then
+                local pathObj = pathByAnimId[tostring(anim.pathId)]
+                animPath = pathObj and NormalizeAnimPathPoints(pathObj.__pathPoints, canvasW, canvasH) or nil
+            end
+            if animPath then entry.path = animPath end
+
+            local isFrontal = CoerceBool(anim.isFrontalSweepAnimation)
+            if isFrontal then
+                entry.isFrontalSweepAnimation = true
+                entry.frontalAnimationType = anim.frontalAnimationType
+                entry.startAngle = CoerceNumber(anim.startAngle)
+                entry.endAngle = CoerceNumber(anim.endAngle)
+                entry.pulseWobbleDeg = CoerceNumber(anim.pulseWobbleDeg)
+                local parentId = anim.parentObjectId and tostring(anim.parentObjectId) or nil
+                local parentIdx = parentId and idToIndex and idToIndex[parentId] or nil
+                if parentIdx then entry.parentItemIndex = parentIdx - 1 end
+
+                local beamObj = objectId and objectById and objectById[objectId] or nil
+                local beamCfg = beamObj and type(beamObj.__frontalConfig) == "table" and beamObj.__frontalConfig or nil
+                if not entry.startAngle then entry.startAngle = CoerceNumber(beamCfg and beamCfg.startAngle) or CoerceNumber(beamObj and beamObj.angle) end
+                if not entry.endAngle then entry.endAngle = CoerceNumber(anim.endAngle) or entry.startAngle end
+                if beamCfg and beamCfg.color and not entry.frontalFill then entry.frontalFill = beamCfg.color end
+                if beamCfg and beamCfg.opacity and not entry.frontalOpacity then entry.frontalOpacity = CoerceNumber(beamCfg.opacity) end
+            end
+
+            if CoerceBool(anim.isTetherAnimation) then
+                entry.isTetherAnimation = true
+                entry.tetherType = anim.tetherType
+                entry.tetherDistance = CoerceNumber(anim.tetherDistance)
+                entry.tetherDistancePercent = CoerceNumber(anim.tetherDistancePercent)
+                local parentId = anim.tetherMainObjectId and tostring(anim.tetherMainObjectId) or nil
+                local parentIdx = parentId and idToIndex and idToIndex[parentId] or nil
+                if parentIdx then entry.parentItemIndex = parentIdx - 1 end
+            end
+
+            if CoerceBool(anim.isStationaryAnimation) then
+                entry.isStationaryAnimation = true
+                entry.type = anim.type
+                entry.intensity = CoerceNumber(anim.intensity)
+                entry.loop = CoerceBool(anim.loop)
+            end
+
+            if entry.itemIndex ~= nil or entry.path or entry.isFrontalSweepAnimation or entry.isTetherAnimation or entry.isStationaryAnimation then
+                out[#out + 1] = entry
+            end
+        end
+    end
+    return out
+end
+
+local function ConvertWebPlannerScenes(data)
+    if type(data) ~= "table" or type(data.scenes) ~= "table" then return end
+    local canvasW, canvasH = 1115, 627
+    for _, scene in ipairs(data.scenes) do
+        if type(scene) == "table" and (type(scene.objectsJSON) == "string" or type(scene.animationsJSON) == "string") then
+            local items, idToIndex, pathByAnimId, objectById = ConvertWebSceneObjects(scene, canvasW, canvasH)
+            if items and #items > 0 and (type(scene.items) ~= "table" or #scene.items == 0) then
+                scene.items = items
+            end
+            local anims = ConvertWebSceneAnimations(scene, idToIndex or {}, pathByAnimId or {}, objectById or {}, canvasW, canvasH)
+            if anims and #anims > 0 and (type(scene.animations) ~= "table" or #scene.animations == 0) then
+                scene.animations = anims
+            end
+
+            -- Fallback for scenes that carry frontal beam objects but no explicit frontal animations.
+            if type(scene.items) == "table" and #scene.items > 0 then
+                scene.animations = scene.animations or {}
+                local hasFrontalAnimByItem = {}
+                for _, anim in ipairs(scene.animations) do
+                    if CoerceBool(anim and anim.isFrontalSweepAnimation) and CoerceNumber(anim.itemIndex) then
+                        hasFrontalAnimByItem[math.floor(CoerceNumber(anim.itemIndex) + 0.0001)] = true
+                    end
+                end
+                for itemIdx, item in ipairs(scene.items) do
+                    if type(item) == "table" and CoerceBool(item.isFrontalBeam) and not hasFrontalAnimByItem[itemIdx - 1] then
+                        local parentIdx = item.frontalParentId and idToIndex and idToIndex[tostring(item.frontalParentId)] or nil
+                        if parentIdx then
+                            scene.animations[#scene.animations + 1] = {
+                                startTime = 0,
+                                duration = 1000,
+                                itemIndex = itemIdx - 1,
+                                parentItemIndex = parentIdx - 1,
+                                isFrontalSweepAnimation = true,
+                                frontalAnimationType = item.frontalAnimationType or "sweep",
+                                startAngle = CoerceNumber(item.startAngle) or 0,
+                                endAngle = CoerceNumber(item.endAngle) or CoerceNumber(item.startAngle) or 0,
+                                frontalShape = item.shape or "rect",
+                                frontalW = CoerceNumber(item.frontalW) or CoerceNumber(item.w) or 5,
+                                frontalH = CoerceNumber(item.frontalH) or CoerceNumber(item.h) or 18,
+                                frontalFill = item.frontalFill or item.fill,
+                                frontalOpacity = CoerceNumber(item.frontalOpacity) or CoerceNumber(item.opacity) or 0.55,
+                            }
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
 local function EnsureImportedBossPortraitFallback(data)
     if type(data) ~= "table" or type(data.scenes) ~= "table" then return end
     local hasBossImageMeta = (data.boss_image ~= nil) or (data.bossImage ~= nil)
@@ -534,6 +834,7 @@ function Raidstrats:DecodePlanFromBase64(raw)
     end
     local data = DecodeJSON(json)
     if not data or SceneCount(data.scenes) == 0 then return nil end
+    ConvertWebPlannerScenes(data)
     EnsureImportedBossPortraitFallback(data)
     if self.SanitizePlanData then self:SanitizePlanData(data) end
     return data

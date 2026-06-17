@@ -12,11 +12,11 @@ local CreateButton = Diar.CreateButton
 local PUI = Diar.PlannerUI
 local UI = PUI.UI
 local CreatePlannerIconBtn = PUI.CreatePlannerIconBtn
+local SetPlannerBtnShadowHidden = PUI.SetPlannerBtnShadowHidden
 local SCENE_TAB_H = PUI.SCENE_TAB_H
 
 local HELP_NOTE =
-    "Note: This system was made for assignments, not all shapes and icons are supported from Raidstrats. "
-    .. "It's recommended to simply use circles and add indexes to them."
+    "Quick guide: build plans either on raidstrats.gg or directly in this addon, then export NSRT from either place."
 
 local function IsPlanLoaded()
     local data = Diar and Diar.plannerData
@@ -27,55 +27,48 @@ end
 
 local HELP_SECTIONS = {
     {
-        title = "Get a plan on raidstrats.gg",
+        title = "Build a plan on website (raidstrats.gg)",
         lines = {
             "Open raidstrats.gg/planner in your browser.",
-            "Browse the library or build your own plan — place markers, shapes, and role icons on the boss arena.",
-            "Save the plan when you are done. You can add multiple scenes for different phases.",
+            "Create a plan (or copy one from library), add scenes, and place assignments on the map.",
+            "For best addon + NSRT compatibility, keep assignments simple (indexed spots + text labels).",
+            "Save your plan.",
         },
     },
     {
-        title = "Export for the addon",
+        title = "Build a plan in addon (in-game)",
         lines = {
-            "In the web planner, open Export and choose Copy for addon.",
-            "You get a long string starting with !raidstrats-addon-",
-            "Copy that string — you will paste it into the addon on the next step.",
+            "Open Planner -> create/load a plan from the Plan Library.",
+            "Use New Scene for more phases and place assignment spots/labels directly in-game.",
+            "Save and Share/Push Update if you want your group to get changes.",
         },
     },
     {
-        title = "Import in-game",
+        title = "Move website plan into addon",
         lines = {
-            "Open this planner and click Import Plan in the Plan Library (right panel).",
-            "Paste the export string and confirm import.",
-            "Your plan appears in the library. Click it to load.",
-            "Raid leaders can also Share to Group or Push Update so the raid receives plans without pasting.",
+            "On website: Export -> Copy for addon (string starts with !raidstrats-addon-).",
+            "In addon: Plan Library -> Import Plan -> paste string -> confirm.",
+            "Load the imported plan from the library.",
         },
     },
     {
-        title = "NSRT — automatic popups",
+        title = "NSRT export on website",
         lines = {
-            "NSRT setup system guide: https://raidstrats.gg/addon",
-            "Works with Northern Sky Raid Tools (NSRT). Add special rsgg lines to your NSRT note.",
-            "Basic cue (everyone sees scene 1 at 11s in phase 1):",
-            "  time:11;ph:1;rsgg;scene:1",
-            "Define groups in the note, then reference them on a cue:",
-            "  rsggGroup1: PlayerA PlayerB PlayerC",
-            "  time:45;ph:1;rsgg;scene:2;tag:Group1",
-            "Only players listed on the tag see that popup. Their assigned spot highlights green.",
+            "Use the website NSRT export if you prefer managing notes outside the game.",
+            "Copy the generated rsgg lines and paste them into your NSRT note manually.",
+            "Then use NSRT's normal Load & Send flow.",
         },
     },
     {
-        title = "NSRT — tags and spot numbers",
+        title = "NSRT export in addon (recommended)",
         lines = {
-            "Inline tag (positional): tag NameA NameB or tag:NameA NameB — spot 1, spot 2, etc.",
-            "Group tag (single key): tag:Group1 — uses the rsggGroup1: roster line.",
-            "Optional dur:4 on a cue sets how long the popup stays (seconds).",
-            "Indexed tag (multiple per spot): tag 1: NameA NameB 2: NameC",
-            "Spot numbers match Preview index on objects in the planner.",
-            "Turn on Preview index in the bottom bar to see object numbers.",
-            "Test your note outside raid with /rsggtest — also broadcasts to your group.",
-            "Optional: /rsggtest 3183 2 for encounter 3183 phase 2.",
-            "Timing (seconds before/after cue) is in Settings -> NSRT Timing.",
+            "Open your plan in addon -> click NSRT button.",
+            "Set per-scene time / phase / duration and review tag preview.",
+            "Click Add+Send to write into the active NSRT note and broadcast to group.",
+            "If active note already has rsggNote from another plan, you will be asked before override.",
+            "Use /rsggtest to test cues quickly in-game.",
+            "Preview index icon shows spot numbers used for tag mapping.",
+            "Timing lead/lag is in Settings -> NSRT Timing.",
         },
     },
 }
@@ -140,6 +133,7 @@ function Diar:EnsurePlannerHelpButton(pf)
                 Diar:ShowCreatePlanDialog({ sceneMode = true })
             end
         end)
+        if SetPlannerBtnShadowHidden then SetPlannerBtnShadowHidden(newSceneBtn) end
         pf.newSceneBtn = newSceneBtn
     end
 
@@ -148,7 +142,17 @@ function Diar:EnsurePlannerHelpButton(pf)
         helpBtn:SetScript("OnClick", function()
             Diar:ShowPlannerHelpDialog()
         end)
+        if SetPlannerBtnShadowHidden then SetPlannerBtnShadowHidden(helpBtn) end
         pf.planHelpBtn = helpBtn
+    end
+
+    if SetPlannerBtnShadowHidden then
+        SetPlannerBtnShadowHidden(pf.newSceneBtn)
+        SetPlannerBtnShadowHidden(pf.planHelpBtn)
+        SetPlannerBtnShadowHidden(pf.planLinkBtn)
+        SetPlannerBtnShadowHidden(pf.modeToggleBtn)
+        SetPlannerBtnShadowHidden(pf.discordBtn)
+        SetPlannerBtnShadowHidden(pf.creditsBtn)
     end
 
     pf.planLinkBtn:ClearAllPoints()
@@ -204,7 +208,7 @@ function Diar:ShowPlannerHelpDialog()
 
         local subtitle = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         subtitle:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -2)
-        subtitle:SetText("raidstrats.gg -> export -> import -> NSRT")
+        subtitle:SetText("website or addon plan creation + NSRT export flow")
         subtitle:SetTextColor(0.50, 0.54, 0.60)
 
         local scroll = CreateFrame("ScrollFrame", nil, f, "UIPanelScrollFrameTemplate")

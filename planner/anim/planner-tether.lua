@@ -10,7 +10,9 @@ local Diar = Addon
 Diar.PlannerTether = Diar.PlannerTether or {}
 
 local function parseTargetPercent(tx, ty)
-    if type(tx) ~= "number" or type(ty) ~= "number" then return nil, nil end
+    tx = tonumber(tx)
+    ty = tonumber(ty)
+    if not tx or not ty then return nil, nil end
     local x = (tx >= 0 and tx <= 1) and tx or (tx / 100)
     local y = (ty >= 0 and ty <= 1) and ty or (ty / 100)
     return x, y
@@ -21,7 +23,8 @@ function Diar.PlannerTether.Apply(pf, scene, canvas, cw, ch, t, h)
     for _, anim in ipairs(pf.sceneAnimations) do
         if anim.isTetherAnimation then
             local followerIdx = h.ResolveAnimItemIndex(anim, scene, nil)
-            local mainIdx = (type(anim.parentItemIndex) == "number" and anim.parentItemIndex >= 0) and (anim.parentItemIndex + 1) or nil
+            local parentItemIndex = tonumber(anim.parentItemIndex)
+            local mainIdx = (parentItemIndex and parentItemIndex >= 0) and (math.floor(parentItemIndex + 0.0001) + 1) or nil
             local followerItem = scene.items[followerIdx]
             local mainItem = mainIdx and scene.items[mainIdx] or nil
             if not mainItem and followerItem and #scene.items > 1 then
@@ -60,8 +63,8 @@ function Diar.PlannerTether.Apply(pf, scene, canvas, cw, ch, t, h)
                         local dy = initY - mainY
                         local len = math.sqrt(dx * dx + dy * dy)
                         if len > 0.0001 then
-                            local dist = (type(anim.tetherDistance) == "number" and anim.tetherDistance or 200) / (cw or 1115)
-                            local pct = (type(anim.tetherDistancePercent) == "number" and anim.tetherDistancePercent or 100) / 100
+                            local dist = (tonumber(anim.tetherDistance) or 200) / (cw or 1115)
+                            local pct = (tonumber(anim.tetherDistancePercent) or 100) / 100
                             local ux = dx / len
                             local uy = dy / len
                             targX = mainX + ux * dist * pct

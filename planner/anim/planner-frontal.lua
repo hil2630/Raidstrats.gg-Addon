@@ -14,12 +14,18 @@ Diar.PlannerFrontal = Diar.PlannerFrontal or {}
 local function IsFrontalAnim(anim)
     if not anim then return false end
     local flag = anim.isFrontalSweepAnimation
-    return flag == true or flag == 1
+    if flag == true or flag == 1 then return true end
+    if type(flag) == "string" then
+        local lowered = strlower(strtrim(flag))
+        return lowered == "true" or lowered == "1"
+    end
+    return false
 end
 
 local function ResolveFrontalParentIndex(anim, scene)
-    if type(anim.parentItemIndex) == "number" and anim.parentItemIndex >= 0 then
-        return anim.parentItemIndex + 1
+    local parentItemIndex = tonumber(anim and anim.parentItemIndex)
+    if parentItemIndex and parentItemIndex >= 0 then
+        return math.floor(parentItemIndex + 0.0001) + 1
     end
     return nil
 end
@@ -84,10 +90,10 @@ function Diar.PlannerFrontal.Apply(pf, scene, canvas, cw, ch, t, h)
                     local parentItem = parentIdx and scene.items[parentIdx] or nil
                     local parentWidget = parentItem and parentItem.widget
 
-                    local startA = (type(anim.startAngle) == "number") and anim.startAngle or 0
-                    local endA = (type(anim.endAngle) == "number") and anim.endAngle or startA
-                    local frontalType = anim.frontalAnimationType or "sweep"
-                    local baseAlpha = (type(anim.frontalOpacity) == "number") and anim.frontalOpacity or 0.55
+                    local startA = tonumber(anim.startAngle) or 0
+                    local endA = tonumber(anim.endAngle) or startA
+                    local frontalType = strlower(tostring(anim.frontalAnimationType or "sweep"))
+                    local baseAlpha = tonumber(anim.frontalOpacity) or 0.55
 
                     local facing
                     local alpha = baseAlpha
@@ -96,7 +102,7 @@ function Diar.PlannerFrontal.Apply(pf, scene, canvas, cw, ch, t, h)
                     else
                         local animProgress = (t - startT) / dur
                         if frontalType == "pulse" then
-                            local wobbleDeg = (type(anim.pulseWobbleDeg) == "number") and anim.pulseWobbleDeg or 10
+                            local wobbleDeg = tonumber(anim.pulseWobbleDeg) or 10
                             facing = startA + math.sin(animProgress * math.pi * 2 * 5) * wobbleDeg
                             local opacityPulse = 0.6 + 0.4 * (0.5 + 0.5 * math.sin(animProgress * math.pi * 2 * 6))
                             alpha = math.min(1, baseAlpha * opacityPulse)
