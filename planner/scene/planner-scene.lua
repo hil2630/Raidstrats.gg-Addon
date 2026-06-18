@@ -325,39 +325,62 @@ function Diar:ShowCompactPreviewChrome(pf, show)
     if not pf then return end
     if not pf.compactPreviewBar then
         local bar = CreateFrame("Frame", nil, pf, "BackdropTemplate")
-        bar:SetHeight(34)
+        bar:SetHeight(40)
         bar:SetFrameStrata("DIALOG")
         if SetBackdrop then SetBackdrop(bar, UI.TOOLBAR, UI.BORDER, 1) end
         local lbl = bar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         lbl:SetPoint("LEFT", bar, "LEFT", 10, 0)
-        lbl:SetWidth(220)
+        lbl:SetWidth(340)
         lbl:SetJustifyH("LEFT")
-        lbl:SetText("Drag to set NSRT compact position")
+        lbl:SetText("Drag + resize to set compact preview position.")
         lbl:SetTextColor(0.85, 0.88, 0.92)
         bar.label = lbl
-        local saveBtn = CreatePlannerIconBtn(bar, "Save", 64, 24)
-        saveBtn:SetPoint("RIGHT", bar, "RIGHT", -74, 0)
+        local saveBtn = CreatePlannerIconBtn(bar, "Save", 84, 28)
+        saveBtn:SetPoint("RIGHT", bar, "RIGHT", -96, 0)
         saveBtn:SetScript("OnClick", function()
             Diar:EndCompactPositionPreview(true)
         end)
-        local cancelBtn = CreatePlannerIconBtn(bar, "Cancel", 64, 24)
+        local cancelBtn = CreatePlannerIconBtn(bar, "Cancel", 84, 28)
         cancelBtn:SetPoint("RIGHT", bar, "RIGHT", -6, 0)
         cancelBtn:SetScript("OnClick", function()
             Diar:EndCompactPositionPreview(false)
         end)
         pf.compactPreviewBar = bar
     end
+    if not pf.compactPreviewNote then
+        local note = CreateFrame("Frame", nil, pf, "BackdropTemplate")
+        note:SetHeight(24)
+        note:SetFrameStrata("DIALOG")
+        if SetBackdrop then SetBackdrop(note, { 0.20, 0.14, 0.02, 0.96 }, { 0.82, 0.62, 0.24, 1 }, 1) end
+        local txt = note:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        txt:SetPoint("LEFT", note, "LEFT", 8, 0)
+        txt:SetPoint("RIGHT", note, "RIGHT", -8, 0)
+        txt:SetJustifyH("CENTER")
+        txt:SetTextColor(1.00, 0.88, 0.50)
+        txt:SetText("NSRT in-combat position preview")
+        note.text = txt
+        pf.compactPreviewNote = note
+    end
     local bar = pf.compactPreviewBar
+    local note = pf.compactPreviewNote
     if show then
         bar:ClearAllPoints()
         bar:SetPoint("BOTTOMLEFT", pf, "BOTTOMLEFT", 0, 0)
         bar:SetPoint("BOTTOMRIGHT", pf, "BOTTOMRIGHT", 0, 0)
         bar:SetFrameLevel(pf:GetFrameLevel() + 40)
         bar:Show()
+        if note then
+            note:ClearAllPoints()
+            note:SetPoint("TOPLEFT", pf, "TOPLEFT", 6, -6)
+            note:SetPoint("TOPRIGHT", pf, "TOPRIGHT", -6, -6)
+            note:SetFrameLevel(pf:GetFrameLevel() + 40)
+            note:Show()
+        end
         if pf.closeBtn then pf.closeBtn:Hide() end
         if pf.modeToggleBtn then pf.modeToggleBtn:Hide() end
     else
         bar:Hide()
+        if note then note:Hide() end
     end
 end
 
@@ -390,6 +413,11 @@ function Diar:StartCompactPositionPreview()
         self.ApplyPlannerCompactLayout(pf)
     end
     self:ApplyPlannerCompactPosition(pf)
+    if not self:HasSavedCompactPosition() then
+        -- Better first-time default for preview mode: keep it off-center on the right.
+        pf:ClearAllPoints()
+        pf:SetPoint("RIGHT", UIParent, "RIGHT", -36, 0)
+    end
     self:RefreshPlannerScene()
 
     self:ShowCompactPreviewChrome(pf, true)
@@ -2810,30 +2838,63 @@ local function SceneViewPctToCanvas(vc, cw, ch, xp, yp)
     return SceneViewCoord(vc, cw * xp, ch * yp)
 end
 
+local function ResolveFakeCompactZoomTargetItem(scene, sceneSpots)
+    if not scene or type(scene.items) ~= "table" then return nil end
+    local bestSlot = nil
+    local bestItem = nil
+    if type(sceneSpots) == "table" then
+        for itemIndex, slot in pairs(sceneSpots) do
+            local n = tonumber(slot)
+            local item = scene.items[itemIndex]
+            if n and n >= 1 and type(item) == "table" then
+                if not bestSlot or n < bestSlot then
+                    bestSlot = n
+                    bestItem = item
+                end
+            end
+        end
+    end
+    if type(bestItem) == "table" then
+        return bestItem
+    end
+    for i = 1, #scene.items do
+        local item = scene.items[i]
+        if type(item) == "table" and tonumber(item.x) and tonumber(item.y) then
+            return item
+        end
+    end
+    return nil
+end
+
 local function BuildCompactAssignmentViewport(pf, scene, sceneSpots, activeGroup)
-    if not pf or not scene or not scene.items or not sceneSpots or not activeGroup then return nil end
+    if not pf or not scene or not scene.items then return nil end
     if not pf.compactMode then return nil end
     if not (Diar.IsCompactZoomToAssignmentEnabled and Diar:IsCompactZoomToAssignmentEnabled()) then
         return nil
     end
-    local mySpots = activeGroup.mySpots
-    if type(mySpots) ~= "table" then return nil end
+    local mySpots = activeGroup and activeGroup.mySpots or nil
 
     local targetSlot = nil
-    for slot in pairs(mySpots) do
-        local n = tonumber(slot)
-        if n and n >= 1 and (not targetSlot or n < targetSlot) then
-            targetSlot = n
+    if type(mySpots) == "table" then
+        for slot in pairs(mySpots) do
+            local n = tonumber(slot)
+            if n and n >= 1 and (not targetSlot or n < targetSlot) then
+                targetSlot = n
+            end
         end
     end
-    if not targetSlot then return nil end
 
     local targetItem = nil
-    for itemIndex, slot in pairs(sceneSpots) do
-        if tonumber(slot) == targetSlot then
-            targetItem = scene.items[itemIndex]
-            break
+    if targetSlot and type(sceneSpots) == "table" then
+        for itemIndex, slot in pairs(sceneSpots) do
+            if tonumber(slot) == targetSlot then
+                targetItem = scene.items[itemIndex]
+                break
+            end
         end
+    end
+    if type(targetItem) ~= "table" and pf.__compactZoomPreviewFakeAssignment then
+        targetItem = ResolveFakeCompactZoomTargetItem(scene, sceneSpots)
     end
     if type(targetItem) ~= "table" then return nil end
 
@@ -2880,6 +2941,7 @@ function Diar:PreviewCompactAssignmentZoomFromSettings(settingsDialog)
     self:ShowPlannerViewer({ reloadOnly = self.plannerFrame and self.plannerFrame:IsShown() })
     local pf = self.plannerFrame
     if not pf then return end
+    pf.__compactZoomPreviewFakeAssignment = true
 
     if not self._compactZoomPreviewState then
         local point, _, relPoint, x, y = pf:GetPoint(1)
@@ -2935,6 +2997,7 @@ function Diar:EndCompactAssignmentZoomPreviewFromSettings()
     local pf = self.plannerFrame
     if not pf then return end
     pf.__suspendPositionSave = nil
+    pf.__compactZoomPreviewFakeAssignment = nil
 
     if pf.compactMode ~= state.compactMode and self.SetPlannerCompactMode then
         pf.__skipCompactSaveOnce = true
@@ -3914,6 +3977,15 @@ function Diar:SanitizePlanData(data)
                 if type(item) == "table" then
                     local kindLower = tostring(item.kind or ""):lower()
                     local typeLower = tostring(item.type or item.objectType or ""):lower()
+                    local isTextObject = (kindLower == "text")
+                        or (typeLower == "text")
+                        or (typeLower == "textbox")
+                        or (typeLower == "i-text")
+                    if isTextObject then
+                        -- Imported standalone labels should never carry assignment indices.
+                        item.slotIndex = nil
+                        item.embedIndex = nil
+                    end
                     local isBossObject = (kindLower == "boss")
                         or (typeLower == "boss")
                         or (typeLower == "bossobject")
@@ -4087,7 +4159,10 @@ local function IsAutoSpotExcludedItem(item)
     return k == "boss" or k == "trash"
 end
 
-ResolveSceneSpots = function(scene)
+-- explicitOnly: when true, never auto-number unindexed objects. Used by the
+-- assignment recolor path so circles/objects WITHOUT an index keep their own
+-- colors instead of all being recolored to the "other" (grey) assignment color.
+ResolveSceneSpots = function(scene, explicitOnly)
     if not scene or not scene.items then return nil end
 
     -- Explicit slotIndex wins, for any object type.
@@ -4118,6 +4193,8 @@ ResolveSceneSpots = function(scene)
         end
         return map
     end
+
+    if explicitOnly then return nil end
 
     -- Fallback: auto-order circles by reading position.
     -- Exclude boss/add badges from auto spots; they only get spots when explicitly indexed in import.
@@ -4634,8 +4711,9 @@ function Diar.RenderSceneItem(addon, pf, root, cw, ch, vc, minSize, item, itemIn
     end
 end
 
--- Compact mode: same canvas as expanded, displayed smaller via SetScale (~52% default).
-local COMPACT_SCALE = 0.52
+-- Compact mode: same canvas as expanded, displayed smaller via SetScale.
+-- Raised cap by ~40% (0.52 -> 0.73) to allow larger compact/preview layouts.
+local COMPACT_SCALE = 0.73
 local MIN_COMPACT_SCALE = 0.22
 local COMPACT_TOP_CHROME_H = 32
 
@@ -5022,6 +5100,11 @@ local function ApplyPlannerCompactLayout(pf, keepFrameSize, snapFrame)
             pf.resizeGrip:Hide()
         else
             pf.resizeGrip:Show()
+            if pf.compactPreviewActive then
+                pf.resizeGrip:SetSize(24, 24)
+            else
+                pf.resizeGrip:SetSize(16, 16)
+            end
             pf.resizeGrip:ClearAllPoints()
             pf.resizeGrip:SetPoint("BOTTOMRIGHT", pf, "BOTTOMRIGHT", 0, 0)
             pf.resizeGrip:SetFrameLevel(pf.canvas:GetFrameLevel() + 50)
@@ -6302,7 +6385,10 @@ function Diar:RefreshPlannerScene()
         pf.__viewportDisplayZoom = pf.viewerViewport and pf.viewerViewport.zoom or 1
         ApplySceneBackground(pf, scene, vc, cw, ch)
     end
-    local groupSpots = activeGroup and sceneSpots or nil
+    -- Recolor only objects that carry an explicit index. Objects with no index
+    -- (e.g. auto-ordered circles) must keep their own colors when assignments are up.
+    local explicitSpots = ResolveSceneSpots(scene, true)
+    local groupSpots = activeGroup and explicitSpots or nil
     local groupSpotNames = activeGroup and activeGroup.spotNames or nil
     local previewNamesOn = self:IsPlannerPreviewNamesVisible() and groupSpotNames
     local previewSpots = self:IsPlannerPreviewIndexVisible() and sceneSpots or nil

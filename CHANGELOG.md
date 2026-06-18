@@ -1,5 +1,16 @@
 # Changelog
 
+## [Alpha v0.0.39] Multi-plan assignments, changes to preview & set compact modes, and more.
+
+- Fixed an issue where imported arrows would all point in the same direction
+- Fixed an issue where the preview & set would not correctly show the settings set on the comapct mode (e.g. hide bg, etc. )
+
+- Added a way to use multiple plans for 1 assignment.
+  Note: Each plan now have a unique key based on their UUID of the raidplan from raidstrats.gg. The NSRT Export will automatically fillout this and use this (WIP)
+
+- Updated the Preivew & Set/compact to allow a bigger size as well as info-header that it's only for NSRT Triggered plans.
+- Updated the Import Plan input box to now have clear feedback that it's selected.
+
 ## [Alpha v0.0.38] Scrubbing in the timeline, frontal animations available and more
 
 - Fixed an issue where the compact-mode would show unwanted items. Should now only show the compact window.

@@ -358,8 +358,8 @@ local function GetCanvasLocalPointClamped(canvas, pf)
     local cw, ch = canvas:GetSize()
     if not cw or cw <= 0 then cw = 1 end
     if not ch or ch <= 0 then ch = 1 end
-    local lx = math.max(0, math.min(cw, cx - left))
-    local ly = math.max(0, math.min(ch, top - cy))
+    local lx = cx - left
+    local ly = top - cy
     return lx, ly, cw, ch
 end
 
@@ -368,9 +368,9 @@ local function CanvasLocalToItemPercent(pf, lx, ly, cw, ch)
     local PV = Diar.PlannerView
     if PV and PV.ScreenToWorld and vc then
         local wx, wy = PV.ScreenToWorld(vc, lx, ly)
-        return math.max(0, math.min(100, (wx / cw) * 100)), math.max(0, math.min(100, (wy / ch) * 100))
+        return (wx / cw) * 100, (wy / ch) * 100
     end
-    return math.max(0, math.min(100, (lx / cw) * 100)), math.max(0, math.min(100, (ly / ch) * 100))
+    return (lx / cw) * 100, (ly / ch) * 100
 end
 
 local MIN_SHAPE_DRAG_PX = 6
@@ -438,10 +438,8 @@ local function DragBoxToItemSize(pf, x1, y1, x2, y2, cw, ch, shape)
     local top = math.min(yPctA, yPctB)
     local wPct = math.abs(xPctB - xPctA)
     local hPct = math.abs(yPctB - yPctA)
-    left = math.max(0, math.min(100, left))
-    top = math.max(0, math.min(100, top))
-    wPct = math.max(MIN_SHAPE_SIZE_PCT, math.min(100 - left, wPct))
-    hPct = math.max(MIN_SHAPE_SIZE_PCT, math.min(100 - top, hPct))
+    wPct = math.max(MIN_SHAPE_SIZE_PCT, wPct)
+    hPct = math.max(MIN_SHAPE_SIZE_PCT, hPct)
     return left, top, wPct, hPct
 end
 
@@ -452,8 +450,8 @@ local function DefaultShapeAtPoint(template, px, py)
     if shape == "circle" then
         wPct, hPct = Diar:SquareIconPercents(wPct)
     end
-    local xPct = math.max(0, math.min(100 - wPct, px - wPct * 0.5))
-    local yPct = math.max(0, math.min(100 - hPct, py - hPct * 0.5))
+    local xPct = px - wPct * 0.5
+    local yPct = py - hPct * 0.5
     return xPct, yPct, wPct, hPct
 end
 
@@ -882,8 +880,8 @@ function Diar:TryPaletteCanvasMouseDown(button)
     local lx, ly, cw, ch = GetCanvasLocalPoint(pf.canvas, pf)
     if not lx then return false end
     if template.kind == "icon" then
-        lx = math.max(0, math.min(cw, lx + PALETTE_ICON_CURSOR_OFFSET_X))
-        ly = math.max(0, math.min(ch, ly + PALETTE_ICON_CURSOR_OFFSET_Y))
+        lx = lx + PALETTE_ICON_CURSOR_OFFSET_X
+        ly = ly + PALETTE_ICON_CURSOR_OFFSET_Y
     end
     local xPct, yPct = CanvasLocalToItemPercent(pf, lx, ly, cw, ch)
     local placement = CopyTemplate(template)

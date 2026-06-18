@@ -50,20 +50,74 @@ function Diar:ShowImportPlanDialog()
         hint:SetPoint("TOP", title, "BOTTOM", 0, -8)
         hint:SetWidth(500)
         hint:SetTextColor(0.55, 0.6, 0.65)
-        hint:SetText("Paste the export from raidstrats.gg (!raidstrats-addon-...)")
+        hint:SetText("Paste the export from raidstrats.gg (!raidstrats-addon-...)\nLarger plans may cause your client to lag for a few seconds, this is normal.")
 
         local btnRow = CreateFrame("Frame", nil, f)
         btnRow:SetHeight(40)
         btnRow:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 20, 16)
         btnRow:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -20, 16)
 
-        local inputFrame, eb
-        if CreateInput then
-            inputFrame, eb = CreateInput(f, "Plan String", true)
-            inputFrame:SetPoint("TOPLEFT", f, "TOPLEFT", 20, -72)
-            inputFrame:SetPoint("BOTTOMRIGHT", btnRow, "TOPRIGHT", 0, 14)
-            eb:SetFontObject("GameFontHighlightSmall")
+        local inputFrame = CreateFrame("Frame", nil, f, "BackdropTemplate")
+        inputFrame:SetPoint("TOPLEFT", f, "TOPLEFT", 20, -72)
+        inputFrame:SetPoint("BOTTOMRIGHT", btnRow, "TOPRIGHT", 0, 14)
+        SetBackdrop(inputFrame, {0.05, 0.05, 0.07, 1}, {0.2, 0.2, 0.2, 1}, 1)
+
+        local scroll = CreateFrame("ScrollFrame", nil, inputFrame, "UIPanelScrollFrameTemplate")
+        scroll:SetPoint("TOPLEFT", inputFrame, "TOPLEFT", 8, -8)
+        scroll:SetPoint("BOTTOMRIGHT", inputFrame, "BOTTOMRIGHT", -24, 8)
+
+        local eb = CreateFrame("EditBox", nil, scroll)
+        eb:SetAutoFocus(false)
+        eb:SetMultiLine(true)
+        eb:SetMaxLetters(0)
+        eb:SetWidth(math.max(1, scroll:GetWidth()))
+        eb:SetTextInsets(4, 4, 4, 4)
+        scroll:SetScrollChild(eb)
+        eb:SetMaxLetters(0)
+        eb:SetFontObject(GameFontHighlightSmall)
+        eb:SetTextColor(0.92, 0.92, 0.92)
+
+        local inactiveBorder = { 0.20, 0.20, 0.20, 1 }
+        local activeBorder = { 0.30, 0.60, 1.00, 1 }
+        eb:SetScript("OnEditFocusGained", function()
+            inputFrame:SetBackdropBorderColor(unpack(activeBorder))
+        end)
+        eb:SetScript("OnEditFocusLost", function()
+            inputFrame:SetBackdropBorderColor(unpack(inactiveBorder))
+        end)
+        inputFrame:EnableMouse(true)
+        inputFrame:SetScript("OnMouseDown", function(_, button)
+            if button == "LeftButton" and eb and eb.SetFocus then
+                eb:SetFocus()
+            end
+        end)
+        scroll:EnableMouse(true)
+        scroll:SetScript("OnMouseDown", function(_, button)
+            if button == "LeftButton" and eb and eb.SetFocus then
+                eb:SetFocus()
+            end
+        end)
+
+        inputFrame._scroll = scroll
+        inputFrame._edit = eb
+        inputFrame.SyncEditWidth = function(self)
+            if not self or not self._scroll or not self._edit then return end
+            local w = self:GetWidth()
+            if not w or w <= 32 then return end
+            local innerW = w - 32
+            self._scroll:SetWidth(innerW)
+            self._edit:SetWidth(innerW)
         end
+        eb:SetScript("OnTextChanged", function()
+            if inputFrame and inputFrame.SyncEditWidth then
+                inputFrame:SyncEditWidth()
+            end
+        end)
+        inputFrame:SetScript("OnSizeChanged", function(s)
+            if s and s.SyncEditWidth then
+                s:SyncEditWidth()
+            end
+        end)
         f.inputFrame = inputFrame
 
         local importBtn = CreateButton and CreateButton(btnRow, "IMPORT") or CreateFrame("Button", nil, btnRow, "UIPanelButtonTemplate")
@@ -77,11 +131,10 @@ function Diar:ShowImportPlanDialog()
             end
         end)
 
-        local cancelBtn = CreateFrame("Button", nil, btnRow, "UIPanelButtonTemplate")
-        cancelBtn:SetHeight(40)
+        local cancelBtn = CreateButton and CreateButton(btnRow, "CANCEL") or CreateFrame("Button", nil, btnRow, "UIPanelButtonTemplate")
+        if cancelBtn.SetText then cancelBtn:SetText("CANCEL") end
         cancelBtn:SetPoint("LEFT", btnRow, "CENTER", 6, 0)
         cancelBtn:SetPoint("RIGHT", btnRow, "RIGHT", 0, 0)
-        cancelBtn:SetText("Cancel")
         cancelBtn:SetScript("OnClick", function() f:Hide() end)
 
         self.importPlanDialog = f
@@ -94,6 +147,29 @@ function Diar:ShowImportPlanDialog()
         self.importPlanDialog.inputFrame:SyncEditWidth()
     end
     self.importPlanDialog:Show()
+    if self.importPlanDialogEdit and self.importPlanDialogEdit.SetFocus then
+        if C_Timer and C_Timer.After then
+            C_Timer.After(0, function()
+                if Diar and Diar.importPlanDialog and Diar.importPlanDialog:IsShown() and Diar.importPlanDialogEdit then
+                    Diar.importPlanDialogEdit:SetFocus()
+                    if Diar.importPlanDialogEdit.HighlightText then
+                        Diar.importPlanDialogEdit:HighlightText(0, 0)
+                    end
+                    if Diar.importPlanDialogEdit.SetCursorPosition then
+                        Diar.importPlanDialogEdit:SetCursorPosition(0)
+                    end
+                end
+            end)
+        else
+            self.importPlanDialogEdit:SetFocus()
+            if self.importPlanDialogEdit.HighlightText then
+                self.importPlanDialogEdit:HighlightText(0, 0)
+            end
+            if self.importPlanDialogEdit.SetCursorPosition then
+                self.importPlanDialogEdit:SetCursorPosition(0)
+            end
+        end
+    end
 end
 
 function Diar:ShowImportProgress(visible, received, total, status)

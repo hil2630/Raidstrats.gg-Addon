@@ -26,8 +26,8 @@ end
 function Diar:GetPlannerSettings()
     RaidstratsggSettings = RaidstratsggSettings or {}
     local s = RaidstratsggSettings
-    if s.rsggShowBefore == nil then s.rsggShowBefore = 2 end
-    if s.rsggShowAfter == nil then s.rsggShowAfter = 5 end
+    if s.rsggShowBefore == nil then s.rsggShowBefore = 0 end
+    if s.rsggShowAfter == nil then s.rsggShowAfter = 0 end
     if s.highlightMyName == nil then s.highlightMyName = true end
     if s.compactShowBackground == nil then s.compactShowBackground = true end
     if s.hideNsrtPlan == nil then
@@ -248,17 +248,17 @@ end
 
 function Diar:GetRsggShowBefore()
     local v = self:GetPlannerSettings().rsggShowBefore
-    if v == nil then return 2 end
+    if v == nil then return 0 end
     v = tonumber(v)
-    if v == nil then return 2 end
+    if v == nil then return 0 end
     return math.max(0, v)
 end
 
 function Diar:GetRsggShowAfter()
     local v = self:GetPlannerSettings().rsggShowAfter
-    if v == nil then return 5 end
+    if v == nil then return 0 end
     v = tonumber(v)
-    if v == nil then return 5 end
+    if v == nil then return 0 end
     return math.max(0, v)
 end
 
@@ -496,15 +496,24 @@ function Diar:ShowPlannerSettingsDialog()
 
         local compactStatus = body:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         compactStatus:SetPoint("TOPLEFT", body, "TOPLEFT", 14, y)
-        compactStatus:SetWidth(270)
+        compactStatus:SetWidth(290)
         compactStatus:SetJustifyH("LEFT")
         compactStatus:SetTextColor(0.67, 0.70, 0.75)
         f.compactPosStatus = compactStatus
 
-        local previewBtn = CreatePlannerIconBtn(body, "Preview & set", 118, 26)
+        local previewBtn = CreatePlannerIconBtn(body, "Preview & Set", 148, 30)
         previewBtn:SetPoint("TOPRIGHT", body, "TOPRIGHT", -14, y - 2)
         SetPrimaryButtonStyle(previewBtn)
         previewBtn:SetScript("OnClick", function()
+            -- Apply current Display controls immediately so Preview reflects
+            -- what the user currently selected, even before Save.
+            local s = Diar:GetPlannerSettings()
+            s.highlightMyName = CheckboxIsChecked(f.highlightChk)
+            s.compactShowBackground = CheckboxIsChecked(f.compactBgChk)
+            s.classSpecCircleMode = CheckboxIsChecked(f.classSpecCircleChk)
+            s.compactSceneArrows = CheckboxIsChecked(f.compactSceneArrowsChk)
+            s.compactZoomToAssignment = CheckboxIsChecked(f.compactZoomAssignChk)
+            s.compactAssignZoom = ClampAssignZoom(f.compactAssignZoom)
             f:Hide()
             if Diar.StartCompactPositionPreview then
                 Diar:StartCompactPositionPreview()
@@ -609,8 +618,8 @@ function Diar:ShowPlannerSettingsDialog()
     end
 
     local dlg = self.plannerSettingsDialog
-    dlg.beforeEdit:SetText(tostring(settings.rsggShowBefore ~= nil and settings.rsggShowBefore or 2))
-    dlg.afterEdit:SetText(tostring(settings.rsggShowAfter ~= nil and settings.rsggShowAfter or 5))
+    dlg.beforeEdit:SetText(tostring(settings.rsggShowBefore ~= nil and settings.rsggShowBefore or 0))
+    dlg.afterEdit:SetText(tostring(settings.rsggShowAfter ~= nil and settings.rsggShowAfter or 0))
     dlg.highlightChk:SetChecked(self:IsHighlightMyNameEnabled())
     dlg.compactBgChk:SetChecked(self:IsCompactBackgroundEnabled())
     if dlg.classSpecCircleChk then

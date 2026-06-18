@@ -558,6 +558,38 @@ function Diar:ApplyNsrtAssignmentForPlannerView(sceneIndex)
     end
 end
 
+local function NormalizeBoundPlanRef(ref)
+    if type(ref) ~= "string" then return nil end
+    local raw = strtrim(ref)
+    if raw == "" then return nil end
+    -- Accept full planner URL: ...?view=<planId>[/scene]
+    local view = raw:match("[?&]view=([^&#]+)")
+    if view and view ~= "" then raw = view end
+    -- Handle optional /scene suffix in view param values.
+    local idOnly = raw:match("^([^/]+)/%d+$")
+    if idOnly and idOnly ~= "" then raw = idOnly end
+    return (raw ~= "" and raw) or nil
+end
+
+function Diar:LoadPlanByRef(planRef)
+    local planId = NormalizeBoundPlanRef(planRef)
+    if not planId then return false end
+    if self.plannerData and tostring(self.plannerData.planId or "") == tostring(planId) then
+        return true
+    end
+    RaidstratsggSavedPlans = RaidstratsggSavedPlans or { list = {}, nextId = 1 }
+    for _, entry in ipairs(RaidstratsggSavedPlans.list) do
+        local entryPlanId = entry and entry.data and tostring(entry.data.planId or "")
+        if entryPlanId ~= "" and entryPlanId == tostring(planId) then
+            if self.ApplySavedPlanEntry then
+                return self:ApplySavedPlanEntry(entry)
+            end
+            return false
+        end
+    end
+    return false
+end
+
 function Diar:ShowRaidPlanScene(sceneIndex, opts)
     opts = opts or {}
     if not opts.forceShow and not self:IsNsrtPopupsEnabled() then
@@ -569,7 +601,15 @@ function Diar:ShowRaidPlanScene(sceneIndex, opts)
             return false
         end
     end
-    if opts.planName and opts.planName ~= "" and not self:LoadPlanByName(opts.planName) then
+    if opts.planRef and opts.planRef ~= "" then
+        if not self:LoadPlanByRef(opts.planRef) then
+            local alias = opts.planAlias and tostring(opts.planAlias) or "?"
+            print(("|cffff6666[Raidstrats.gg]|r Could not resolve bound plan \"%s\" (ref: %s)."):format(
+                alias, tostring(opts.planRef)))
+            return false
+        end
+    end
+    if (not (opts.planRef and opts.planRef ~= "")) and opts.planName and opts.planName ~= "" and not self:LoadPlanByName(opts.planName) then
         print(("|cffff6666[Raidstrats.gg]|r Could not find saved plan \"%s\"."):format(opts.planName))
         return false
     end

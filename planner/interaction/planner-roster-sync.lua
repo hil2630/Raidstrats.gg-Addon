@@ -123,6 +123,150 @@ local function ItemSlotIndex(item)
     return NormalizeSlotIndex(item.slotIndex or item.embedIndex)
 end
 
+local function UsesTriangleHitTest(item)
+    if not item or tostring(item.kind or ""):lower() ~= "shape" then
+        return false
+    end
+    local shapeKey = tostring(item.shape or ""):lower()
+    return shapeKey == "triangle" or shapeKey == "cone"
+end
+
+local function GetWidgetCursorPoint(widget)
+    if not widget then return nil end
+    local scale = widget:GetEffectiveScale()
+    if not scale or scale <= 0 then return nil end
+    local left = widget:GetLeft()
+    local top = widget:GetTop()
+    local width = widget:GetWidth()
+    local height = widget:GetHeight()
+    if not left or not top or not width or not height or width <= 0 or height <= 0 then
+        return nil
+    end
+    local cx, cy = GetCursorPosition()
+    cx, cy = cx / scale, cy / scale
+    local lx = cx - left
+    local ly = top - cy
+    return lx, ly, width, height
+end
+
+local function IsInsideTriangleBounds(lx, ly, width, height)
+    if not lx or not ly or not width or not height or width <= 0 or height <= 0 then
+        return false
+    end
+    if lx < 0 or lx > width or ly < 0 or ly > height then
+        return false
+    end
+    local halfW = width * 0.5
+    local yRatio = ly / height
+    local maxDistFromCenter = halfW * yRatio
+    local distFromCenter = math.abs(lx - halfW)
+    -- Small tolerance keeps edge clicks responsive.
+    return distFromCenter <= (maxDistFromCenter + 2)
+end
+
+-- Cursor position as percent of the scene canvas (world space), matching how
+-- item geometry (item.x/y, item.corners) is stored. Mirrors the drag math.
+local function GetCursorCanvasPercent()
+    local pf = Diar.plannerFrame
+    local canvas = pf and pf.canvas
+    if not canvas then return nil end
+    local scale = canvas:GetEffectiveScale()
+    if not scale or scale <= 0 then return nil end
+    local left = canvas:GetLeft()
+    local top = canvas:GetTop()
+    if not left or not top then return nil end
+    local cw, ch = canvas:GetSize()
+    if not cw or not ch or cw <= 0 or ch <= 0 then return nil end
+    local cx, cy = GetCursorPosition()
+    cx, cy = cx / scale, cy / scale
+    local lx = cx - left
+    local ly = top - cy
+    local vc = pf.sceneViewContext
+    local screenToWorld = Diar.PlannerView and Diar.PlannerView.ScreenToWorld
+    local wx, wy = lx, ly
+    if screenToWorld then
+        wx, wy = screenToWorld(vc, lx, ly)
+    elseif vc and vc.zoom and vc.zoom ~= 0 then
+        wx = (lx - (vc.panX or 0)) / vc.zoom
+        wy = (ly - (vc.panY or 0)) / vc.zoom
+    end
+    return (wx / cw) * 100, (wy / ch) * 100
+end
+
+local function PointInPolygonPct(corners, x, y)
+    local n = corners and #corners or 0
+    if n < 3 then return false end
+    local inside = false
+    local j = n
+    for i = 1, n do
+        local pi = corners[i]
+        local pj = corners[j]
+        local xi, yi = tonumber(pi and pi.x), tonumber(pi and pi.y)
+        local xj, yj = tonumber(pj and pj.x), tonumber(pj and pj.y)
+        if xi and yi and xj and yj then
+            if ((yi > y) ~= (yj > y)) and (x < (xj - xi) * (y - yi) / (yj - yi) + xi) then
+                inside = not inside
+            end
+        end
+        j = i
+    end
+    return inside
+end
+
+local function DistanceToSegment(px, py, ax, ay, bx, by)
+    local dx, dy = bx - ax, by - ay
+    local len2 = dx * dx + dy * dy
+    if len2 < 1e-9 then
+        local ex, ey = px - ax, py - ay
+        return math.sqrt(ex * ex + ey * ey)
+    end
+    local t = ((px - ax) * dx + (py - ay) * dy) / len2
+    if t < 0 then t = 0 elseif t > 1 then t = 1 end
+    local cx, cy = ax + t * dx, ay + t * dy
+    local ex, ey = px - cx, py - cy
+    return math.sqrt(ex * ex + ey * ey)
+end
+
+-- Point-in-polygon for items that store true (possibly rotated) geometry in
+-- item.corners (cones, polygons, skewed rects). Includes a small edge tolerance
+-- in percent units so clicks right on the visible outline still register.
+local function CursorInsidePolygonCorners(item)
+    local corners = item and item.corners
+    if type(corners) ~= "table" or #corners < 3 then return nil end
+    local x, y = GetCursorCanvasPercent()
+    if not x then return false end
+    if PointInPolygonPct(corners, x, y) then return true end
+    local n = #corners
+    local tol = 1.2
+    for i = 1, n do
+        local a = corners[i]
+        local b = corners[(i % n) + 1]
+        local ax, ay = tonumber(a and a.x), tonumber(a and a.y)
+        local bx, by = tonumber(b and b.x), tonumber(b and b.y)
+        if ax and ay and bx and by then
+            if DistanceToSegment(x, y, ax, ay, bx, by) <= tol then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+local function CursorInsideItemShape(widget, item)
+    -- Cones/polygons/skewed shapes carry their real outline in item.corners;
+    -- hit test against that instead of the axis-aligned widget rect.
+    local polyHit = CursorInsidePolygonCorners(item)
+    if polyHit ~= nil then
+        return polyHit
+    end
+    local lx, ly, width, height = GetWidgetCursorPoint(widget)
+    if not lx then return false end
+    if UsesTriangleHitTest(item) then
+        return IsInsideTriangleBounds(lx, ly, width, height)
+    end
+    return lx >= 0 and lx <= width and ly >= 0 and ly <= height
+end
+
 function Diar:IsRsggDebug()
     local s = self.GetPlannerSettings and self:GetPlannerSettings()
     return s and s.debugMode == true
@@ -1101,9 +1245,6 @@ function Diar:UpdatePlannerItemDrag(widget)
     local w, h = widget:GetWidth(), widget:GetHeight()
     local relX = cx - canvasLeft - (w / 2)
     local relY = canvasTop - cy - (h / 2)
-    relX = math.max(0, math.min(drag.cw - w, relX))
-    relY = math.max(0, math.min(drag.ch - h, relY))
-
     widget:ClearAllPoints()
     widget:SetPoint("TOPLEFT", canvas, "TOPLEFT", relX, -relY)
 
@@ -1124,8 +1265,8 @@ function Diar:UpdatePlannerItemDrag(widget)
             wx = (sx - vc.panX) / vc.zoom
             wy = (sy - vc.panY) / vc.zoom
         end
-        local xp = math.max(0, math.min(100, math.floor((wx / drag.cw) * 10000 + 0.5) / 100))
-        local yp = math.max(0, math.min(100, math.floor((wy / drag.ch) * 10000 + 0.5) / 100))
+        local xp = math.floor((wx / drag.cw) * 10000 + 0.5) / 100
+        local yp = math.floor((wy / drag.ch) * 10000 + 0.5) / 100
         self:ApplyItemPositionChange(drag.itemIndex, xp, yp, {
             skipPersist = true,
             skipBroadcast = true,
@@ -1155,8 +1296,8 @@ function Diar:EndPlannerItemDrag(widget)
         wy = (sy - vc.panY) / vc.zoom
     end
 
-    local xp = math.max(0, math.min(100, math.floor((wx / drag.cw) * 10000 + 0.5) / 100))
-    local yp = math.max(0, math.min(100, math.floor((wy / drag.ch) * 10000 + 0.5) / 100))
+    local xp = math.floor((wx / drag.cw) * 10000 + 0.5) / 100
+    local yp = math.floor((wy / drag.ch) * 10000 + 0.5) / 100
     self:ApplyItemPositionChange(drag.itemIndex, xp, yp)
 end
 
@@ -1219,8 +1360,8 @@ function Diar:ApplyItemPositionChange(itemIndex, xPct, yPct, opts)
                 local px = tonumber(p.x)
                 local py = tonumber(p.y)
                 if px and py then
-                    p.x = math.max(0, math.min(100, px + dx))
-                    p.y = math.max(0, math.min(100, py + dy))
+                    p.x = px + dx
+                    p.y = py + dy
                 end
             end
         end
@@ -1280,6 +1421,7 @@ function Diar:AttachPlannerItemContextMenu(widget, itemIndex, item)
 
     widget:SetScript("OnMouseDown", function(w, button)
         if button == "LeftButton" and Diar.CanEditPlannerItems and Diar:CanEditPlannerItems() then
+            if not CursorInsideItemShape(w, item) then return end
             Diar:BeginPlannerItemDrag(w)
         end
     end)
@@ -1287,6 +1429,7 @@ function Diar:AttachPlannerItemContextMenu(widget, itemIndex, item)
         if button == "LeftButton" then
             Diar:EndPlannerItemDrag(w)
         elseif button == "RightButton" then
+            if not CursorInsideItemShape(w, item) then return end
             local canAssign = Diar:CanAssignPlayerToItem(item) and Diar:IsPlanLeader()
             local canDelete = Diar.CanEditPlannerItems and Diar:CanEditPlannerItems()
             local canCustomLabel = Diar.CanEditPlannerItems and Diar:CanEditPlannerItems()

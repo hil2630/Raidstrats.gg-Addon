@@ -142,20 +142,24 @@ local function ParseRsggCues(noteText)
             local time = line:match("time:(%d*%.?%d+)") or line:match("time(%d*%.?%d+)")
             local phase = line:match("ph:(%d+)") or line:match(";ph:(%d+)") or line:match(";ph(%d+)") or line:match("ph(%d+)")
             local sceneIndex = line:match("scene:(%d+)")
-            local planName = line:match("plan:([^;]+)")
+            local planToken = line:match("plan:([^;]+)")
             local dur = line:match("dur:(%d+)")
             local compact = line:match("compact:([^;]+)")
             local tag, tagNames, tagSpotMap = ParseTagField(line)
             time = time and tonumber(time)
             phase = phase and tonumber(phase) or 1
             sceneIndex = sceneIndex and tonumber(sceneIndex)
+            planToken = planToken and strtrim(planToken) or nil
             if encID and encID ~= 0 and time and sceneIndex then
                 cues[encID] = cues[encID] or {}
                 cues[encID][phase] = cues[encID][phase] or {}
                 cues[encID][phase][#cues[encID][phase] + 1] = {
                     time = time,
                     sceneIndex = sceneIndex,
-                    planName = planName,
+                    -- Legacy semantics: plan:<value> used saved plan name directly.
+                    -- New semantics: when value matches a bind alias, resolve to that ref first.
+                    planName = planToken,
+                    planToken = planToken,
                     dur = dur and tonumber(dur) or 30,
                     compact = compact ~= "false",
                     tag = tag,
@@ -168,6 +172,36 @@ local function ParseRsggCues(noteText)
         end
     end
     return cues
+end
+
+local function NormalizePlanBindKey(raw)
+    if type(raw) ~= "string" then return nil end
+    local trimmed = strtrim(raw)
+    if trimmed == "" then return nil end
+    return strlower(trimmed)
+end
+
+-- Parse plan bindings from NSRT note, e.g.:
+--   rsgg-bind;plan:A;ref:abcd1234
+-- Returns map keyed by lowercased plan alias => ref string.
+local function ParseRsggPlanBinds(noteText)
+    local binds = {}
+    if not noteText or noteText == "" then return binds end
+    if not noteText:match("\n$") then
+        noteText = noteText .. "\n"
+    end
+    for line in noteText:gmatch("([^\n]*)\n") do
+        if line:find("rsgg%-bind", 1, false) then
+            local planAlias = line:match("plan:([^;]+)")
+            local planRef = line:match("ref:([^;]+)")
+            local key = NormalizePlanBindKey(planAlias)
+            local ref = planRef and strtrim(planRef) or nil
+            if key and ref and ref ~= "" then
+                binds[key] = ref
+            end
+        end
+    end
+    return binds
 end
 
 -- Roster lines map names to spots positionally, e.g.:
@@ -194,6 +228,17 @@ local function ParseRsggGroups(noteText)
         end
     end
     return groups
+end
+
+local function ResolveCuePlanRef(addon, cue)
+    if type(cue) ~= "table" then return nil end
+    local key = NormalizePlanBindKey(cue.planToken or cue.planName)
+    if not key then return nil end
+    local binds = addon and addon.rsggPlanBinds
+    if type(binds) ~= "table" then return nil end
+    local ref = binds[key]
+    if type(ref) ~= "string" or ref == "" then return nil end
+    return ref
 end
 
 local function FindNSI()
@@ -347,7 +392,7 @@ function Raidstrats:CancelRsggTimers()
 end
 
 function Raidstrats:GetRsggTiming()
-    local before, after = 2, 5
+    local before, after = 0, 0
     if self.GetRsggShowBefore then before = self:GetRsggShowBefore() end
     if self.GetRsggShowAfter then after = self:GetRsggShowAfter() end
     return before, after
@@ -359,6 +404,7 @@ function Raidstrats:ReloadRsggCues(encID)
     local note = GetActiveNoteText(encID)
     self.rsggCues = ParseRsggCues(note)
     self.rsggGroups = ParseRsggGroups(note)
+    self.rsggPlanBinds = ParseRsggPlanBinds(note)
 end
 
 -- Load rsgg cues/groups from the currently active NSRT note (works outside encounter too).
@@ -372,6 +418,7 @@ function Raidstrats:ReloadRsggCuesFromActiveNote()
     if not note or note == "" then
         self.rsggCues = {}
         self.rsggGroups = {}
+        self.rsggPlanBinds = {}
         return false
     end
     if not encID then
@@ -380,6 +427,7 @@ function Raidstrats:ReloadRsggCuesFromActiveNote()
     end
     self.rsggCues = ParseRsggCues(note)
     self.rsggGroups = ParseRsggGroups(note)
+    self.rsggPlanBinds = ParseRsggPlanBinds(note)
     return true
 end
 
@@ -425,6 +473,7 @@ function Raidstrats:ScheduleRsggCues(encID, phase, opts)
         if skip then
             -- Same scene can fire for multiple groups; skip cues you're not rostered on.
         else
+            local cuePlanRef = ResolveCuePlanRef(self, cue)
             local after = (cue.dur and cue.dur > 0) and cue.dur or showAfter
             local showAt, hideAt
             if testMode and baseTime then
@@ -442,6 +491,8 @@ function Raidstrats:ScheduleRsggCues(encID, phase, opts)
                 local gen = self.rsggShowGeneration
                 local ok = self:ShowRaidPlanScene(cue.sceneIndex, {
                     planName = cue.planName,
+                    planRef = cuePlanRef,
+                    planAlias = cue.planToken,
                     compact = cue.compact,
                     skipAutoHide = true,
                     forceShow = testMode,
@@ -552,6 +603,7 @@ function Raidstrats:RunRsggTest(encID, opts)
     self.rsggEncounterID = encID
     self.rsggCues = ParseRsggCues(noteText)
     self.rsggGroups = ParseRsggGroups(noteText)
+    self.rsggPlanBinds = ParseRsggPlanBinds(noteText)
     encID = ResolveEncIdFromCues(self.rsggCues, encID, noteEncID)
     if not encID then
         print("|cffff6666[Raidstrats.gg]|r No rsgg lines in active note. Add: time:5;ph:1;rsgg;scene:1")
