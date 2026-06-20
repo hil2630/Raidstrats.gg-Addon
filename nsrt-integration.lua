@@ -21,6 +21,18 @@ end
 local function GetActiveNoteText(encID)
     if not NSRT then return "" end
     local str = ""
+    local wantedEncID = encID and tonumber(encID) or nil
+
+    local function noteHasRsggForEncounter(noteText)
+        if type(noteText) ~= "string" or noteText == "" then return false end
+        if not noteText:find("rsgg", 1, true) then return false end
+        if not wantedEncID then return true end
+        local headerEnc = noteText:match("EncounterID:(%d+)")
+        if headerEnc and tonumber(headerEnc) == wantedEncID then
+            return true
+        end
+        return false
+    end
 
     -- Named active reminder (what you select in the NSRT list)
     if NSRT.ActiveReminder and NSRT.Reminders and NSRT.Reminders[NSRT.ActiveReminder] then
@@ -49,6 +61,23 @@ local function GetActiveNoteText(encID)
         end
         if settings.PersNote and personal and personal ~= "" then
             str = (str == "" and personal) or (str .. "\n" .. personal)
+        end
+    end
+
+    -- On relog/reload NSRT active pointer can be stale/empty. Fallback to the
+    -- configured autoload note for this encounter, then search reminders by encID.
+    if (not noteHasRsggForEncounter(str)) and wantedEncID and NSRT.Reminders then
+        local autoName = NSRT.AutoLoadNote and NSRT.AutoLoadNote[wantedEncID]
+        local autoNote = autoName and NSRT.Reminders[autoName] or nil
+        if noteHasRsggForEncounter(autoNote) then
+            str = autoNote
+        else
+            for _, note in pairs(NSRT.Reminders) do
+                if noteHasRsggForEncounter(note) then
+                    str = note
+                    break
+                end
+            end
         end
     end
 
@@ -391,6 +420,27 @@ function Raidstrats:CancelRsggTimers()
     self.rsggShowGeneration = 0
 end
 
+function Raidstrats:StopRsggTest(opts)
+    opts = opts or {}
+    local wasRunning = self.rsggTestActive == true
+    self:CancelRsggTimers()
+    if self.HideRaidPlanScene then
+        self:HideRaidPlanScene()
+    end
+    self.rsggTestActive = false
+    if self.RefreshPlannerNsrtAssignmentIfOpen then
+        self:RefreshPlannerNsrtAssignmentIfOpen()
+    end
+    if not opts.silent then
+        if wasRunning then
+            print("|cff00aaff[Raidstrats.gg]|r Stopped local /rsggtest run.")
+        else
+            print("|cffff9900[Raidstrats.gg]|r No /rsggtest run is currently active.")
+        end
+    end
+    return wasRunning
+end
+
 function Raidstrats:GetRsggTiming()
     local before, after = 0, 0
     if self.GetRsggShowBefore then before = self:GetRsggShowBefore() end
@@ -434,7 +484,7 @@ end
 function Raidstrats:ScheduleRsggCues(encID, phase, opts)
     opts = opts or {}
     self:CancelRsggTimers()
-    if not encID or not phase then return end
+    if not encID then return end
 
     local testMode = opts.testMode == true
     if self.IsNsrtPopupsEnabled and not self:IsNsrtPopupsEnabled() then
@@ -443,83 +493,121 @@ function Raidstrats:ScheduleRsggCues(encID, phase, opts)
     end
 
     local byEnc = self.rsggCues and self.rsggCues[encID]
-    local cues = byEnc and byEnc[phase]
-    if not cues or #cues == 0 then return end
+    if not byEnc then return end
+
+    local phaseRuns = {}
+    if phase then
+        local cues = byEnc[phase]
+        if cues and #cues > 0 then
+            phaseRuns[#phaseRuns + 1] = { phase = phase, cues = cues }
+        end
+    elseif testMode then
+        local orderedPhases = {}
+        for ph, cues in pairs(byEnc) do
+            if type(ph) == "number" and type(cues) == "table" and #cues > 0 then
+                orderedPhases[#orderedPhases + 1] = ph
+            end
+        end
+        table.sort(orderedPhases)
+        for _, ph in ipairs(orderedPhases) do
+            phaseRuns[#phaseRuns + 1] = { phase = ph, cues = byEnc[ph] }
+        end
+    else
+        return
+    end
+    if #phaseRuns == 0 then return end
 
     local showBefore, showAfter = self:GetRsggTiming()
     local testLeadIn = 1
-    local baseTime = nil
-    if testMode then
-        baseTime = cues[1].time
-        for _, cue in ipairs(cues) do
-            if cue.time < baseTime then baseTime = cue.time end
-        end
-    end
-
     self.rsggTimers = {}
     self.rsggHideTimers = {}
     self.rsggShowGeneration = 0
     local scheduled = 0
+    local timerIdx = 0
+    local phaseOffset = 0
 
-    for i, cue in ipairs(cues) do
-        local skip = false
-        if cue.tagSpotMap then
-            skip = self.IsPlayerInRsggGroup and not self:IsPlayerInRsggGroup(nil, nil, cue.tagSpotMap)
-        elseif cue.tagNames and #cue.tagNames > 0 then
-            skip = self.IsPlayerInRsggGroup and not self:IsPlayerInRsggGroup(nil, cue.tagNames)
-        elseif cue.tag and cue.tag ~= "" then
-            skip = self.IsPlayerInRsggGroup and not self:IsPlayerInRsggGroup(cue.tag)
-        end
-        if skip then
-            -- Same scene can fire for multiple groups; skip cues you're not rostered on.
-        else
-            local cuePlanRef = ResolveCuePlanRef(self, cue)
-            local after = (cue.dur and cue.dur > 0) and cue.dur or showAfter
-            local showAt, hideAt
-            if testMode and baseTime then
+    for _, run in ipairs(phaseRuns) do
+        local runPhase = run.phase
+        local cues = run.cues
+        local baseTime = nil
+        local phaseWindow = testLeadIn
+        if testMode then
+            baseTime = cues[1].time
+            for _, cue in ipairs(cues) do
+                if cue.time < baseTime then baseTime = cue.time end
+                local cueAfter = (cue.dur and cue.dur > 0) and cue.dur or showAfter
                 local rel = cue.time - baseTime
-                showAt = testLeadIn + math.max(0, rel - showBefore)
-                hideAt = testLeadIn + rel + after
-            else
-                showAt = math.max(0, cue.time - showBefore)
-                hideAt = cue.time + after
+                local maxHide = testLeadIn + rel + cueAfter
+                if maxHide > phaseWindow then phaseWindow = maxHide end
             end
-            scheduled = scheduled + 1
-            self.rsggTimers[i] = C_Timer.NewTimer(showAt, function()
-                if not self.ShowRaidPlanScene then return end
-                self.rsggShowGeneration = (self.rsggShowGeneration or 0) + 1
-                local gen = self.rsggShowGeneration
-                local ok = self:ShowRaidPlanScene(cue.sceneIndex, {
-                    planName = cue.planName,
-                    planRef = cuePlanRef,
-                    planAlias = cue.planToken,
-                    compact = cue.compact,
-                    skipAutoHide = true,
-                    forceShow = testMode,
-                    dur = cue.dur,
-                    tag = cue.tag,
-                    tagNames = cue.tagNames,
-                    tagSpotMap = cue.tagSpotMap,
-                })
-                if ok then
-                    if testMode then
-                        print(("|cff00aaff[Raidstrats.gg]|r Test: scene %d (phase %d, note cue %ds)."):format(
-                            cue.sceneIndex, phase, cue.time))
-                    else
-                        print(("|cff00aaff[Raidstrats.gg]|r Showing scene %d (phase %d, cue %ds, −%ds/+%ds)."):format(
-                            cue.sceneIndex, phase, cue.time, showBefore, showAfter))
-                    end
+        end
+
+        for _, cue in ipairs(cues) do
+            local skip = false
+            if cue.tagSpotMap then
+                skip = self.IsPlayerInRsggGroup and not self:IsPlayerInRsggGroup(nil, nil, cue.tagSpotMap)
+            elseif cue.tagNames and #cue.tagNames > 0 then
+                skip = self.IsPlayerInRsggGroup and not self:IsPlayerInRsggGroup(nil, cue.tagNames)
+            elseif cue.tag and cue.tag ~= "" then
+                skip = self.IsPlayerInRsggGroup and not self:IsPlayerInRsggGroup(cue.tag)
+            end
+            if skip then
+                -- Same scene can fire for multiple groups; skip cues you're not rostered on.
+            else
+                local cuePlanRef = ResolveCuePlanRef(self, cue)
+                local after = (cue.dur and cue.dur > 0) and cue.dur or showAfter
+                local showAt, hideAt
+                if testMode and baseTime then
+                    local rel = cue.time - baseTime
+                    showAt = phaseOffset + testLeadIn + math.max(0, rel - showBefore)
+                    hideAt = phaseOffset + testLeadIn + rel + after
                 else
-                    print(("|cffff6666[Raidstrats.gg]|r Failed to show scene %d — import a plan first (/rsimport)."):format(
-                        cue.sceneIndex))
+                    showAt = math.max(0, cue.time - showBefore)
+                    hideAt = cue.time + after
                 end
-                local hideDelay = math.max(0.1, hideAt - showAt)
-                self.rsggHideTimers[i] = C_Timer.NewTimer(hideDelay, function()
-                    if self.rsggShowGeneration == gen and self.HideRaidPlanScene then
-                        self:HideRaidPlanScene()
+                scheduled = scheduled + 1
+                timerIdx = timerIdx + 1
+                local slot = timerIdx
+                self.rsggTimers[slot] = C_Timer.NewTimer(showAt, function()
+                    if not self.ShowRaidPlanScene then return end
+                    self.rsggShowGeneration = (self.rsggShowGeneration or 0) + 1
+                    local gen = self.rsggShowGeneration
+                    local ok = self:ShowRaidPlanScene(cue.sceneIndex, {
+                        planName = cue.planName,
+                        planRef = cuePlanRef,
+                        planAlias = cue.planToken,
+                        compact = cue.compact,
+                        skipAutoHide = true,
+                        forceShow = testMode,
+                        dur = cue.dur,
+                        tag = cue.tag,
+                        tagNames = cue.tagNames,
+                        tagSpotMap = cue.tagSpotMap,
+                    })
+                    if ok then
+                        if testMode then
+                            print(("|cff00aaff[Raidstrats.gg]|r Test: scene %d (phase %d, note cue %ds)."):format(
+                                cue.sceneIndex, runPhase, cue.time))
+                        else
+                            print(("|cff00aaff[Raidstrats.gg]|r Showing scene %d (phase %d, cue %ds, −%ds/+%ds)."):format(
+                                cue.sceneIndex, runPhase, cue.time, showBefore, showAfter))
+                        end
+                    else
+                        print(("|cffff6666[Raidstrats.gg]|r Failed to show scene %d — import a plan first (/rsimport)."):format(
+                            cue.sceneIndex))
                     end
+                    local hideDelay = math.max(0.1, hideAt - showAt)
+                    self.rsggHideTimers[slot] = C_Timer.NewTimer(hideDelay, function()
+                        if self.rsggShowGeneration == gen and self.HideRaidPlanScene then
+                            self:HideRaidPlanScene()
+                        end
+                    end)
                 end)
-            end)
+            end
+        end
+
+        if testMode and not phase then
+            phaseOffset = phaseOffset + phaseWindow + 1
         end
     end
 
@@ -544,6 +632,7 @@ end
 function Raidstrats:OnEncounterStart(encID)
     if not encID or not C_AddOns.IsAddOnLoaded("NorthernSkyRaidTools") then return end
     TryHookNSRT(self)
+    self.rsggTestActive = false
     self.rsggEncounterID = encID
     self:ReloadRsggCues(encID)
 
@@ -557,6 +646,7 @@ end
 
 function Raidstrats:OnEncounterEnd()
     self:CancelRsggTimers()
+    self.rsggTestActive = false
     if self.HideRaidPlanScene then
         self:HideRaidPlanScene()
     end
@@ -611,42 +701,91 @@ function Raidstrats:RunRsggTest(encID, opts)
     end
     self.rsggEncounterID = encID
 
-    local phase = tonumber(opts.phase) or 1
-    local phaseCues = self.rsggCues[encID] and self.rsggCues[encID][phase]
-    if not phaseCues or #phaseCues == 0 then
-        print(("|cffff6666[Raidstrats.gg]|r No rsgg cues for encounter %d phase %d."):format(encID, phase))
-        return false
+    local phase = opts.phase ~= nil and tonumber(opts.phase) or nil
+    local byEnc = self.rsggCues and self.rsggCues[encID]
+    local phaseCues = (phase and byEnc) and byEnc[phase] or nil
+    if phase then
+        if not phaseCues or #phaseCues == 0 then
+            print(("|cffff6666[Raidstrats.gg]|r No rsgg cues for encounter %d phase %d."):format(encID, phase))
+            return false
+        end
+    else
+        local availablePhases = 0
+        local totalCues = 0
+        if type(byEnc) == "table" then
+            for ph, cues in pairs(byEnc) do
+                if type(ph) == "number" and type(cues) == "table" and #cues > 0 then
+                    availablePhases = availablePhases + 1
+                    totalCues = totalCues + #cues
+                end
+            end
+        end
+        if availablePhases == 0 then
+            print(("|cffff6666[Raidstrats.gg]|r No rsgg cues for encounter %d."):format(encID))
+            return false
+        end
+        phaseCues = { __allPhaseCount = availablePhases, __allCueCount = totalCues }
     end
 
     if not self.plannerData or not self.plannerData.scenes or #self.plannerData.scenes == 0 then
         print("|cffff6666[Raidstrats.gg]|r No plan loaded — import one first (/rsimport).")
     end
 
-    if not opts.fromRemote then
-        local chan = self.GetGroupChatChannel and self:GetGroupChatChannel()
-        if chan then
-            local prefix = self.COMM_PLAN_PREFIX or "RAIDSTRATS_PLAN"
-            self:SendCommMessage(
-                prefix,
-                ("RSGGTEST:%d:%d"):format(encID, phase),
-                chan,
-                nil,
-                "NORMAL"
-            )
-            print(("|cff00aaff[Raidstrats.gg]|r Broadcasting NSRT test to %s..."):format(
-                chan == "INSTANCE_CHAT" and "instance" or chan:lower()))
-        end
-    elseif opts.sender and opts.sender ~= "" then
-        local who = Ambiguate and Ambiguate(opts.sender, "short") or opts.sender
-        print(("|cff00aaff[Raidstrats.gg]|r NSRT test started by %s."):format(who))
-    end
+    -- Local-only test: never broadcast to group.
 
-    print(("|cff00aaff[Raidstrats.gg]|r Test started for encounter %d phase %d — %d cue(s), compressed timing."):format(
-        encID, phase, #phaseCues))
+    if phase then
+        print(("|cff00aaff[Raidstrats.gg]|r Test started for encounter %d phase %d — %d cue(s), compressed timing."):format(
+            encID, phase, #phaseCues))
+    else
+        print(("|cff00aaff[Raidstrats.gg]|r Test started for encounter %d (all phases) — %d phase(s), %d cue(s), compressed timing."):format(
+            encID, phaseCues.__allPhaseCount or 0, phaseCues.__allCueCount or 0))
+    end
+    self.rsggTestActive = true
     self:ScheduleRsggCues(encID, phase, { testMode = true })
     if self.RefreshPlannerNsrtAssignmentIfOpen then
         self:RefreshPlannerNsrtAssignmentIfOpen()
     end
+    return true
+end
+
+function Raidstrats:RunRsggPhaseDebug(phase, encID)
+    phase = tonumber(phase)
+    if not phase or phase < 1 then
+        print("|cffff6666[Raidstrats.gg]|r Usage: /rsggphase <phase> [encounterId]")
+        return false
+    end
+    encID = encID and tonumber(encID) or self.rsggEncounterID
+    if not encID then
+        print("|cffff6666[Raidstrats.gg]|r No active encounter id. Provide one: /rsggphase <phase> <encounterId>")
+        return false
+    end
+
+    local noteText = GetActiveNoteText(encID)
+    if noteText == "" then
+        print("|cffff6666[Raidstrats.gg]|r No active NSRT note.")
+        return false
+    end
+    self.rsggEncounterID = encID
+    self.rsggCues = ParseRsggCues(noteText)
+    self.rsggGroups = ParseRsggGroups(noteText)
+    self.rsggPlanBinds = ParseRsggPlanBinds(noteText)
+
+    local byEnc = self.rsggCues and self.rsggCues[encID]
+    local phaseCues = byEnc and byEnc[phase] or nil
+    if not phaseCues or #phaseCues == 0 then
+        print(("|cffff6666[Raidstrats.gg]|r No rsgg cues for encounter %d phase %d."):format(encID, phase))
+        return false
+    end
+
+    if self.HideRaidPlanScene then
+        self:HideRaidPlanScene()
+    end
+    self:ScheduleRsggCues(encID, phase, { testMode = true })
+    if self.RefreshPlannerNsrtAssignmentIfOpen then
+        self:RefreshPlannerNsrtAssignmentIfOpen()
+    end
+    print(("|cff00aaff[Raidstrats.gg]|r Forced phase %d for encounter %d (%d cue(s), local debug)."):format(
+        phase, encID, #phaseCues))
     return true
 end
 
@@ -681,9 +820,29 @@ function Raidstrats:InitNSRTIntegration()
 
     self:RegisterChatCommand("rsggtest", function(input)
         input = strtrim(input or "")
+        if strlower(input) == "stop" then
+            Raidstrats:StopRsggTest()
+            return
+        end
         local encID, phase = input:match("^(%d+)%s+(%d+)$")
-        encID = encID and tonumber(encID) or tonumber(input)
-        phase = phase and tonumber(phase) or 1
+        if encID then
+            encID = tonumber(encID)
+            phase = tonumber(phase)
+        else
+            encID = tonumber(input)
+            phase = nil
+        end
         Raidstrats:RunRsggTest(encID, { phase = phase })
+    end)
+
+    self:RegisterChatCommand("rsggphase", function(input)
+        input = strtrim(input or "")
+        local phase, encID = input:match("^(%d+)%s+(%d+)$")
+        if phase then
+            Raidstrats:RunRsggPhaseDebug(phase, encID)
+            return
+        end
+        phase = tonumber(input)
+        Raidstrats:RunRsggPhaseDebug(phase, nil)
     end)
 end

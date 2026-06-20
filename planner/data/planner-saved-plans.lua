@@ -57,6 +57,69 @@ if not StaticPopupDialogs["RAIDSTRATSGG_PLAN_SEARCH"] then
     }
 end
 
+if not StaticPopupDialogs["RAIDSTRATSGG_CREATE_PLAN_GROUP"] then
+    StaticPopupDialogs["RAIDSTRATSGG_CREATE_PLAN_GROUP"] = {
+        text = "Create group:",
+        button1 = _G.OKAY or "OK",
+        button2 = _G.CANCEL or "Cancel",
+        hasEditBox = true,
+        maxLetters = 48,
+        timeout = 0,
+        whileDead = 1,
+        hideOnEscape = 1,
+        OnShow = function(self)
+            local eb = self.editBox or self.EditBox
+            if not eb then return end
+            eb:SetText("")
+            eb:SetFocus()
+        end,
+        OnAccept = function(self)
+            local eb = self.editBox or self.EditBox
+            local text = eb and eb:GetText() or ""
+            local entryIds = self.data and self.data.entryIds
+            if Diar and Diar.CreateSavedPlansGroupForEntries then
+                Diar:CreateSavedPlansGroupForEntries(entryIds, text)
+            end
+        end,
+    }
+end
+
+if not StaticPopupDialogs["RAIDSTRATSGG_DELETE_PLAN_GROUP"] then
+    StaticPopupDialogs["RAIDSTRATSGG_DELETE_PLAN_GROUP"] = {
+        text = "Delete group \"%s\"?\nPlans will be moved to Ungrouped.",
+        button1 = _G.YES or "Yes",
+        button2 = _G.CANCEL or "Cancel",
+        OnAccept = function(self)
+            local data = self.data
+            local groupId = data and data.groupId
+            if groupId and Diar and Diar.DeleteSavedPlansGroup then
+                Diar:DeleteSavedPlansGroup(groupId, false)
+            end
+        end,
+        timeout = 0,
+        whileDead = 1,
+        hideOnEscape = 1,
+    }
+end
+
+if not StaticPopupDialogs["RAIDSTRATSGG_DELETE_PLAN_GROUP_AND_PLANS"] then
+    StaticPopupDialogs["RAIDSTRATSGG_DELETE_PLAN_GROUP_AND_PLANS"] = {
+        text = "Delete group \"%s\" and all plans in it?",
+        button1 = _G.YES or "Yes",
+        button2 = _G.CANCEL or "Cancel",
+        OnAccept = function(self)
+            local data = self.data
+            local groupId = data and data.groupId
+            if groupId and Diar and Diar.DeleteSavedPlansGroup then
+                Diar:DeleteSavedPlansGroup(groupId, true)
+            end
+        end,
+        timeout = 0,
+        whileDead = 1,
+        hideOnEscape = 1,
+    }
+end
+
 -- Copy plan data so loading from saved doesn't share reference with storage.
 local function CopyPlanData(val)
     if type(val) == "table" then
@@ -82,8 +145,107 @@ end
 local PLAN_CARD_H = 46
 local SECTION_H = 22
 local LIST_GAP = 6
+local GROUP_HEADER_H = 24
 local PLAN_ROW_ACTIONS_W = 56
 local RAID_FILTER_MENU_ROW_H = 22
+local GROUP_SHARE_BATCH = 180
+local SHARED_GROUP_TTL = 3600
+local SEP = string.char(31)
+
+local function EncodeJson(value)
+    if C_EncodingUtil and C_EncodingUtil.SerializeJSON then
+        local ok, json = pcall(C_EncodingUtil.SerializeJSON, value, { ignoreSerializationErrors = true })
+        if ok and type(json) == "string" and json ~= "" then
+            return json
+        end
+    end
+    return nil
+end
+
+local function DecodeJson(text)
+    if C_EncodingUtil and C_EncodingUtil.DeserializeJSON then
+        local ok, parsed = pcall(C_EncodingUtil.DeserializeJSON, text)
+        if ok and type(parsed) == "table" then
+            return parsed
+        end
+    end
+    return nil
+end
+
+local function EnsureSavedPlansStorage()
+    RaidstratsggSavedPlans = RaidstratsggSavedPlans or { list = {}, nextId = 1 }
+    local store = RaidstratsggSavedPlans
+    store.list = store.list or {}
+    if store.nextId == nil then store.nextId = 1 end
+    store.groups = store.groups or {}
+    if store.nextGroupId == nil then
+        local maxId = 0
+        for _, grp in ipairs(store.groups) do
+            local gid = tonumber(grp and grp.id)
+            if gid and gid > maxId then maxId = gid end
+        end
+        store.nextGroupId = maxId + 1
+    end
+    return store
+end
+
+local function GetSavedPlansGroupCollapseMap()
+    RaidstratsggSettings = RaidstratsggSettings or {}
+    RaidstratsggSettings.planLibraryCollapsedGroups = RaidstratsggSettings.planLibraryCollapsedGroups or {}
+    return RaidstratsggSettings.planLibraryCollapsedGroups
+end
+
+local function SanitizeGroupShareLabel(name, count)
+    local clean = tostring(name or ""):gsub("[%[%]|%c:]", ""):gsub("^%s+", ""):gsub("%s+$", "")
+    if clean == "" then clean = "Group" end
+    if #clean > 40 then clean = clean:sub(1, 40) end
+    local n = tonumber(count) or 0
+    local suffix = (n == 1) and "Plan" or "Plans"
+    return ('Group "%s" - %d %s'):format(clean, n, suffix)
+end
+
+local function NormalizeEntryIdList(entryIds)
+    local out, seen = {}, {}
+    if type(entryIds) ~= "table" then return out end
+    for _, raw in ipairs(entryIds) do
+        local id = tonumber(raw)
+        if id and not seen[id] then
+            seen[id] = true
+            out[#out + 1] = id
+        end
+    end
+    return out
+end
+
+local function GetSavedPlanSelectionIds(pf)
+    local selected = {}
+    if not pf then return selected end
+    local map = pf.savedPlansSelectedIds
+    if type(map) ~= "table" then return selected end
+    for id, enabled in pairs(map) do
+        if enabled then
+            local n = tonumber(id)
+            if n then selected[#selected + 1] = n end
+        end
+    end
+    table.sort(selected)
+    return selected
+end
+
+local function SplitSep(str)
+    local out = {}
+    local start = 1
+    while true do
+        local i = str:find(SEP, start, true)
+        if not i then
+            out[#out + 1] = str:sub(start)
+            break
+        end
+        out[#out + 1] = str:sub(start, i - 1)
+        start = i + 1
+    end
+    return out
+end
 
 local function IsCompactPlanLibraryMode()
     return Diar.IsCompactPlanLibraryEnabled and Diar:IsCompactPlanLibraryEnabled()
@@ -297,6 +459,681 @@ function Diar:ShowSavedPlansRaidFilterMenu(anchorBtn, options)
     if menu.Raise then menu:Raise() end
 end
 
+function Diar:SetSavedPlanGroup(entryId, groupId)
+    local store = EnsureSavedPlansStorage()
+    local targetId = tonumber(entryId)
+    if not targetId then return false end
+    local normalizedGroupId = tonumber(groupId)
+    local validGroup = false
+    if normalizedGroupId then
+        for _, grp in ipairs(store.groups) do
+            if tonumber(grp and grp.id) == normalizedGroupId then
+                validGroup = true
+                break
+            end
+        end
+        if not validGroup then
+            normalizedGroupId = nil
+        end
+    end
+    for _, entry in ipairs(store.list) do
+        if tonumber(entry and entry.id) == targetId then
+            entry.groupId = normalizedGroupId
+            self:RefreshSavedPlansList()
+            return true
+        end
+    end
+    return false
+end
+
+function Diar:CreateSavedPlansGroupForEntries(entryIds, groupName)
+    local name = strtrim(tostring(groupName or ""))
+    if name == "" then
+        print("|cffff6666[Raidstrats.gg]|r Group name cannot be empty.")
+        return false
+    end
+    local store = EnsureSavedPlansStorage()
+    local ids = NormalizeEntryIdList(entryIds)
+    if #ids == 0 then return false end
+    local group = {
+        id = store.nextGroupId,
+        name = name,
+    }
+    store.nextGroupId = store.nextGroupId + 1
+    store.groups[#store.groups + 1] = group
+    local changedAny = false
+    for _, id in ipairs(ids) do
+        if self:SetSavedPlanGroup(id, group.id) then
+            changedAny = true
+        end
+    end
+    if not changedAny then
+        table.remove(store.groups, #store.groups)
+        store.nextGroupId = math.max(1, store.nextGroupId - 1)
+        return false
+    end
+    print(("|cff00aaff[Raidstrats.gg]|r Created group |cff00ff00%s|r (%d plan%s)."):format(
+        name, #ids, (#ids == 1 and "" or "s")))
+    return true
+end
+
+function Diar:CreateSavedPlansGroupForEntry(entryId, groupName)
+    local id = tonumber(entryId)
+    if not id then return false end
+    return self:CreateSavedPlansGroupForEntries({ id }, groupName)
+end
+
+function Diar:RemoveSavedPlansFromGroups(entryIds)
+    local ids = NormalizeEntryIdList(entryIds)
+    if #ids == 0 then return false end
+    local store = EnsureSavedPlansStorage()
+    local idSet = {}
+    for _, id in ipairs(ids) do idSet[id] = true end
+    local changed = 0
+    for _, entry in ipairs(store.list or {}) do
+        local id = tonumber(entry and entry.id)
+        if id and idSet[id] and entry.groupId ~= nil then
+            entry.groupId = nil
+            changed = changed + 1
+        end
+    end
+    if changed > 0 then
+        self:RefreshSavedPlansList()
+        print(("|cff00aaff[Raidstrats.gg]|r Removed %d plan%s from group%s."):format(
+            changed, (changed == 1 and "" or "s"), (changed == 1 and "" or "s")))
+        return true
+    end
+    return false
+end
+
+function Diar:DeleteSavedPlansGroup(groupId, deletePlansInGroup)
+    local gid = tonumber(groupId)
+    if not gid then return false end
+    local store = EnsureSavedPlansStorage()
+    local groupIndex, groupName = nil, nil
+    for i, grp in ipairs(store.groups or {}) do
+        if tonumber(grp and grp.id) == gid then
+            groupIndex = i
+            groupName = strtrim(tostring(grp.name or ""))
+            break
+        end
+    end
+    if not groupIndex then return false end
+    if groupName == "" then groupName = "Group" end
+
+    local touched = 0
+    local deletedActive = false
+    if deletePlansInGroup then
+        for i = #store.list, 1, -1 do
+            local entry = store.list[i]
+            if tonumber(entry and entry.groupId) == gid then
+                touched = touched + 1
+                local entryId = tonumber(entry and entry.id)
+                deletedActive = deletedActive or (self.plannerData and self.plannerData.savedEntryId == entryId)
+                if not deletedActive and self.plannerData and entry and entry.data then
+                    local currentKey = self.GetPlanIdentityKey and self:GetPlanIdentityKey(self.plannerData) or nil
+                    local deletedKey = self.GetPlanIdentityKey and self:GetPlanIdentityKey(entry.data) or nil
+                    local currentPlanId = tostring(self.plannerData.planId or "")
+                    local deletedPlanId = tostring(entry.data.planId or "")
+                    if (currentKey and deletedKey and currentKey == deletedKey)
+                        or (currentPlanId ~= "" and deletedPlanId ~= "" and currentPlanId == deletedPlanId) then
+                        deletedActive = true
+                    end
+                end
+                if entry and entry.data and self.GetPlanIdentityKey then
+                    local planKey = self:GetPlanIdentityKey(entry.data)
+                    if planKey then
+                        local s = self.GetPlannerSettings and self:GetPlannerSettings()
+                        if s and s.planAutoImport then s.planAutoImport[planKey] = nil end
+                    end
+                end
+                table.remove(store.list, i)
+            end
+        end
+    else
+        for _, entry in ipairs(store.list or {}) do
+            if tonumber(entry and entry.groupId) == gid then
+                entry.groupId = nil
+                touched = touched + 1
+            end
+        end
+    end
+
+    table.remove(store.groups, groupIndex)
+    local collapsed = GetSavedPlansGroupCollapseMap()
+    collapsed[tostring(gid)] = nil
+
+    if deletePlansInGroup and touched > 0 then
+        local pf = self.plannerFrame
+        if pf and type(pf.savedPlansSelectedIds) == "table" then
+            for id, _ in pairs(pf.savedPlansSelectedIds) do
+                local n = tonumber(id)
+                if n then
+                    local keep = false
+                    for _, entry in ipairs(store.list or {}) do
+                        if tonumber(entry and entry.id) == n then
+                            keep = true
+                            break
+                        end
+                    end
+                    if not keep then
+                        pf.savedPlansSelectedIds[id] = nil
+                    end
+                end
+            end
+        end
+    end
+
+    if deletePlansInGroup and deletedActive then
+        self:ShowNoPlansState()
+    else
+        self:RefreshSavedPlansList()
+        if deletePlansInGroup and #store.list == 0 then
+            self:ShowNoPlansState()
+        end
+    end
+
+    if deletePlansInGroup then
+        print(("|cff00aaff[Raidstrats.gg]|r Deleted group |cff00ff00%s|r and %d plan%s."):format(
+            groupName, touched, (touched == 1 and "" or "s")))
+    else
+        print(("|cff00aaff[Raidstrats.gg]|r Deleted group |cff00ff00%s|r. Moved %d plan%s to Ungrouped."):format(
+            groupName, touched, (touched == 1 and "" or "s")))
+    end
+    return true
+end
+
+function Diar:ToggleSavedPlansGroupCollapsed(groupId)
+    if groupId == nil then return end
+    local collapsed = GetSavedPlansGroupCollapseMap()
+    local key = tostring(groupId)
+    collapsed[key] = not (collapsed[key] == true)
+    self:RefreshSavedPlansList()
+end
+
+function Diar:HideSavedPlanContextMenu()
+    if self._savedPlanCtxDismiss then
+        self._savedPlanCtxDismiss:Hide()
+    end
+    if self._savedPlanCtxMenu then
+        self._savedPlanCtxMenu:Hide()
+    end
+end
+
+function Diar:HideSavedPlanGroupContextMenu()
+    if self._savedPlanGroupCtxDismiss then
+        self._savedPlanGroupCtxDismiss:Hide()
+    end
+    if self._savedPlanGroupCtxMenu then
+        self._savedPlanGroupCtxMenu:Hide()
+    end
+end
+
+function Diar:ShareSavedPlanGroupToGroup(groupId)
+    local gid = tonumber(groupId)
+    if not gid then return false end
+    local chan = self.GetGroupChatChannel and self:GetGroupChatChannel()
+    if not chan then
+        print("|cffff6666[Raidstrats.gg]|r Join a party, raid, or guild to share a group.")
+        return false
+    end
+    local store = EnsureSavedPlansStorage()
+    local groupName = nil
+    for _, g in ipairs(store.groups or {}) do
+        if tonumber(g and g.id) == gid then
+            groupName = strtrim(tostring(g.name or ""))
+            break
+        end
+    end
+    if not groupName or groupName == "" then
+        print("|cffff6666[Raidstrats.gg]|r Could not find that group.")
+        return false
+    end
+    local plans = {}
+    for _, entry in ipairs(store.list or {}) do
+        if tonumber(entry and entry.groupId) == gid and entry.data then
+            if self.EnsureSavedEntryInstanceKey then
+                self:EnsureSavedEntryInstanceKey(entry)
+            end
+            local payload = self.BuildSharePayload and self:BuildSharePayload(entry.data) or nil
+            if payload and payload ~= "" then
+                plans[#plans + 1] = {
+                    name = tostring(entry.planName or "Plan"),
+                    payload = payload,
+                }
+            end
+        end
+    end
+    if #plans == 0 then
+        print("|cffff6666[Raidstrats.gg]|r Group has no sharable plans.")
+        return false
+    end
+
+    local packet = {
+        groupName = groupName,
+        plans = plans,
+    }
+    local json = EncodeJson(packet)
+    if not json or json == "" then
+        print("|cffff6666[Raidstrats.gg]|r Could not encode group share payload.")
+        return false
+    end
+
+    local linkLabel = SanitizeGroupShareLabel(groupName, #plans)
+    self._sharedPlanGroups = self._sharedPlanGroups or {}
+    self._sharedPlanGroups[linkLabel] = {
+        payload = json,
+        t = time(),
+        groupName = groupName,
+        count = #plans,
+    }
+    SendChatMessage(("[Raidstrats: %s]"):format(linkLabel), chan)
+    print(("|cff00aaff[Raidstrats.gg]|r Shared \"%s\" to %s. Others click the link to import."):format(
+        linkLabel, tostring(chan):lower()))
+    return true
+end
+
+function Diar:ShowSavedPlanGroupContextMenu(anchorBtn, groupId)
+    if not anchorBtn then return end
+    local gid = tonumber(groupId)
+    if not gid then return end
+    local store = EnsureSavedPlansStorage()
+    local groupName = "Group"
+    for _, g in ipairs(store.groups or {}) do
+        if tonumber(g and g.id) == gid then
+            local name = strtrim(tostring(g.name or ""))
+            if name ~= "" then groupName = name end
+            break
+        end
+    end
+
+    local menu = self._savedPlanGroupCtxMenu
+    if not menu then
+        menu = CreateFrame("Frame", "RaidstratsSavedPlanGroupContextMenu", UIParent, "BackdropTemplate")
+        menu:SetFrameStrata("FULLSCREEN_DIALOG")
+        menu:SetFrameLevel(560)
+        menu:SetSize(196, 82)
+        menu:EnableMouse(true)
+        if SetBackdrop then SetBackdrop(menu, UI.PANEL, UI.BORDER, 1) end
+
+        local shareBtn = CreateFrame("Button", nil, menu, "BackdropTemplate")
+        shareBtn:SetHeight(22)
+        shareBtn:SetPoint("TOPLEFT", menu, "TOPLEFT", 4, -4)
+        shareBtn:SetPoint("TOPRIGHT", menu, "TOPRIGHT", -4, -4)
+        if SetBackdrop then SetBackdrop(shareBtn, UI.ROW, UI.BORDER, 1) end
+        local shareLbl = shareBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        shareLbl:SetPoint("LEFT", shareBtn, "LEFT", 8, 0)
+        shareLbl:SetPoint("RIGHT", shareBtn, "RIGHT", -8, 0)
+        shareLbl:SetJustifyH("LEFT")
+        shareLbl:SetText("Share to group")
+        shareBtn:SetScript("OnEnter", function(s) s:SetBackdropColor(unpack(UI.ROW_HOV)) end)
+        shareBtn:SetScript("OnLeave", function(s) s:SetBackdropColor(unpack(UI.ROW)) end)
+        shareBtn:SetScript("OnClick", function()
+            local id = tonumber(menu.groupId)
+            Diar:HideSavedPlanGroupContextMenu()
+            if id and Diar.ShareSavedPlanGroupToGroup then
+                Diar:ShareSavedPlanGroupToGroup(id)
+            end
+        end)
+        menu.shareBtn = shareBtn
+        menu.shareLbl = shareLbl
+
+        local deleteGroupBtn = CreateFrame("Button", nil, menu, "BackdropTemplate")
+        deleteGroupBtn:SetHeight(22)
+        deleteGroupBtn:SetPoint("TOPLEFT", shareBtn, "BOTTOMLEFT", 0, -2)
+        deleteGroupBtn:SetPoint("TOPRIGHT", shareBtn, "BOTTOMRIGHT", 0, -2)
+        if SetBackdrop then SetBackdrop(deleteGroupBtn, UI.ROW, UI.BORDER, 1) end
+        local deleteGroupLbl = deleteGroupBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        deleteGroupLbl:SetPoint("LEFT", deleteGroupBtn, "LEFT", 8, 0)
+        deleteGroupLbl:SetPoint("RIGHT", deleteGroupBtn, "RIGHT", -8, 0)
+        deleteGroupLbl:SetJustifyH("LEFT")
+        deleteGroupLbl:SetText("Delete group")
+        deleteGroupBtn:SetScript("OnEnter", function(s) s:SetBackdropColor(unpack(UI.ROW_HOV)) end)
+        deleteGroupBtn:SetScript("OnLeave", function(s) s:SetBackdropColor(unpack(UI.ROW)) end)
+        deleteGroupBtn:SetScript("OnClick", function()
+            local id = tonumber(menu.groupId)
+            local name = tostring(menu.groupName or "Group")
+            Diar:HideSavedPlanGroupContextMenu()
+            if id then
+                StaticPopup_Show("RAIDSTRATSGG_DELETE_PLAN_GROUP", name, nil, { groupId = id, groupName = name })
+            end
+        end)
+        menu.deleteGroupBtn = deleteGroupBtn
+        menu.deleteGroupLbl = deleteGroupLbl
+
+        local deleteAllBtn = CreateFrame("Button", nil, menu, "BackdropTemplate")
+        deleteAllBtn:SetHeight(22)
+        deleteAllBtn:SetPoint("TOPLEFT", deleteGroupBtn, "BOTTOMLEFT", 0, -2)
+        deleteAllBtn:SetPoint("TOPRIGHT", deleteGroupBtn, "BOTTOMRIGHT", 0, -2)
+        if SetBackdrop then SetBackdrop(deleteAllBtn, UI.ROW, UI.BORDER, 1) end
+        local deleteAllLbl = deleteAllBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        deleteAllLbl:SetPoint("LEFT", deleteAllBtn, "LEFT", 8, 0)
+        deleteAllLbl:SetPoint("RIGHT", deleteAllBtn, "RIGHT", -8, 0)
+        deleteAllLbl:SetJustifyH("LEFT")
+        deleteAllLbl:SetText("Delete group + plans")
+        deleteAllBtn:SetScript("OnEnter", function(s) s:SetBackdropColor(unpack(UI.ROW_HOV)) end)
+        deleteAllBtn:SetScript("OnLeave", function(s) s:SetBackdropColor(unpack(UI.ROW)) end)
+        deleteAllBtn:SetScript("OnClick", function()
+            local id = tonumber(menu.groupId)
+            local name = tostring(menu.groupName or "Group")
+            Diar:HideSavedPlanGroupContextMenu()
+            if id then
+                StaticPopup_Show("RAIDSTRATSGG_DELETE_PLAN_GROUP_AND_PLANS", name, nil, { groupId = id, groupName = name })
+            end
+        end)
+        menu.deleteAllBtn = deleteAllBtn
+        menu.deleteAllLbl = deleteAllLbl
+
+        menu:SetScript("OnHide", function()
+            if Diar._savedPlanGroupCtxDismiss then
+                Diar._savedPlanGroupCtxDismiss:Hide()
+            end
+        end)
+        if UISpecialFrames then
+            tinsert(UISpecialFrames, "RaidstratsSavedPlanGroupContextMenu")
+        end
+        self._savedPlanGroupCtxMenu = menu
+    end
+
+    if not self._savedPlanGroupCtxDismiss then
+        local dismiss = CreateFrame("Button", "RaidstratsSavedPlanGroupContextDismiss", UIParent)
+        dismiss:SetAllPoints(UIParent)
+        dismiss:SetFrameStrata("FULLSCREEN_DIALOG")
+        dismiss:EnableMouse(true)
+        dismiss:SetAlpha(0.001)
+        dismiss:SetScript("OnMouseUp", function(_, button)
+            if button == "LeftButton" or button == "RightButton" then
+                Diar:HideSavedPlanGroupContextMenu()
+            end
+        end)
+        dismiss:Hide()
+        self._savedPlanGroupCtxDismiss = dismiss
+    end
+
+    menu.groupId = gid
+    menu.groupName = groupName
+    menu:ClearAllPoints()
+    menu:SetPoint("TOPLEFT", anchorBtn, "BOTTOMLEFT", 0, -2)
+    self._savedPlanGroupCtxDismiss:SetFrameLevel(math.max(0, (menu:GetFrameLevel() or 0) - 1))
+    self._savedPlanGroupCtxDismiss:Show()
+    menu:Show()
+    if menu.Raise then menu:Raise() end
+end
+
+function Diar:EnsureSavedPlansGroupByName(groupName)
+    local name = strtrim(tostring(groupName or ""))
+    if name == "" then return nil end
+    local store = EnsureSavedPlansStorage()
+    for _, grp in ipairs(store.groups or {}) do
+        if strlower(strtrim(tostring(grp.name or ""))) == strlower(name) then
+            return tonumber(grp.id)
+        end
+    end
+    local group = { id = store.nextGroupId, name = name }
+    store.nextGroupId = store.nextGroupId + 1
+    store.groups[#store.groups + 1] = group
+    return group.id
+end
+
+function Diar:SendSharedPlanGroupWhisper(target, linkLabel, payloadJson)
+    if not target or not linkLabel or not payloadJson or payloadJson == "" then return false end
+    local total = math.ceil(#payloadJson / GROUP_SHARE_BATCH)
+    local prefix = self.COMM_PLAN_PREFIX or "RAIDSTRATS_PLAN"
+    for j = 1, total do
+        local start = (j - 1) * GROUP_SHARE_BATCH + 1
+        local chunk = payloadJson:sub(start, start + GROUP_SHARE_BATCH - 1)
+        self:SendCommMessage(prefix, table.concat({ "GDAT", linkLabel, tostring(j), tostring(total), chunk }, SEP), "WHISPER", target, "BULK")
+    end
+    return true
+end
+
+function Diar:ImportSharedPlanGroupPayload(payloadJson, sender)
+    if type(payloadJson) ~= "string" or payloadJson == "" then return false end
+    local parsed = DecodeJson(payloadJson)
+    if type(parsed) ~= "table" or type(parsed.plans) ~= "table" then
+        print("|cffff6666[Raidstrats.gg]|r Could not import shared plan group.")
+        return false
+    end
+    local imported = 0
+    local importedEntryIds = {}
+    local prevPlannerData = self.plannerData and CopyPlanData(self.plannerData) or nil
+    for _, plan in ipairs(parsed.plans) do
+        local payload = type(plan) == "table" and plan.payload or nil
+        if type(payload) == "string" and payload ~= "" and self.ImportPlanFromPasteString then
+            local ok = self:ImportPlanFromPasteString("!raidstrats-addon-" .. payload)
+            if ok then
+                imported = imported + 1
+                local entryId = self.plannerData and tonumber(self.plannerData.savedEntryId)
+                if entryId then importedEntryIds[#importedEntryIds + 1] = entryId end
+            end
+        end
+    end
+    if prevPlannerData then
+        self.plannerData = prevPlannerData
+        if self.plannerFrame and self.plannerFrame:IsShown() and self.ShowPlannerViewer then
+            self:ShowPlannerViewer({ reloadOnly = true })
+        end
+    end
+    if imported > 0 then
+        local groupId = self:EnsureSavedPlansGroupByName(parsed.groupName)
+        if groupId then
+            for _, entryId in ipairs(importedEntryIds) do
+                self:SetSavedPlanGroup(entryId, groupId)
+            end
+        end
+        if self.OpenPlannerAfterShareImport then
+            self:OpenPlannerAfterShareImport()
+        end
+        if self.RefreshSavedPlansList then self:RefreshSavedPlansList() end
+        if self.HideImportProgress then self:HideImportProgress() end
+        print(("|cff00aaff[Raidstrats.gg]|r Imported shared group \"%s\" (%d plan%s) from %s."):format(
+            tostring(parsed.groupName or "Group"), imported, (imported == 1 and "" or "s"), tostring(sender or "someone")))
+        return true
+    end
+    if self.HideImportProgress then self:HideImportProgress() end
+    print("|cffff6666[Raidstrats.gg]|r Shared group received, but no plans could be imported.")
+    return false
+end
+
+function Diar:TryCompleteSharedPlanGroupImport(transferId, sender)
+    local incomingMap = self._sharedPlanGroupsIncoming
+    local entry = incomingMap and incomingMap[transferId]
+    if not entry or not entry.total or entry.total < 1 then return false end
+    for i = 1, entry.total do
+        if not entry.chunks[i] then return false end
+    end
+    local json = table.concat(entry.chunks, "")
+    incomingMap[transferId] = nil
+    return self:ImportSharedPlanGroupPayload(json, sender)
+end
+
+function Diar:HandleSharedPlanGroupComm(msg, sender)
+    if type(msg) ~= "string" then return false end
+    local parts = SplitSep(msg)
+    local tag = parts[1]
+    if tag == "GSHR" then
+        local transferId = parts[2]
+        local groupName = parts[3]
+        if not transferId or transferId == "" then return true end
+        self._sharedPlanGroupsIncoming = self._sharedPlanGroupsIncoming or {}
+        self._sharedPlanGroupsIncoming[transferId] = {
+            groupName = groupName or "Group",
+            totalPlans = tonumber(parts[4]) or 0,
+            chunks = {},
+            total = nil,
+            sender = sender,
+            t = GetTime(),
+        }
+        return true
+    elseif tag == "GREQ" then
+        local linkLabel = parts[2]
+        if not linkLabel or linkLabel == "" then return true end
+        self._sharedPlanGroups = self._sharedPlanGroups or {}
+        local shared = self._sharedPlanGroups[linkLabel]
+        if not shared or type(shared.payload) ~= "string" or shared.payload == "" then return true end
+        if (time() - (shared.t or 0)) > SHARED_GROUP_TTL then
+            self._sharedPlanGroups[linkLabel] = nil
+            return true
+        end
+        self:SendSharedPlanGroupWhisper(sender, linkLabel, shared.payload)
+        return true
+    elseif tag == "GDAT" then
+        local transferId = parts[2]
+        local i = tonumber(parts[3])
+        local n = tonumber(parts[4])
+        local chunk = parts[5]
+        if not transferId or not i or not n or type(chunk) ~= "string" then return true end
+        self._sharedPlanGroupsIncoming = self._sharedPlanGroupsIncoming or {}
+        local entry = self._sharedPlanGroupsIncoming[transferId]
+        if not entry then
+            entry = { chunks = {}, total = n, sender = sender, t = GetTime(), groupName = "Group" }
+            self._sharedPlanGroupsIncoming[transferId] = entry
+        end
+        entry.total = entry.total or n
+        entry.chunks[i] = chunk
+        entry.t = GetTime()
+        local count = 0
+        for idx = 1, entry.total do
+            if entry.chunks[idx] then count = count + 1 end
+        end
+        if self.UpdateImportProgress then
+            self:UpdateImportProgress(count, entry.total)
+        end
+        self:TryCompleteSharedPlanGroupImport(transferId, sender)
+        return true
+    end
+    return false
+end
+
+function Diar:ShowSavedPlanContextMenu(anchorBtn, entryIds)
+    if not anchorBtn then return end
+    local ids = NormalizeEntryIdList(entryIds)
+    if #ids == 0 then return end
+    local store = EnsureSavedPlansStorage()
+    local byId = {}
+    for _, entry in ipairs(store.list or {}) do
+        local id = tonumber(entry and entry.id)
+        if id then byId[id] = entry end
+    end
+    local canRemoveFromGroup = false
+    for _, id in ipairs(ids) do
+        local entry = byId[id]
+        if entry and entry.groupId ~= nil then
+            canRemoveFromGroup = true
+            break
+        end
+    end
+
+    local menu = self._savedPlanCtxMenu
+    if not menu then
+        menu = CreateFrame("Frame", "RaidstratsSavedPlanContextMenu", UIParent, "BackdropTemplate")
+        menu:SetFrameStrata("FULLSCREEN_DIALOG")
+        menu:SetFrameLevel(560)
+        menu:SetSize(184, 64)
+        menu:EnableMouse(true)
+        if SetBackdrop then SetBackdrop(menu, UI.PANEL, UI.BORDER, 1) end
+        local createBtn = CreateFrame("Button", nil, menu, "BackdropTemplate")
+        createBtn:SetHeight(24)
+        createBtn:SetPoint("TOPLEFT", menu, "TOPLEFT", 4, -4)
+        createBtn:SetPoint("TOPRIGHT", menu, "TOPRIGHT", -4, -4)
+        if SetBackdrop then SetBackdrop(createBtn, UI.ROW, UI.BORDER, 1) end
+        local createLbl = createBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        createLbl:SetPoint("LEFT", createBtn, "LEFT", 8, 0)
+        createLbl:SetPoint("RIGHT", createBtn, "RIGHT", -8, 0)
+        createLbl:SetJustifyH("LEFT")
+        createLbl:SetText("Create group")
+        createBtn:SetScript("OnEnter", function(s)
+            s:SetBackdropColor(unpack(UI.ROW_HOV))
+        end)
+        createBtn:SetScript("OnLeave", function(s)
+            s:SetBackdropColor(unpack(UI.ROW))
+        end)
+        createBtn:SetScript("OnClick", function()
+            Diar:HideSavedPlanContextMenu()
+            StaticPopup_Show("RAIDSTRATSGG_CREATE_PLAN_GROUP", nil, nil, { entryIds = menu.entryIds })
+        end)
+        menu.createGroupBtn = createBtn
+        menu.createGroupLabel = createLbl
+
+        local removeBtn = CreateFrame("Button", nil, menu, "BackdropTemplate")
+        removeBtn:SetHeight(24)
+        removeBtn:SetPoint("TOPLEFT", createBtn, "BOTTOMLEFT", 0, -4)
+        removeBtn:SetPoint("TOPRIGHT", createBtn, "BOTTOMRIGHT", 0, -4)
+        if SetBackdrop then SetBackdrop(removeBtn, UI.ROW, UI.BORDER, 1) end
+        local removeLbl = removeBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        removeLbl:SetPoint("LEFT", removeBtn, "LEFT", 8, 0)
+        removeLbl:SetPoint("RIGHT", removeBtn, "RIGHT", -8, 0)
+        removeLbl:SetJustifyH("LEFT")
+        removeLbl:SetText("Remove from group")
+        removeBtn:SetScript("OnEnter", function(s)
+            s:SetBackdropColor(unpack(UI.ROW_HOV))
+        end)
+        removeBtn:SetScript("OnLeave", function(s)
+            s:SetBackdropColor(unpack(UI.ROW))
+        end)
+        removeBtn:SetScript("OnClick", function()
+            Diar:HideSavedPlanContextMenu()
+            if menu.entryIds and Diar.RemoveSavedPlansFromGroups then
+                Diar:RemoveSavedPlansFromGroups(menu.entryIds)
+            end
+        end)
+        menu.removeGroupBtn = removeBtn
+        menu.removeGroupLabel = removeLbl
+        menu:SetScript("OnHide", function()
+            if Diar._savedPlanCtxDismiss then
+                Diar._savedPlanCtxDismiss:Hide()
+            end
+        end)
+        if UISpecialFrames then
+            tinsert(UISpecialFrames, "RaidstratsSavedPlanContextMenu")
+        end
+        self._savedPlanCtxMenu = menu
+    end
+
+    if not self._savedPlanCtxDismiss then
+        local dismiss = CreateFrame("Button", "RaidstratsSavedPlanContextDismiss", UIParent)
+        dismiss:SetAllPoints(UIParent)
+        dismiss:SetFrameStrata("FULLSCREEN_DIALOG")
+        dismiss:EnableMouse(true)
+        dismiss:SetAlpha(0.001)
+        dismiss:SetScript("OnMouseUp", function(_, button)
+            if button == "LeftButton" or button == "RightButton" then
+                Diar:HideSavedPlanContextMenu()
+            end
+        end)
+        dismiss:Hide()
+        self._savedPlanCtxDismiss = dismiss
+    end
+
+    menu.entryIds = ids
+    local label = "Create group"
+    if #ids > 1 then
+        label = ("Create group (%d selected)"):format(#ids)
+    end
+    if menu.createGroupLabel then
+        menu.createGroupLabel:SetText(label)
+    end
+    if menu.removeGroupBtn then
+        local removeLabel = (#ids > 1) and ("Remove from group (%d selected)"):format(#ids) or "Remove from group"
+        if menu.removeGroupLabel then
+            menu.removeGroupLabel:SetText(removeLabel)
+        end
+        if canRemoveFromGroup then
+            menu.removeGroupBtn:Show()
+            menu:SetHeight(60)
+        else
+            menu.removeGroupBtn:Hide()
+            menu:SetHeight(32)
+        end
+    end
+    menu:ClearAllPoints()
+    menu:SetPoint("TOPLEFT", anchorBtn, "BOTTOMLEFT", 0, -2)
+    self._savedPlanCtxDismiss:SetFrameLevel(math.max(0, (menu:GetFrameLevel() or 0) - 1))
+    self._savedPlanCtxDismiss:Show()
+    menu:Show()
+    if menu.Raise then menu:Raise() end
+end
+
 local function CreatePlanAutoToggle(parent)
     if not CreateAnimatedCheckbox then return nil end
     local toggle = CreateAnimatedCheckbox(parent, nil)
@@ -312,7 +1149,7 @@ local function CreatePlanAutoToggle(parent)
     return toggle
 end
 
-local function ApplySavedPlanRowState(rowFrame, entry, isActive, planKey, autoEnabled)
+local function ApplySavedPlanRowState(rowFrame, entry, isActive, planKey, autoEnabled, isSelected, isMultiSelected)
     rowFrame.entryId = entry.id
     rowFrame.planKey = planKey
 
@@ -322,14 +1159,33 @@ local function ApplySavedPlanRowState(rowFrame, entry, isActive, planKey, autoEn
 
     if isActive then
         rowFrame.activeBar:Show()
+        if isMultiSelected and isSelected then
+            rowFrame.activeBar:SetColorTexture(0.72, 0.42, 0.96, 1)
+        else
+            rowFrame.activeBar:SetColorTexture(unpack(UI.ACCENT))
+        end
         rowFrame:SetBackdropColor(0.12, 0.16, 0.24, 0.98)
         rowFrame.label:SetTextColor(0.95, 0.88, 0.45)
         rowFrame.meta:SetTextColor(0.62, 0.66, 0.72)
+    elseif isSelected then
+        rowFrame.activeBar:Show()
+        if isMultiSelected then
+            rowFrame.activeBar:SetColorTexture(0.72, 0.42, 0.96, 1)
+        else
+            rowFrame.activeBar:SetColorTexture(unpack(UI.ACCENT))
+        end
+        rowFrame:SetBackdropColor(0.10, 0.14, 0.22, 0.98)
+        rowFrame.label:SetTextColor(0.85, 0.92, 1.00)
+        rowFrame.meta:SetTextColor(0.56, 0.62, 0.72)
     else
         rowFrame.activeBar:Hide()
         rowFrame:SetBackdropColor(unpack(UI.ROW))
         rowFrame.label:SetTextColor(0.92, 0.92, 0.92)
         rowFrame.meta:SetTextColor(0.50, 0.54, 0.60)
+    end
+
+    if not isSelected then
+        rowFrame.activeBar:SetColorTexture(unpack(UI.ACCENT))
     end
 
     if planKey and rowFrame.syncToggle then
@@ -386,14 +1242,14 @@ end
 local function AcquireSavedPlanRow(pf, child, planIndex, w)
     pf.savedPlansRows = pf.savedPlansRows or {}
     local rowFrame = pf.savedPlansRows[planIndex]
-    if rowFrame and rowFrame.__cardV5 and rowFrame.syncToggle then return rowFrame end
+    if rowFrame and rowFrame.__cardV6 and rowFrame.syncToggle then return rowFrame end
     if rowFrame then
         rowFrame:Hide()
         rowFrame:SetParent(nil)
     end
 
     rowFrame = CreateFrame("Button", nil, child, "BackdropTemplate")
-    rowFrame.__cardV5 = true
+    rowFrame.__cardV6 = true
     rowFrame:SetHeight(PLAN_CARD_H)
     rowFrame:SetWidth(w)
     SetBackdrop(rowFrame, UI.ROW, UI.BORDER, 1)
@@ -495,9 +1351,173 @@ local function AcquireSavedPlanRow(pf, child, planIndex, w)
     return rowFrame
 end
 
+local function AcquireSavedPlanGroupRow(pf, child, groupIndex, w)
+    pf.savedPlansGroupRows = pf.savedPlansGroupRows or {}
+    local row = pf.savedPlansGroupRows[groupIndex]
+    if row and row.__groupRowV1 then return row end
+    if row then
+        row:Hide()
+        row:SetParent(nil)
+    end
+
+    row = CreateFrame("Button", nil, child, "BackdropTemplate")
+    row.__groupRowV1 = true
+    row:SetHeight(GROUP_HEADER_H)
+    row:SetWidth(w)
+    SetBackdrop(row, UI.TOOLBAR, UI.BORDER, 1)
+
+    local marker = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    marker:SetPoint("LEFT", row, "LEFT", 8, 0)
+    marker:SetWidth(14)
+    marker:SetJustifyH("CENTER")
+    row.marker = marker
+
+    local label = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    label:SetPoint("LEFT", marker, "RIGHT", 6, 0)
+    label:SetPoint("RIGHT", row, "RIGHT", -8, 0)
+    label:SetJustifyH("LEFT")
+    row.label = label
+
+    row:SetScript("OnEnter", function(s)
+        s:SetBackdropColor(unpack(UI.ROW_HOV))
+    end)
+    row:SetScript("OnLeave", function(s)
+        s:SetBackdropColor(unpack(UI.TOOLBAR))
+    end)
+
+    pf.savedPlansGroupRows[groupIndex] = row
+    return row
+end
+
+local function ResolveSavedPlanDropTarget(pf)
+    local function ReadDropTargetFromFocus(focus)
+        local guard = 0
+        while focus and guard < 24 do
+            if focus.__savedPlanGroupDropId ~= nil then
+                return focus.__savedPlanGroupDropId, focus
+            end
+            if type(focus.GetParent) ~= "function" then break end
+            focus = focus:GetParent()
+            guard = guard + 1
+        end
+        return nil, nil
+    end
+
+    if type(GetMouseFocus) == "function" then
+        local focus = GetMouseFocus()
+        local byFocusId, byFocusFrame = ReadDropTargetFromFocus(focus)
+        if byFocusId ~= nil then return byFocusId, byFocusFrame end
+    end
+
+    if type(MouseIsOver) == "function" and pf then
+        if type(pf.savedPlansRows) == "table" then
+            for _, planRow in ipairs(pf.savedPlansRows) do
+                if planRow and planRow:IsShown() and MouseIsOver(planRow) and planRow.__savedPlanGroupDropId ~= nil then
+                    return planRow.__savedPlanGroupDropId, planRow
+                end
+            end
+        end
+        if type(pf.savedPlansGroupRows) == "table" then
+            for _, headerRow in ipairs(pf.savedPlansGroupRows) do
+                if headerRow and headerRow:IsShown() and MouseIsOver(headerRow) then
+                    return headerRow.__savedPlanGroupDropId, headerRow
+                end
+            end
+        end
+    end
+    return nil, nil
+end
+
+local function SetSavedPlanDropHoverFrame(pf, frame)
+    if not pf then return end
+    local prev = pf.__savedPlanDropHoverFrame
+    if prev and prev ~= frame and prev.SetBackdropBorderColor then
+        prev:SetBackdropBorderColor(unpack(UI.BORDER))
+    end
+    pf.__savedPlanDropHoverFrame = frame
+    if frame and frame.SetBackdropBorderColor then
+        frame:SetBackdropBorderColor(unpack(UI.ACCENT))
+    end
+end
+
+local function EnsureSavedPlanDragGhost(pf)
+    if not pf then return nil end
+    if pf.__savedPlanDragGhost then return pf.__savedPlanDragGhost end
+    local ghost = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
+    ghost:SetFrameStrata("FULLSCREEN_DIALOG")
+    ghost:SetFrameLevel(700)
+    ghost:SetSize(180, 24)
+    ghost:EnableMouse(false)
+    if SetBackdrop then SetBackdrop(ghost, UI.TOOLBAR, UI.ACCENT, 1) end
+    local label = ghost:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    label:SetPoint("LEFT", ghost, "LEFT", 8, 0)
+    label:SetPoint("RIGHT", ghost, "RIGHT", -8, 0)
+    label:SetJustifyH("LEFT")
+    label:SetTextColor(1, 1, 1)
+    ghost.label = label
+    ghost:Hide()
+    ghost.__updateFn = function(self)
+        local owner = self.__ownerPf
+        if not owner or not owner.__draggingSavedPlanEntryId then
+            self:Hide()
+            self:SetScript("OnUpdate", nil)
+            SetSavedPlanDropHoverFrame(owner, nil)
+            return
+        end
+        local scale = UIParent:GetEffectiveScale()
+        local x, y = GetCursorPosition()
+        x, y = x / scale, y / scale
+        self:ClearAllPoints()
+        self:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", x + 14, y - 14)
+        local _, targetFrame = ResolveSavedPlanDropTarget(owner)
+        SetSavedPlanDropHoverFrame(owner, targetFrame)
+    end
+    pf.__savedPlanDragGhost = ghost
+    return ghost
+end
+
+local function StartSavedPlanDragGhost(pf, planName)
+    local ghost = EnsureSavedPlanDragGhost(pf)
+    if not ghost then return end
+    local text = strtrim(tostring(planName or "Plan"))
+    if text == "" then text = "Plan" end
+    if #text > 28 then text = text:sub(1, 28) .. "..." end
+    ghost.label:SetText(("Move: %s"):format(text))
+    local tw = ghost.label:GetStringWidth() or 120
+    ghost:SetWidth(math.max(140, math.min(260, tw + 20)))
+    ghost.__ownerPf = pf
+    ghost:SetScript("OnUpdate", ghost.__updateFn)
+    ghost:Show()
+end
+
+local function StopSavedPlanDragGhost(pf)
+    if not pf then return end
+    local ghost = pf.__savedPlanDragGhost
+    if ghost then
+        ghost.__ownerPf = nil
+        ghost:SetScript("OnUpdate", nil)
+        ghost:Hide()
+    end
+    SetSavedPlanDropHoverFrame(pf, nil)
+end
+
+local function ResolveSavedPlanDropGroupId(pf)
+    local dropGroupId = ResolveSavedPlanDropTarget(pf)
+    if dropGroupId ~= nil then return dropGroupId end
+    if type(MouseIsOver) == "function" and pf and type(pf.savedPlansGroupRows) == "table" then
+        for _, headerRow in ipairs(pf.savedPlansGroupRows) do
+            if headerRow and headerRow:IsShown() and MouseIsOver(headerRow) then
+                return headerRow.__savedPlanGroupDropId
+            end
+        end
+    end
+    return nil
+end
+
 function Diar:RefreshSavedPlansList()
     local pf = self.plannerFrame
     if not pf or not pf.savedPlansScrollChild then return end
+    pf.savedPlansSelectedIds = pf.savedPlansSelectedIds or {}
     RaidstratsggSavedPlans = RaidstratsggSavedPlans or { list = {}, nextId = 1 }
     local list = RaidstratsggSavedPlans.list
     local child = pf.savedPlansScrollChild
@@ -570,33 +1590,99 @@ function Diar:RefreshSavedPlansList()
         end
     end
 
-    local sorted = {}
-    for i = 1, #filtered do sorted[i] = filtered[i] end
-    table.sort(sorted, function(a, b)
+    local function SortPlanEntries(a, b)
         if (a.expansion or "") ~= (b.expansion or "") then return (a.expansion or "") < (b.expansion or "") end
         if (a.raid or "") ~= (b.raid or "") then return (a.raid or "") < (b.raid or "") end
         if (a.boss or "") ~= (b.boss or "") then return (a.boss or "") < (b.boss or "") end
         return (a.planName or "") < (b.planName or "")
+    end
+
+    local store = EnsureSavedPlansStorage()
+    local groupsById = {}
+    for _, group in ipairs(store.groups or {}) do
+        local gid = tonumber(group and group.id)
+        local gname = strtrim(tostring(group and group.name or ""))
+        if gid and gname ~= "" then
+            groupsById[gid] = { id = gid, name = gname, plans = {} }
+        end
+    end
+
+    local ungrouped = {}
+    for _, entry in ipairs(filtered) do
+        local gid = tonumber(entry and entry.groupId)
+        local grp = gid and groupsById[gid] or nil
+        if grp then
+            grp.plans[#grp.plans + 1] = entry
+        else
+            ungrouped[#ungrouped + 1] = entry
+        end
+    end
+    table.sort(ungrouped, SortPlanEntries)
+
+    local sortedGroups = {}
+    for _, grp in pairs(groupsById) do
+        if #grp.plans > 0 then
+            table.sort(grp.plans, SortPlanEntries)
+            sortedGroups[#sortedGroups + 1] = grp
+        end
+    end
+    table.sort(sortedGroups, function(a, b)
+        return strlower(a.name) < strlower(b.name)
     end)
 
+    local collapsedMap = GetSavedPlansGroupCollapseMap()
     local rows = {}
-    if #sorted == 0 then
+    if #filtered == 0 then
         rows[#rows + 1] = { type = "empty" }
-    end
-    local lastExpansion
-    for _, entry in ipairs(sorted) do
-        local expansion = entry.expansion or "Other"
-        if expansion ~= lastExpansion then
-            lastExpansion = expansion
-            rows[#rows + 1] = { type = "section", text = expansion }
+    else
+        for _, grp in ipairs(sortedGroups) do
+            local isCollapsed = collapsedMap[tostring(grp.id)] == true
+            rows[#rows + 1] = {
+                type = "group_header",
+                groupId = grp.id,
+                text = grp.name,
+                count = #grp.plans,
+                collapsed = isCollapsed,
+            }
+            if not isCollapsed then
+                for _, entry in ipairs(grp.plans) do
+                    rows[#rows + 1] = { type = "plan", entry = entry }
+                end
+            end
         end
-        rows[#rows + 1] = { type = "plan", entry = entry }
+        local ungroupedKey = "__ungrouped__"
+        local ungroupedCollapsed = collapsedMap[ungroupedKey]
+        if ungroupedCollapsed == nil then
+            -- Default behavior: keep ungrouped collapsed until user changes it.
+            ungroupedCollapsed = true
+        else
+            ungroupedCollapsed = (ungroupedCollapsed == true)
+        end
+        rows[#rows + 1] = {
+            type = "group_header",
+            groupId = ungroupedKey,
+            text = "Ungrouped",
+            count = #ungrouped,
+            collapsed = ungroupedCollapsed,
+        }
+        if not ungroupedCollapsed then
+            for _, entry in ipairs(ungrouped) do
+                rows[#rows + 1] = { type = "plan", entry = entry }
+            end
+        end
     end
 
     pf.savedPlansHeaders = pf.savedPlansHeaders or {}
+    local selectedCount = 0
+    for _, enabled in pairs(pf.savedPlansSelectedIds or {}) do
+        if enabled then selectedCount = selectedCount + 1 end
+    end
+
     local y = -2
     local headerIndex = 0
+    local groupHeaderIndex = 0
     local planIndex = 0
+    pf.__savedPlanVisibleEntryIds = {}
     local activeId = self.plannerData and self.plannerData.savedEntryId
 
     for _, row in ipairs(rows) do
@@ -637,39 +1723,171 @@ function Diar:RefreshSavedPlansList()
             hint:SetTextColor(0.42, 0.46, 0.52)
             hint:Show()
             y = y - 36
-        elseif row.type == "section" then
-            headerIndex = headerIndex + 1
-            local lbl = pf.savedPlansHeaders[headerIndex]
-            if not lbl then
-                lbl = child:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-                lbl:SetJustifyH("LEFT")
-                pf.savedPlansHeaders[headerIndex] = lbl
-            end
-            lbl:ClearAllPoints()
-            lbl:SetPoint("TOPLEFT", child, "TOPLEFT", 2, y)
-            lbl:SetWidth(w - 4)
-            lbl:SetText(string.upper(row.text or ""))
-            lbl:SetTextColor(unpack(UI.ACCENT))
-            lbl:Show()
-            y = y - GetSectionHeight() - 2
+        elseif row.type == "group_header" then
+            groupHeaderIndex = groupHeaderIndex + 1
+            local headerRow = AcquireSavedPlanGroupRow(pf, child, groupHeaderIndex, w - 4)
+            headerRow:ClearAllPoints()
+            headerRow:SetPoint("TOPLEFT", child, "TOPLEFT", 2, y)
+            headerRow:SetHeight(GROUP_HEADER_H)
+            headerRow:SetWidth(w - 4)
+            headerRow.__savedPlanGroupDropId = row.groupId
+            local isUngrouped = row.groupId == "__ungrouped__"
+            local markerText = row.collapsed and "+" or "-"
+            headerRow.marker:SetText(markerText)
+            headerRow.marker:SetTextColor(0.72, 0.78, 0.90)
+            headerRow.label:SetText(("%s (%d)"):format(row.text or "Group", tonumber(row.count) or 0))
+            headerRow.label:SetTextColor(unpack(UI.ACCENT))
+            headerRow:SetScript("OnMouseUp", function(_, btn)
+                if btn == "RightButton" then
+                    if not isUngrouped then
+                        Diar:ShowSavedPlanGroupContextMenu(headerRow, row.groupId)
+                    end
+                    return
+                end
+                if btn ~= "LeftButton" then return end
+                local draggedIds = NormalizeEntryIdList(pf.__draggingSavedPlanEntryIds or {})
+                if #draggedIds == 0 then
+                    local one = tonumber(pf.__draggingSavedPlanEntryId)
+                    if one then draggedIds = { one } end
+                end
+                if #draggedIds > 0 then
+                    for _, draggedEntryId in ipairs(draggedIds) do
+                        if row.groupId == "__ungrouped__" then
+                            Diar:SetSavedPlanGroup(draggedEntryId, nil)
+                        else
+                            Diar:SetSavedPlanGroup(draggedEntryId, row.groupId)
+                        end
+                    end
+                    pf.__draggingSavedPlanEntryId = nil
+                    pf.__draggingSavedPlanEntryIds = nil
+                    StopSavedPlanDragGhost(pf)
+                    headerRow.__suppressClickUntil = GetTime() + 0.2
+                end
+            end)
+            headerRow:SetScript("OnClick", function(_, btn)
+                if btn ~= "LeftButton" then return end
+                if headerRow.__suppressClickUntil and headerRow.__suppressClickUntil > GetTime() then
+                    return
+                end
+                Diar:ToggleSavedPlansGroupCollapsed(row.groupId)
+            end)
+            headerRow:Show()
+            y = y - GROUP_HEADER_H - 2
         else
             planIndex = planIndex + 1
             local rowFrame = AcquireSavedPlanRow(pf, child, planIndex, w - 4)
             LayoutSavedPlanRow(rowFrame)
             local entry = row.entry
+            pf.__savedPlanVisibleEntryIds[#pf.__savedPlanVisibleEntryIds + 1] = entry.id
             local planKey = self.GetPlanIdentityKey and self:GetPlanIdentityKey(entry.data)
             local autoEnabled = planKey and self.IsPlanAutoImportEnabled and self:IsPlanAutoImportEnabled(planKey)
             local isActive = activeId and entry.id == activeId
-            ApplySavedPlanRowState(rowFrame, entry, isActive, planKey, autoEnabled)
+            local isSelected = pf.savedPlansSelectedIds and pf.savedPlansSelectedIds[entry.id] == true
+            ApplySavedPlanRowState(rowFrame, entry, isActive, planKey, autoEnabled, isSelected, selectedCount > 1)
             rowFrame:ClearAllPoints()
             rowFrame:SetPoint("TOPLEFT", child, "TOPLEFT", 2, y)
+            rowFrame.__savedPlanGroupDropId = tonumber(entry and entry.groupId) or "__ungrouped__"
             rowFrame:SetScript("OnClick", function(_, btn)
                 if btn == "RightButton" then return end
                 if rowFrame.syncToggle and rowFrame.syncToggle.__blockRowClick then
                     rowFrame.syncToggle.__blockRowClick = nil
                     return
                 end
+                if rowFrame.__dragSuppressUntil and rowFrame.__dragSuppressUntil > GetTime() then
+                    return
+                end
+                if IsShiftKeyDown and IsShiftKeyDown() then
+                    local ids = pf.__savedPlanVisibleEntryIds or {}
+                    local clickedId = tonumber(entry.id)
+                    if clickedId then
+                        local selected = pf.savedPlansSelectedIds or {}
+                        local anchorId = tonumber(pf.savedPlansSelectionAnchorId)
+                        if not anchorId then
+                            anchorId = tonumber(activeId)
+                        end
+                        local anchorPos, clickPos = nil, nil
+                        for idx, id in ipairs(ids) do
+                            local n = tonumber(id)
+                            if n == anchorId then anchorPos = idx end
+                            if n == clickedId then clickPos = idx end
+                        end
+                        if anchorPos and clickPos then
+                            local fromIdx = math.min(anchorPos, clickPos)
+                            local toIdx = math.max(anchorPos, clickPos)
+                            for idx = fromIdx, toIdx do
+                                local n = tonumber(ids[idx])
+                                if n then selected[n] = true end
+                            end
+                            if anchorId then
+                                selected[anchorId] = true
+                            end
+                        else
+                            selected[clickedId] = true
+                            if anchorId then
+                                selected[anchorId] = true
+                            end
+                        end
+                        pf.savedPlansSelectedIds = selected
+                        pf.savedPlansSelectionAnchorId = anchorId or clickedId
+                    end
+                    Diar:RefreshSavedPlansList()
+                    return
+                end
+                pf.savedPlansSelectedIds = {}
+                pf.savedPlansSelectionAnchorId = nil
                 Diar:LoadSavedPlan(entry.id)
+            end)
+            rowFrame:RegisterForDrag("LeftButton")
+            rowFrame:SetScript("OnDragStart", function(s)
+                local dragIds = nil
+                local selectedMap = pf.savedPlansSelectedIds or {}
+                local selectedCount = 0
+                for _, enabled in pairs(selectedMap) do
+                    if enabled then selectedCount = selectedCount + 1 end
+                end
+                if selectedCount > 1 and selectedMap[entry.id] then
+                    dragIds = GetSavedPlanSelectionIds(pf)
+                else
+                    dragIds = { entry.id }
+                end
+                s.__draggingPlanEntryId = entry.id
+                pf.__draggingSavedPlanEntryId = entry.id
+                pf.__draggingSavedPlanEntryIds = dragIds
+                StartSavedPlanDragGhost(pf, selectedCount > 1 and (selectedCount .. " plans") or (entry.planName or "Plan"))
+            end)
+            rowFrame:SetScript("OnDragStop", function(s)
+                local dropGroupId = ResolveSavedPlanDropGroupId(pf)
+                s.__draggingPlanEntryId = nil
+                pf.__draggingSavedPlanEntryId = nil
+                local dragIds = NormalizeEntryIdList(pf.__draggingSavedPlanEntryIds or { entry.id })
+                pf.__draggingSavedPlanEntryIds = nil
+                StopSavedPlanDragGhost(pf)
+                s.__dragSuppressUntil = GetTime() + 0.15
+                if dropGroupId == nil then return end
+                for _, moveId in ipairs(dragIds) do
+                    if dropGroupId == "__ungrouped__" then
+                        Diar:SetSavedPlanGroup(moveId, nil)
+                    else
+                        Diar:SetSavedPlanGroup(moveId, dropGroupId)
+                    end
+                end
+            end)
+            rowFrame:SetScript("OnMouseUp", function(_, btn)
+                if btn == "RightButton" then
+                    local selected = GetSavedPlanSelectionIds(pf)
+                    local useIds = {}
+                    local includesClicked = false
+                    for _, id in ipairs(selected) do
+                        useIds[#useIds + 1] = id
+                        if id == entry.id then includesClicked = true end
+                    end
+                    if #useIds == 0 or not includesClicked then
+                        useIds = { entry.id }
+                        pf.savedPlansSelectedIds = { [entry.id] = true }
+                        pf.savedPlansSelectionAnchorId = entry.id
+                    end
+                    Diar:ShowSavedPlanContextMenu(rowFrame, useIds)
+                end
             end)
             rowFrame.delBtn:SetScript("OnClick", function(_, btn)
                 if btn == "RightButton" then return end
@@ -686,6 +1904,9 @@ function Diar:RefreshSavedPlansList()
     end
     for pi = planIndex + 1, #(pf.savedPlansRows or {}) do
         if pf.savedPlansRows[pi] then pf.savedPlansRows[pi]:Hide() end
+    end
+    for gi = groupHeaderIndex + 1, #(pf.savedPlansGroupRows or {}) do
+        if pf.savedPlansGroupRows[gi] then pf.savedPlansGroupRows[gi]:Hide() end
     end
     child:SetHeight(totalH)
     if pf.savedPlansScroll then

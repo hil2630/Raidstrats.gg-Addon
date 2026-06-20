@@ -27,6 +27,10 @@ local RAID_MARKERS = {
     { key = "triangle", idx = 4 }, { key = "moon", idx = 5 }, { key = "square", idx = 6 },
     { key = "cross", idx = 7 }, { key = "skull", idx = 8 },
 }
+local RAID_MARKER_KEY_SET = {}
+for _, marker in ipairs(RAID_MARKERS) do
+    RAID_MARKER_KEY_SET[tostring(marker.key or ""):lower()] = true
+end
 
 local ROLE_ENTRIES = {
     { key = "tank", label = "Tank" },
@@ -212,6 +216,32 @@ local function ApplyIngameIconTexture(tex, iconKey)
             tex:SetAlpha(1)
             return true
         end
+    end
+    return false
+end
+
+local function IsWorldMarkerPaletteItem(item)
+    if type(item) ~= "table" then return false end
+    if item.worldMarker == true or item.isWorldMarker == true then return true end
+    if tostring(item.kind or ""):lower() ~= "icon" then return false end
+    local raw = tostring(item.icon or ""):lower()
+    if raw == "" then return false end
+    raw = raw:gsub("\\", "/")
+    local base = raw:match("([^/]+)$") or raw
+    if RAID_MARKER_KEY_SET[base] then
+        return true
+    end
+    if raw:find("/worldmarkers/", 1, true)
+        or raw:find("worldmarkers/", 1, true)
+        or raw:find("world-marker", 1, true)
+        or raw:find("world_marker", 1, true)
+        or raw:find("worldmarker", 1, true) then
+        return true
+    end
+    if base:match("^worldmarker[_%-]?%d+$")
+        or base:match("^world[_%-]?marker[_%-]?%d+$")
+        or base:match("^wm%d+$") then
+        return true
     end
     return false
 end
@@ -770,9 +800,14 @@ function Diar:AddPlannerItemToScene(template, xPct, yPct, opts)
         item.h = hPct
     end
 
-    local slotIndex = PUI.GetNextAvailableSlotIndex(scene)
-    item.slotIndex = slotIndex
-    item.embedIndex = slotIndex
+    if not IsWorldMarkerPaletteItem(item) then
+        local slotIndex = PUI.GetNextAvailableSlotIndex(scene)
+        item.slotIndex = slotIndex
+        item.embedIndex = slotIndex
+    else
+        item.slotIndex = nil
+        item.embedIndex = nil
+    end
 
     table.insert(scene.items, item)
     if self.PersistCurrentPlanToSaved then

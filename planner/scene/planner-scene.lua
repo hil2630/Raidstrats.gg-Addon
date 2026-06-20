@@ -1406,12 +1406,34 @@ local function BuildSceneNsrtTagBody(scene, fallbackSpotNames)
     return table.concat(parts, " ")
 end
 
+local function ResolveNsrtPlanReference(data)
+    if type(data) ~= "table" then return nil end
+    local planRef = strtrim(tostring(data.planId or ""))
+    if planRef ~= "" then return planRef end
+    planRef = strtrim(tostring(data.planLink or ""))
+    if planRef ~= "" then return planRef end
+    if Diar and Diar.GetPlannerPlanLink then
+        local ok, link = pcall(function() return Diar:GetPlannerPlanLink() end)
+        if ok and type(link) == "string" then
+            link = strtrim(link)
+            if link ~= "" then return link end
+        end
+    end
+    return nil
+end
+
 function Diar:BuildPlannerNsrtNoteText(sceneTiming)
     local data = self.plannerData
     if not data or type(data.scenes) ~= "table" or #data.scenes == 0 then return nil end
 
     sceneTiming = type(sceneTiming) == "table" and sceneTiming or {}
     local lines = {}
+    local planAlias = "A"
+    local planRef = ResolveNsrtPlanReference(data)
+    local hasPlanBinding = type(planRef) == "string" and planRef ~= ""
+    if hasPlanBinding then
+        lines[#lines + 1] = ("rsgg-bind;plan:%s;ref:%s"):format(planAlias, planRef)
+    end
     for i, scene in ipairs(data.scenes) do
         local timing = sceneTiming[i] or {}
         local rawTime = strtrim(tostring(timing.time or ""))
@@ -1421,7 +1443,8 @@ function Diar:BuildPlannerNsrtNoteText(sceneTiming)
         local phaseVal = rawPhase ~= "" and rawPhase or "__PHASE__"
         local durationVal = rawDuration ~= "" and rawDuration or "6"
 
-        local line = ("time:%s;ph:%s;rsgg;scene:%d;dur:%s"):format(timeVal, phaseVal, i, durationVal)
+        local planPart = hasPlanBinding and (";plan:" .. planAlias) or ""
+        local line = ("time:%s;ph:%s;rsgg%s;scene:%d;dur:%s"):format(timeVal, phaseVal, planPart, i, durationVal)
         local tagBody = BuildSceneNsrtTagBody(scene, nil)
         if tagBody ~= "" then
             line = line .. ";tag " .. tagBody
@@ -2414,6 +2437,21 @@ function Diar.ResolveClassKeyFromIconKey(iconKey)
     return nil
 end
 
+function Diar.ResolveRoleKeyFromIconKey(iconKey)
+    if type(iconKey) ~= "string" or iconKey == "" then return nil end
+    local clean = iconKey:lower():gsub("^/+", ""):gsub("%.[^%.]+$", "")
+    local parts = Diar.SplitPathParts(clean)
+    for i = 1, #parts do
+        if parts[i] == "roles" then
+            local role = parts[i + 1]
+            if role and ROLE_ICON_COORDS[role] then return role end
+        end
+    end
+    local key = parts[#parts] or clean
+    if ROLE_ICON_COORDS[key] then return key end
+    return nil
+end
+
 function Diar.GetClassCircleColor(classKey, opacity)
     local token = classKey and Diar.CLASS_TOKEN_BY_KEY[classKey]
     local cc = token and RAID_CLASS_COLORS and RAID_CLASS_COLORS[token]
@@ -2422,6 +2460,24 @@ function Diar.GetClassCircleColor(classKey, opacity)
         return cc.r or 0.75, cc.g or 0.75, cc.b or 0.75, a
     end
     return 0.45, 0.58, 0.92, a
+end
+
+function Diar.GetRoleCircleColor(roleKey, opacity)
+    local role = type(roleKey) == "string" and roleKey:lower() or ""
+    local a = (type(opacity) == "number") and opacity or 1
+    if role == "tank" then
+        return 0.24, 0.55, 0.95, a
+    end
+    if role == "healer" then
+        return 0.18, 0.78, 0.42, a
+    end
+    if role == "rdps" then
+        return 0.63, 0.39, 0.92, a
+    end
+    if role == "mdps" then
+        return 0.92, 0.35, 0.35, a
+    end
+    return 0.60, 0.60, 0.60, a
 end
 
 -- Pre-made shape texture paths (rect, circle, cone/triangle). Use these if present; else fall back to SetColorTexture/SetPortraitToTexture.
@@ -3901,12 +3957,19 @@ local function ApplySceneBackground(pf, scene, vc, cw, ch)
 
     -- Export sends bg as key (e.g. "chimera_l2"), user can drop matching files in Raidstratsgg/backgrounds/.
     local clean = bg:gsub("^.*/", ""):gsub("%.[^%.]+$", "")
-    local candidates = {
-        BG_BASE_PATH .. clean .. ".tga",
-        BG_BASE_PATH .. clean .. ".blp",
-        BG_BASE_PATH .. clean .. ".png",
-        BG_BASE_PATH .. clean .. ".jpg",
-    }
+    local keyCandidates = { clean }
+    -- Backward-compat for legacy typo present in some exported plans.
+    if clean == "midnigh_falls" then
+        keyCandidates[#keyCandidates + 1] = "midnight_falls"
+    end
+
+    local candidates = {}
+    for _, key in ipairs(keyCandidates) do
+        candidates[#candidates + 1] = BG_BASE_PATH .. key .. ".tga"
+        candidates[#candidates + 1] = BG_BASE_PATH .. key .. ".blp"
+        candidates[#candidates + 1] = BG_BASE_PATH .. key .. ".png"
+        candidates[#candidates + 1] = BG_BASE_PATH .. key .. ".jpg"
+    end
 
     for i = 1, #candidates do
         local path = candidates[i]
@@ -3977,6 +4040,25 @@ function Diar:SanitizePlanData(data)
                 if type(item) == "table" then
                     local kindLower = tostring(item.kind or ""):lower()
                     local typeLower = tostring(item.type or item.objectType or ""):lower()
+                    local shapeLower = tostring(item.shape or ""):lower()
+                    local slotIndex = tonumber(item.slotIndex or item.embedIndex)
+                    if kindLower == "shape" and (shapeLower == "circle" or shapeLower == "ellipse") and slotIndex and slotIndex > 0 then
+                        -- Legacy imports stored player spots as shape circles, which blocked
+                        -- assignment/class updates. Normalize them into player-circle icons.
+                        item.kind = "icon"
+                        item.playerCircle = true
+                        item.icon = (type(item.icon) == "string" and item.icon ~= "") and item.icon or "markers/circle"
+                        item.shape = nil
+                        item.stroke = nil
+                        item.strokeWidth = nil
+                        kindLower = "icon"
+                    end
+                    if item.playerCircle == true then
+                        -- Player circles should match icon-circle rendering without any
+                        -- geometry stroke ring from imported shape data.
+                        item.stroke = nil
+                        item.strokeWidth = nil
+                    end
                     local isTextObject = (kindLower == "text")
                         or (typeLower == "text")
                         or (typeLower == "textbox")
@@ -4468,9 +4550,19 @@ function Diar.RenderIconWidget(addon, w, item, label, hasSelfOnPlan, playerKey, 
     end
 
     local classKey = Diar.ResolveClassKeyFromIconKey(item.icon)
-    local useClassSpecCircle = classKey and addon.IsClassSpecCircleModeEnabled and addon:IsClassSpecCircleModeEnabled()
-    if useClassSpecCircle then
-        local cr, cg, cb, ca = Diar.GetClassCircleColor(classKey, item.opacity)
+    local roleKey = Diar.ResolveRoleKeyFromIconKey(item.icon)
+    local playerCircle = (item and item.playerCircle == true)
+    local useClassSpecCircle = (classKey or roleKey) and addon.IsClassSpecCircleModeEnabled and addon:IsClassSpecCircleModeEnabled()
+    if useClassSpecCircle or playerCircle then
+        local cr, cg, cb, ca
+        if useClassSpecCircle and classKey then
+            cr, cg, cb, ca = Diar.GetClassCircleColor(classKey, item.opacity)
+        elseif useClassSpecCircle and roleKey then
+            cr, cg, cb, ca = Diar.GetRoleCircleColor(roleKey, item.opacity)
+        else
+            -- Imported player circles: keep source fill/stroke and always draw as circles.
+            cr, cg, cb, ca = ParseItemColor(item.fill, item.opacity)
+        end
         ApplyCircleWidgetVisual(w, item, { cr, cg, cb, ca })
         ClearBackdropStroke(w)
         if w.text then w.text:Hide() end
@@ -6385,10 +6477,14 @@ function Diar:RefreshPlannerScene()
         pf.__viewportDisplayZoom = pf.viewerViewport and pf.viewerViewport.zoom or 1
         ApplySceneBackground(pf, scene, vc, cw, ch)
     end
-    -- Recolor only objects that carry an explicit index. Objects with no index
-    -- (e.g. auto-ordered circles) must keep their own colors when assignments are up.
+    -- Prefer explicit indices for assignment recolor. If a scene has no explicit
+    -- indices at all (common on imported circle spreads), fall back to auto spots
+    -- so circles remain visible and assignment/background coloring still works.
     local explicitSpots = ResolveSceneSpots(scene, true)
-    local groupSpots = activeGroup and explicitSpots or nil
+    local groupSpots = nil
+    if activeGroup then
+        groupSpots = explicitSpots or sceneSpots
+    end
     local groupSpotNames = activeGroup and activeGroup.spotNames or nil
     local previewNamesOn = self:IsPlannerPreviewNamesVisible() and groupSpotNames
     local previewSpots = self:IsPlannerPreviewIndexVisible() and sceneSpots or nil

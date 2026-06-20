@@ -545,13 +545,38 @@ local function RegisterSceneItemId(map, id, index)
     map[tostring(id)] = index
 end
 
+local function ReadWebObjectSlotIndex(obj)
+    if type(obj) ~= "table" then return nil end
+    local idx = CoerceNumber(obj.embedIndex)
+    if idx and idx > 0 then
+        return math.floor(idx + 0.0001)
+    end
+    local key = type(obj.indexKey) == "string" and obj.indexKey or nil
+    if key then
+        local m = key:match("^%s*index(%d+)%s*$")
+        if m then
+            local parsed = tonumber(m)
+            if parsed and parsed > 0 then
+                return math.floor(parsed + 0.0001)
+            end
+        end
+    end
+    return nil
+end
+
 local function ConvertWebSceneObjects(scene, canvasW, canvasH)
-    if type(scene) ~= "table" or type(scene.objectsJSON) ~= "string" or scene.objectsJSON == "" then
+    if type(scene) ~= "table" then
         return nil, nil, nil
     end
-    local parsed = DecodeJSON(scene.objectsJSON)
-    if type(parsed) ~= "table" then return nil, nil, nil end
-    local objects = parsed.objects or parsed.canvasObjects or parsed
+    local objects = nil
+    if type(scene.__objectsTable) == "table" then
+        objects = scene.__objectsTable
+    elseif type(scene.objectsJSON) == "string" and scene.objectsJSON ~= "" then
+        local parsed = DecodeJSON(scene.objectsJSON)
+        if type(parsed) == "table" then
+            objects = parsed.objects or parsed.canvasObjects or parsed
+        end
+    end
     if type(objects) ~= "table" then return nil, nil, nil end
 
     local items = {}
@@ -559,11 +584,43 @@ local function ConvertWebSceneObjects(scene, canvasW, canvasH)
     local pathByAnimId = {}
     local objectById = {}
 
+    -- Some web exports also emit a group's inner circle/text children (and a
+    -- separate "bottom" label) as top-level objects positioned at left/top 0,0.
+    -- Those would otherwise render as stray text stacked in the corner, so we
+    -- collect the ids that live inside groups and skip the duplicates/labels.
+    local groupChildIds = {}
+    for _, obj in ipairs(objects) do
+        if type(obj) == "table" and strlower(tostring(obj.type or "")) == "group" and type(obj.objects) == "table" then
+            for _, child in ipairs(obj.objects) do
+                if type(child) == "table" then
+                    if child.id then groupChildIds[tostring(child.id)] = true end
+                    if child.__objectGroupId then groupChildIds[tostring(child.__objectGroupId)] = true end
+                end
+            end
+        end
+    end
+
+    local function IsRedundantLabelText(obj)
+        local objType = strlower(tostring(obj.type or ""))
+        if objType ~= "text" and objType ~= "i-text" and objType ~= "textbox" then return false end
+        -- Explicit attached labels are already drawn under their parent circle.
+        if CoerceBool(obj["data-is-label"]) then return true end
+        local parentId = obj["data-parent-id"]
+        if parentId ~= nil and tostring(parentId) ~= "" then return true end
+        -- Duplicates of a circle group's inner text child.
+        local id = obj.id and tostring(obj.id) or nil
+        local gid = obj.__objectGroupId and tostring(obj.__objectGroupId) or nil
+        if (id and groupChildIds[id]) or (gid and groupChildIds[gid]) then return true end
+        return false
+    end
+
     for _, obj in ipairs(objects) do
         if type(obj) == "table" then
             if CoerceBool(obj.__isAnimationPath) then
                 local animId = obj.__animationId or obj.id or obj.__objectGroupId
                 if animId then pathByAnimId[tostring(animId)] = obj end
+            elseif IsRedundantLabelText(obj) then
+                -- Skip stray duplicate/label text emitted alongside grouped circles.
             else
                 local x, y, w, h = ResolveObjectBBoxPercent(obj, canvasW, canvasH)
                 if x and y and w and h then
@@ -580,17 +637,73 @@ local function ConvertWebSceneObjects(scene, canvasW, canvasH)
                             label = (type(obj.name) == "string" and obj.name ~= "") and obj.name or "",
                         }
                     elseif objType == "textbox" or objType == "text" or objType == "i-text" then
-                        item = {
-                            kind = "text",
-                            x = x,
-                            y = y,
-                            w = w,
-                            h = h,
-                            label = tostring(obj.text or obj.name or ""),
-                            textColor = obj.fill,
-                        }
-                        local fs = CoerceNumber(obj.fontSize)
-                        if fs then item.fontSize = ValueToPercent(fs * (CoerceNumber(obj.scaleY) or 1), canvasH) end
+                        local slotIndex = ReadWebObjectSlotIndex(obj)
+                        if slotIndex then
+                            -- Indexed text entries are player spots in some exports:
+                            -- import as player circles (assignable/movable) with label below.
+                            item = {
+                                kind = "icon",
+                                x = x,
+                                y = y,
+                                w = w,
+                                h = h,
+                                icon = "markers/circle",
+                                playerCircle = true,
+                                label = strtrim(tostring(obj.text or obj.name or "")),
+                                slotIndex = slotIndex,
+                                fill = obj.fill,
+                                opacity = CoerceNumber(obj.opacity),
+                                stroke = obj.stroke,
+                                strokeWidth = ValueToPercent(CoerceNumber(obj.strokeWidth), canvasH),
+                            }
+                        else
+                            item = {
+                                kind = "text",
+                                x = x,
+                                y = y,
+                                w = w,
+                                h = h,
+                                label = tostring(obj.text or obj.name or ""),
+                                textColor = obj.fill,
+                            }
+                            local fs = CoerceNumber(obj.fontSize)
+                            if fs then item.fontSize = ValueToPercent(fs * (CoerceNumber(obj.scaleY) or 1), canvasH) end
+                        end
+                    elseif objType == "group" and type(obj.objects) == "table" and #obj.objects > 0 then
+                        -- Web plans can store actor circles as grouped { circle + text } objects.
+                        -- Import them as player-circle icons so they stay assignable/movable
+                        -- and render like icon-circle mode with labels below.
+                        local circleChild = nil
+                        local textChild = nil
+                        for _, child in ipairs(obj.objects) do
+                            local childType = strlower(tostring(child and child.type or ""))
+                            if (childType == "circle" or childType == "ellipse") and not circleChild then
+                                circleChild = child
+                            elseif (childType == "text" or childType == "i-text" or childType == "textbox") and not textChild then
+                                textChild = child
+                            end
+                        end
+
+                        if circleChild then
+                            item = {
+                                kind = "icon",
+                                x = x,
+                                y = y,
+                                w = w,
+                                h = h,
+                                icon = "markers/circle",
+                                playerCircle = true,
+                                fill = circleChild.fill or obj.fill,
+                                opacity = CoerceNumber(circleChild.opacity or obj.opacity),
+                                stroke = circleChild.stroke or obj.stroke,
+                                strokeWidth = ValueToPercent(CoerceNumber(circleChild.strokeWidth or obj.strokeWidth), canvasH),
+                                label = strtrim(tostring((textChild and textChild.text) or obj.name or "")),
+                            }
+                            local slotIndex = ReadWebObjectSlotIndex(obj)
+                                or (textChild and ReadWebObjectSlotIndex(textChild))
+                                or (circleChild and ReadWebObjectSlotIndex(circleChild))
+                            if slotIndex then item.slotIndex = slotIndex end
+                        end
                     elseif objType == "rect" or objType == "triangle" or objType == "circle" or objType == "ellipse" then
                         item = {
                             kind = "shape",
@@ -729,9 +842,17 @@ end
 local function ConvertWebPlannerScenes(data)
     if type(data) ~= "table" or type(data.scenes) ~= "table" then return end
     local canvasW, canvasH = 1115, 627
-    for _, scene in ipairs(data.scenes) do
-        if type(scene) == "table" and (type(scene.objectsJSON) == "string" or type(scene.animationsJSON) == "string") then
+    for sceneIndex, scene in ipairs(data.scenes) do
+        if type(scene) == "table" and (type(scene.objectsJSON) == "string" or type(scene.animationsJSON) == "string" or sceneIndex == 1) then
+            -- Prefer scene.objectsJSON: it usually contains full grouped actor circles.
+            -- canvasData.objects can be a flattened/partial snapshot (missing group children).
             local items, idToIndex, pathByAnimId, objectById = ConvertWebSceneObjects(scene, canvasW, canvasH)
+            if (not items or #items == 0) and sceneIndex == 1 and type(data.canvasData) == "table" and type(data.canvasData.objects) == "table" then
+                local fallbackScene = {
+                    __objectsTable = data.canvasData.objects,
+                }
+                items, idToIndex, pathByAnimId, objectById = ConvertWebSceneObjects(fallbackScene, canvasW, canvasH)
+            end
             if items and #items > 0 and (type(scene.items) ~= "table" or #scene.items == 0) then
                 scene.items = items
             end
@@ -1019,6 +1140,19 @@ function Raidstrats:RequestSharedPlan(sender, planName)
     if not sender or not planName then return end
 
     local me = UnitName("player")
+    local groupEntry = self._sharedPlanGroups and self._sharedPlanGroups[planName]
+    if groupEntry and groupEntry.payload and (sender == me or (Ambiguate and Ambiguate(sender, "short") == me)) then
+        self:OpenPlannerAfterShareImport()
+        if self.ShowImportProgress then self:ShowImportProgress(true, 0, nil, "Importing shared group...") end
+        if self.ImportSharedPlanGroupPayload then
+            self:ImportSharedPlanGroupPayload(groupEntry.payload, sender)
+        else
+            if self.HideImportProgress then self:HideImportProgress() end
+            print("|cffff6666[Raidstrats.gg]|r Couldn't import the cached plan group.")
+        end
+        return
+    end
+
     local entry = self._sharedPlans and self._sharedPlans[planName]
     if entry and entry.payload and (sender == me or (Ambiguate and Ambiguate(sender, "short") == me)) then
         local ok = self:ImportPlanFromPasteString(PREFIX_PLANNER .. entry.payload)
@@ -1030,6 +1164,18 @@ function Raidstrats:RequestSharedPlan(sender, planName)
         return
     end
 
+    local isGroupShareToken = type(planName) == "string"
+        and planName:find('Group "', 1, true) == 1
+        and planName:find(" Plan", 1, true) ~= nil
+    if isGroupShareToken and self.HandleSharedPlanGroupComm then
+        self._sharedPlanGroupsIncoming = self._sharedPlanGroupsIncoming or {}
+        self._sharedPlanGroupsIncoming[planName] = { id = planName, chunks = {}, total = nil, t = GetTime(), sender = sender }
+        self:OpenPlannerAfterShareImport()
+        if self.ShowImportProgress then self:ShowImportProgress(true, 0, nil, "Requesting group...") end
+        self:SendCommMessage(COMM_PLAN_PREFIX, "GREQ" .. string.char(31) .. planName, "WHISPER", sender, "BULK")
+        print(("|cff00aaff[Raidstrats.gg]|r Requesting \"%s\" from %s..."):format(planName, Ambiguate and Ambiguate(sender, "short") or sender))
+        return
+    end
     self._incomingPlan = { owner = sender, id = planName, chunks = {}, total = nil, t = GetTime() }
     self:OpenPlannerAfterShareImport()
     if self.ShowImportProgress then self:ShowImportProgress(true, 0, nil, "Requesting plan...") end
@@ -1824,7 +1970,9 @@ function Raidstrats:PrintRsHelp()
     line("/rs plan", "- Open the raid planner")
     line("/rs import", "- Import a plan string or share link")
     line("/rs roster", "- Open the roster export window")
-    line("/rs test [id] [phase]", "- Test NSRT plan cues (broadcasts to group; optional encounter id and phase)")
+    line("/rs test [id] [phase]", "- Test NSRT plan cues locally (optional encounter id and phase)")
+    line("/rs test stop", "- Stop an active local NSRT test run")
+    line("/rsggphase <phase> [id]", "- Force a local phase callback simulation")
     line("/rs help", "- Show this list")
     print("|cff00aaff[Raidstrats.gg]|r Aliases: /rsplan, /rsimport, /raidstrats, /rsgg, /rsggtest")
 end
@@ -1867,9 +2015,22 @@ function Raidstrats:HandleRsCommand(msg)
     if cmd == "test" then
         if self.RunRsggTest then
             rest = strtrim(rest or "")
+            if rest:lower() == "stop" then
+                if self.StopRsggTest then
+                    self:StopRsggTest()
+                else
+                    print("|cffff6666[Raidstrats.gg]|r NSRT test stop is not available.")
+                end
+                return
+            end
             local encID, phase = rest:match("^(%d+)%s+(%d+)$")
-            encID = encID and tonumber(encID) or tonumber(rest)
-            phase = phase and tonumber(phase) or 1
+            if encID then
+                encID = tonumber(encID)
+                phase = tonumber(phase)
+            else
+                encID = tonumber(rest)
+                phase = nil
+            end
             self:RunRsggTest(encID, { phase = phase })
         else
             print("|cffff6666[Raidstrats.gg]|r NSRT integration is not available.")
@@ -2052,6 +2213,14 @@ function Raidstrats:OnCommReceived(p, m, d, s)
         return
     end
 
+    -- Shared plan group bundle (multiple plans in one transfer).
+    if m:sub(1, 4) == "GSHR" or m:sub(1, 4) == "GDAT" or m:sub(1, 4) == "GREQ" then
+        if self.HandleSharedPlanGroupComm then
+            self:HandleSharedPlanGroupComm(m, s)
+        end
+        return
+    end
+
     -- Group addon version check (party / raid / instance).
     if m:sub(1, 8) == "RSGGVER:" then
         if self.HandleAddonVersionComm then
@@ -2062,14 +2231,7 @@ function Raidstrats:OnCommReceived(p, m, d, s)
 
     -- Group NSRT test broadcast (/rsggtest, /rs test).
     if m:sub(1, 9) == "RSGGTEST:" then
-        local encID, phase = m:match("^RSGGTEST:(%d+):(%d+)$")
-        if encID and self.RunRsggTest then
-            self:RunRsggTest(tonumber(encID), {
-                phase = tonumber(phase) or 1,
-                fromRemote = true,
-                sender = s,
-            })
-        end
+        -- /rsggtest is local-only; ignore remote test triggers.
         return
     end
 

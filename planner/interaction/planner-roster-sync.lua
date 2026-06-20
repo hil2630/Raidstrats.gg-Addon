@@ -342,8 +342,16 @@ local ROLE_ICON_KEYS = {
 function Diar:CanAssignPlayerToItem(item)
     if not item then return false end
     if item.kind == "text" then return true end
-    if item.kind == "shape" or item.kind == "line" then return false end
+    if item.kind == "line" then return false end
+    if item.kind == "shape" then
+        local shp = tostring(item.shape or ""):lower()
+        if (shp == "circle" or shp == "ellipse") and ItemSlotIndex(item) then
+            return true
+        end
+        return false
+    end
     if item.kind ~= "icon" then return false end
+    if item.playerCircle == true then return true end
     local raw = tostring(item.icon or ""):lower()
     local key = raw:gsub("^.*/", "")
     if RAID_MARKER_KEYS[key] then return false end
@@ -621,9 +629,24 @@ function Diar:GetPlanSyncKey()
     return nil
 end
 
+function Diar:IsPlayerCircleItem(item)
+    if not item then return false end
+    if item.playerCircle == true then return true end
+    if item.kind ~= "shape" then return false end
+    local shp = tostring(item.shape or ""):lower()
+    return (shp == "circle" or shp == "ellipse") and ItemSlotIndex(item) ~= nil
+end
+
 function Diar:ApplyIconToPlanItem(item, iconKey)
     if not item or not iconKey or iconKey == "" then return end
     if item.kind == "icon" then
+        item.icon = iconKey
+        return
+    end
+    if self.IsPlayerCircleItem and self:IsPlayerCircleItem(item) then
+        item.kind = "icon"
+        item.playerCircle = true
+        item.shape = nil
         item.icon = iconKey
     end
 end
@@ -716,6 +739,29 @@ function Diar:HidePlannerContextMenu()
     end
 end
 
+function Diar:RemovePlannerItemIndex(itemIndex)
+    if not (self.CanEditPlannerItems and self:CanEditPlannerItems()) then return false end
+    local pf = self.plannerFrame
+    local data = self.plannerData
+    if not pf or not data or not data.scenes then return false end
+    local sceneIdx = pf.selectedSceneIndex or 1
+    local scene = data.scenes[sceneIdx]
+    if not scene or not scene.items then return false end
+    local item = scene.items[itemIndex]
+    if not item then return false end
+    if not ItemSlotIndex(item) then return false end
+
+    item.slotIndex = nil
+    item.embedIndex = nil
+
+    if self.RefreshPlannerScene then
+        self:RefreshPlannerScene()
+    end
+    local saved = self.PersistCurrentPlanToSaved and self:PersistCurrentPlanToSaved()
+    print(("|cff00aaff[Raidstrats.gg]|r Index removed%s."):format(saved and " and saved locally" or ""))
+    return true
+end
+
 function Diar:ShowPlannerContextMenu(anchor, itemIndex, item)
     if self:IsPlannerCompactMode() then return end
 
@@ -723,11 +769,16 @@ function Diar:ShowPlannerContextMenu(anchor, itemIndex, item)
     local canAssign = canEdit and item and self:CanAssignPlayerToItem(item) and self:IsPlanLeader()
     local canDelete = canEdit
     local canCustomLabel = canEdit and item ~= nil
-    if not canAssign and not canDelete and not canCustomLabel then return end
+    local canRemoveIndex = canEdit and item ~= nil and ItemSlotIndex(item) ~= nil
+    if not canAssign and not canDelete and not canCustomLabel and not canRemoveIndex then return end
 
     self:HidePlannerContextMenu()
 
-    local menuH = 12 + (canAssign and 30 or 0) + (canCustomLabel and 30 or 0) + (canDelete and 30 or 0)
+    local menuH = 12
+        + (canAssign and 30 or 0)
+        + (canCustomLabel and 30 or 0)
+        + (canRemoveIndex and 30 or 0)
+        + (canDelete and 30 or 0)
     local menu = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
     menu:SetSize(148, menuH)
     menu:SetFrameStrata("FULLSCREEN_DIALOG")
@@ -778,6 +829,13 @@ function Diar:ShowPlannerContextMenu(anchor, itemIndex, item)
         makeMenuBtn(labelText, y, function()
             Diar:HidePlannerContextMenu()
             Diar:PromptCustomItemLabel(itemIndex, item)
+        end)
+        y = y - 30
+    end
+    if canRemoveIndex then
+        makeMenuBtn("Remove index", y, function()
+            Diar:HidePlannerContextMenu()
+            Diar:RemovePlannerItemIndex(itemIndex)
         end)
         y = y - 30
     end

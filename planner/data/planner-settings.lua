@@ -45,6 +45,7 @@ function Diar:GetPlannerSettings()
     if s.classSpecCircleMode == nil then s.classSpecCircleMode = false end
     if s.compactPlanLibrary == nil then s.compactPlanLibrary = true end
     if s.hideRaidCheckNotifs == nil then s.hideRaidCheckNotifs = false end
+    if s.minimapHidden == nil then s.minimapHidden = false end
     if type(s.assignMineFill) ~= "table" then s.assignMineFill = nil end
     if type(s.assignOtherFill) ~= "table" then s.assignOtherFill = nil end
     if type(s.assignMineRing) ~= "table" then s.assignMineRing = nil end
@@ -273,15 +274,15 @@ end
 function Diar:ShowPlannerSettingsDialog()
     local settings = self:GetPlannerSettings()
 
-    if self.plannerSettingsDialog and not self.plannerSettingsDialog.__settingsV9 then
+    if self.plannerSettingsDialog and not self.plannerSettingsDialog.__settingsV10 then
         self.plannerSettingsDialog:Hide()
         self.plannerSettingsDialog = nil
     end
 
     if not self.plannerSettingsDialog then
         local f = CreateFrame("Frame", "RaidstratsPlannerSettingsDialog", UIParent, "BackdropTemplate")
-        f.__settingsV9 = true
-        f:SetSize(468, 668)
+        f.__settingsV10 = true
+        f:SetSize(504, 668)
         f:SetFrameStrata("FULLSCREEN_DIALOG")
         f:SetFrameLevel(500)
         f:SetPoint("CENTER")
@@ -322,33 +323,110 @@ function Diar:ShowPlannerSettingsDialog()
 
         local subtitle = header:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         subtitle:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -2)
-        subtitle:SetText("NSRT cues, display, and compact layout")
+        subtitle:SetText("Compact, display, and misc options")
         subtitle:SetTextColor(0.82, 0.86, 0.93)
 
-        local function AddSectionHeader(text, y)
-            local hdr = body:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-            hdr:SetPoint("TOPLEFT", body, "TOPLEFT", 12, y)
+        local tabBar = CreateFrame("Frame", nil, body)
+        tabBar:SetHeight(32)
+        tabBar:SetPoint("TOPLEFT", body, "TOPLEFT", 8, -10)
+        tabBar:SetPoint("TOPRIGHT", body, "TOPRIGHT", -8, -10)
+
+        local tabButtons = {}
+        local tabPages = {}
+        local activeTab = "compact"
+
+        local function StyleTabButton(btn, selected)
+            if not btn then return end
+            btn.selected = selected and true or false
+            if selected then
+                btn:SetBackdropColor(unpack(UI.ACCENT))
+                btn:SetBackdropBorderColor(unpack(UI.ACCENT))
+                if btn.label then btn.label:SetTextColor(1, 1, 1) end
+            else
+                btn:SetBackdropColor(0.08, 0.09, 0.12, 0.98)
+                btn:SetBackdropBorderColor(unpack(UI.BORDER))
+                if btn.label then btn.label:SetTextColor(0.80, 0.84, 0.90) end
+            end
+        end
+
+        local function SetActiveTab(key)
+            activeTab = key
+            for tabKey, btn in pairs(tabButtons) do
+                StyleTabButton(btn, tabKey == key)
+            end
+            for pageKey, page in pairs(tabPages) do
+                if pageKey == key then page:Show() else page:Hide() end
+            end
+            f.activeSettingsTab = key
+        end
+
+        local function CreateTabButton(anchor, labelText, key)
+            local btn = CreatePlannerIconBtn(tabBar, labelText, 108, 26)
+            if not btn then return nil end
+            if anchor then
+                btn:SetPoint("LEFT", anchor, "RIGHT", 8, 0)
+            else
+                btn:SetPoint("LEFT", tabBar, "LEFT", 0, 0)
+            end
+            btn:SetPoint("TOP", tabBar, "TOP", 0, 0)
+            btn:SetScript("OnClick", function() SetActiveTab(key) end)
+            tabButtons[key] = btn
+            return btn
+        end
+
+        local compactTabBtn = CreateTabButton(nil, "Compact", "compact")
+        local displayTabBtn = CreateTabButton(compactTabBtn, "Display", "display")
+        local miscTabBtn = CreateTabButton(displayTabBtn, "Misc", "misc")
+        f.compactTabBtn = compactTabBtn
+        f.displayTabBtn = displayTabBtn
+        f.miscTabBtn = miscTabBtn
+        f.SetActiveTab = SetActiveTab
+
+        local content = CreateFrame("Frame", nil, body, "BackdropTemplate")
+        content:SetPoint("TOPLEFT", tabBar, "BOTTOMLEFT", 0, -10)
+        content:SetPoint("TOPRIGHT", tabBar, "BOTTOMRIGHT", 0, -10)
+        content:SetPoint("BOTTOMLEFT", body, "BOTTOMLEFT", 0, 0)
+        content:SetPoint("BOTTOMRIGHT", body, "BOTTOMRIGHT", 0, 0)
+        SetBackdrop(content, { 0.035, 0.038, 0.050, 0.96 }, UI.BORDER, 1)
+
+        local function CreateTabPage(key)
+            local page = CreateFrame("Frame", nil, content)
+            page:SetPoint("TOPLEFT", content, "TOPLEFT", 0, 0)
+            page:SetPoint("TOPRIGHT", content, "TOPRIGHT", 0, 0)
+            page:SetPoint("BOTTOMLEFT", content, "BOTTOMLEFT", 0, 0)
+            page:SetPoint("BOTTOMRIGHT", content, "BOTTOMRIGHT", 0, 0)
+            tabPages[key] = page
+            return page
+        end
+
+        local compactPage = CreateTabPage("compact")
+        local displayPage = CreateTabPage("display")
+        local miscPage = CreateTabPage("misc")
+
+        local function AddSectionHeader(parent, text, y)
+            local hdr = parent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            hdr:SetPoint("TOPLEFT", parent, "TOPLEFT", 14, y)
             hdr:SetText(string.upper(text))
             hdr:SetTextColor(unpack(UI.ACCENT))
-            local line = body:CreateTexture(nil, "ARTWORK")
+            local line = parent:CreateTexture(nil, "ARTWORK")
             line:SetHeight(1)
             line:SetPoint("TOPLEFT", hdr, "BOTTOMLEFT", 0, -4)
-            line:SetPoint("TOPRIGHT", body, "TOPRIGHT", -12, y - 4)
+            line:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -14, y - 4)
             line:SetColorTexture(unpack(UI.BORDER))
             return y - 22
         end
 
-        local function AddSecondsRow(y, labelText, key)
-            local lbl = body:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-            lbl:SetPoint("TOPLEFT", body, "TOPLEFT", 14, y)
+        local function AddSecondsRow(parent, y, labelText, key)
+            local lbl = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            lbl:SetPoint("TOPLEFT", parent, "TOPLEFT", 16, y)
             lbl:SetWidth(300)
             lbl:SetJustifyH("LEFT")
             lbl:SetText(labelText)
             lbl:SetTextColor(0.82, 0.84, 0.88)
 
-            local box = CreateFrame("Frame", nil, body, "BackdropTemplate")
+            local box = CreateFrame("Frame", nil, parent, "BackdropTemplate")
             box:SetSize(74, 24)
-            box:SetPoint("TOPRIGHT", body, "TOPRIGHT", -14, y + 2)
+            box:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -16, y + 2)
             SetBackdrop(box, {0.03, 0.03, 0.05, 1}, UI.BORDER, 1)
 
             local eb = CreateFrame("EditBox", nil, box)
@@ -369,10 +447,10 @@ function Diar:ShowPlannerSettingsDialog()
             return y - 30
         end
 
-        local function AddCheckbox(y, key, text)
-            local chk = CreateAnimatedCheckbox and CreateAnimatedCheckbox(body, text)
+        local function AddCheckbox(parent, y, key, text)
+            local chk = CreateAnimatedCheckbox and CreateAnimatedCheckbox(parent, text)
             if not chk then return y - 28 end
-            chk:SetPoint("TOPLEFT", body, "TOPLEFT", 14, y)
+            chk:SetPoint("TOPLEFT", parent, "TOPLEFT", 16, y)
             if chk.label then
                 chk.label:SetFontObject("GameFontHighlightSmall")
                 chk.label:SetTextColor(0.82, 0.84, 0.88)
@@ -381,17 +459,17 @@ function Diar:ShowPlannerSettingsDialog()
             return y - 28
         end
 
-        local function AddAssignmentColorRow(y, labelText, key, defaultColor)
-            local lbl = body:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-            lbl:SetPoint("TOPLEFT", body, "TOPLEFT", 14, y)
+        local function AddAssignmentColorRow(parent, y, labelText, key, defaultColor)
+            local lbl = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            lbl:SetPoint("TOPLEFT", parent, "TOPLEFT", 16, y)
             lbl:SetWidth(300)
             lbl:SetJustifyH("LEFT")
             lbl:SetText(labelText)
             lbl:SetTextColor(0.82, 0.84, 0.88)
 
-            local btn = CreateFrame("Button", nil, body, "BackdropTemplate")
+            local btn = CreateFrame("Button", nil, parent, "BackdropTemplate")
             btn:SetSize(56, 24)
-            btn:SetPoint("TOPRIGHT", body, "TOPRIGHT", -14, y + 2)
+            btn:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -16, y + 2)
             SetBackdrop(btn, { 0.05, 0.05, 0.07, 1 }, UI.BORDER, 1)
             btn.swatch = btn:CreateTexture(nil, "ARTWORK")
             btn.swatch:SetPoint("TOPLEFT", btn, "TOPLEFT", 3, -3)
@@ -415,46 +493,40 @@ function Diar:ShowPlannerSettingsDialog()
             return v
         end
 
-        local y = -18
-        y = AddSectionHeader("NSRT timing", y)
-        y = AddSecondsRow(y, "Show plan before cue", "beforeEdit")
-        y = AddSecondsRow(y, "Keep plan visible after cue", "afterEdit")
-
-        y = y - 8
-        y = AddSectionHeader("Display", y)
-        y = AddCheckbox(y, "highlightChk", "Highlight my name on the plan")
-        y = AddCheckbox(y, "compactBgChk", "Show background in compact view")
-        y = AddCheckbox(y, "classSpecCircleChk", "Render class/spec icons as circles")
-        y = AddCheckbox(y, "compactSceneArrowsChk", "Arrows in compact mode")
-        y = AddCheckbox(y, "compactZoomAssignChk", "Zoom to my assignment in compact mode")
+        local compactY = -18
+        compactY = AddSectionHeader(compactPage, "Compact view", compactY)
+        compactY = AddCheckbox(compactPage, compactY, "compactBgChk", "Show background in compact view")
+        compactY = AddCheckbox(compactPage, compactY, "compactSceneArrowsChk", "Show scene arrows in compact view")
+        compactY = AddCheckbox(compactPage, compactY, "compactZoomAssignChk", "Zoom to my assignment in compact mode")
         do
-            -- Keep zoom controls directly under the zoom-toggle option.
-            local rowY = y
-            local zoomLabel = body:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-            zoomLabel:SetPoint("TOPLEFT", body, "TOPLEFT", 34, rowY)
+            local rowY = compactY
+            local zoomLabel = compactPage:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            zoomLabel:SetPoint("TOPLEFT", compactPage, "TOPLEFT", 36, rowY)
             zoomLabel:SetWidth(180)
             zoomLabel:SetJustifyH("LEFT")
             zoomLabel:SetText("Zoom level")
             zoomLabel:SetTextColor(0.72, 0.75, 0.80)
             f.compactAssignZoomLabel = zoomLabel
 
-            local previewZoomBtn = CreatePlannerIconBtn(body, "Preview zoom", 118, 24)
-            previewZoomBtn:SetPoint("TOPRIGHT", body, "TOPRIGHT", -14, rowY + 2)
+            local previewZoomBtn = CreatePlannerIconBtn(compactPage, "Preview zoom", 118, 24)
+            previewZoomBtn:SetPoint("TOPRIGHT", compactPage, "TOPRIGHT", -16, rowY + 2)
             previewZoomBtn:SetScript("OnClick", function()
-                if Diar.PreviewCompactAssignmentZoomFromSettings then
+                if Diar._compactZoomPreviewState and Diar.EndCompactAssignmentZoomPreviewFromSettings then
+                    Diar:EndCompactAssignmentZoomPreviewFromSettings()
+                elseif Diar.PreviewCompactAssignmentZoomFromSettings then
                     Diar:PreviewCompactAssignmentZoomFromSettings(f)
                 end
             end)
             f.compactZoomPreviewBtn = previewZoomBtn
 
-            local plusBtn = CreatePlannerIconBtn(body, "+", 24, 24)
+            local plusBtn = CreatePlannerIconBtn(compactPage, "+", 24, 24)
             plusBtn:SetPoint("RIGHT", previewZoomBtn, "LEFT", -12, 0)
-            local zoomValue = body:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            local zoomValue = compactPage:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
             zoomValue:SetPoint("RIGHT", plusBtn, "LEFT", -10, 0)
             zoomValue:SetWidth(56)
             zoomValue:SetJustifyH("CENTER")
             zoomValue:SetTextColor(0.92, 0.92, 0.96)
-            local minusBtn = CreatePlannerIconBtn(body, "-", 24, 24)
+            local minusBtn = CreatePlannerIconBtn(compactPage, "-", 24, 24)
             minusBtn:SetPoint("RIGHT", zoomValue, "LEFT", -10, 0)
             f.compactAssignZoomValue = zoomValue
 
@@ -479,38 +551,26 @@ function Diar:ShowPlannerSettingsDialog()
             f.compactAssignZoomMinusBtn = minusBtn
             f.compactAssignZoomPlusBtn = plusBtn
             f.RefreshAssignZoomValue = RefreshAssignZoomValue
-            y = y - 30
+            compactY = compactY - 30
         end
-        y = AddCheckbox(y, "compactLibraryChk", "Compact plan library")
-        y = AddCheckbox(y, "nsrtPopupChk", "Hide plan popups (even if assigned)")
-        y = AddCheckbox(y, "raidCheckNotifChk", "Hide raidcheck notifications from raid leader")
-        y = AddCheckbox(y, "plannerDebugChk", "Show planner debug panel")
+        compactY = AddCheckbox(compactPage, compactY, "compactLibraryChk", "Use compact plan library")
 
-        y = y - 8
-        y = AddSectionHeader("Assignment colors", y)
-        y = AddAssignmentColorRow(y, "My assignment spot", "assignMineColorBtn", DEFAULT_ASSIGN_MINE_FILL)
-        y = AddAssignmentColorRow(y, "Other assignment spots", "assignOtherColorBtn", DEFAULT_ASSIGN_OTHER_FILL)
+        compactY = compactY - 8
+        compactY = AddSectionHeader(compactPage, "Compact position", compactY)
 
-        y = y - 8
-        y = AddSectionHeader("Compact position", y)
-
-        local compactStatus = body:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        compactStatus:SetPoint("TOPLEFT", body, "TOPLEFT", 14, y)
+        local compactStatus = compactPage:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        compactStatus:SetPoint("TOPLEFT", compactPage, "TOPLEFT", 16, compactY)
         compactStatus:SetWidth(290)
         compactStatus:SetJustifyH("LEFT")
         compactStatus:SetTextColor(0.67, 0.70, 0.75)
         f.compactPosStatus = compactStatus
 
-        local previewBtn = CreatePlannerIconBtn(body, "Preview & Set", 148, 30)
-        previewBtn:SetPoint("TOPRIGHT", body, "TOPRIGHT", -14, y - 2)
+        local previewBtn = CreatePlannerIconBtn(compactPage, "Preview & Set", 148, 30)
+        previewBtn:SetPoint("TOPRIGHT", compactPage, "TOPRIGHT", -16, compactY - 2)
         SetPrimaryButtonStyle(previewBtn)
         previewBtn:SetScript("OnClick", function()
-            -- Apply current Display controls immediately so Preview reflects
-            -- what the user currently selected, even before Save.
             local s = Diar:GetPlannerSettings()
-            s.highlightMyName = CheckboxIsChecked(f.highlightChk)
             s.compactShowBackground = CheckboxIsChecked(f.compactBgChk)
-            s.classSpecCircleMode = CheckboxIsChecked(f.classSpecCircleChk)
             s.compactSceneArrows = CheckboxIsChecked(f.compactSceneArrowsChk)
             s.compactZoomToAssignment = CheckboxIsChecked(f.compactZoomAssignChk)
             s.compactAssignZoom = ClampAssignZoom(f.compactAssignZoom)
@@ -520,6 +580,28 @@ function Diar:ShowPlannerSettingsDialog()
             end
         end)
         f.compactPreviewBtn = previewBtn
+
+        local displayY = -18
+        displayY = AddSectionHeader(displayPage, "Plan display", displayY)
+        displayY = AddCheckbox(displayPage, displayY, "highlightChk", "Highlight my name on the plan")
+        displayY = AddCheckbox(displayPage, displayY, "classSpecCircleChk", "Render class/spec icons as circles")
+
+        displayY = displayY - 8
+        displayY = AddSectionHeader(displayPage, "Assignment colors", displayY)
+        displayY = AddAssignmentColorRow(displayPage, displayY, "My assignment spot", "assignMineColorBtn", DEFAULT_ASSIGN_MINE_FILL)
+        displayY = AddAssignmentColorRow(displayPage, displayY, "Other assignment spots", "assignOtherColorBtn", DEFAULT_ASSIGN_OTHER_FILL)
+
+        local miscY = -18
+        miscY = AddSectionHeader(miscPage, "NSRT timing", miscY)
+        miscY = AddSecondsRow(miscPage, miscY, "Show plan before cue", "beforeEdit")
+        miscY = AddSecondsRow(miscPage, miscY, "Keep plan visible after cue", "afterEdit")
+
+        miscY = miscY - 8
+        miscY = AddSectionHeader(miscPage, "Notifications and tools", miscY)
+        miscY = AddCheckbox(miscPage, miscY, "hideMinimapIconChk", "Hide minimap icon")
+        miscY = AddCheckbox(miscPage, miscY, "nsrtPopupChk", "Hide plan popups (even if assigned)")
+        miscY = AddCheckbox(miscPage, miscY, "raidCheckNotifChk", "Hide raidcheck notifications from raid leader")
+        miscY = AddCheckbox(miscPage, miscY, "plannerDebugChk", "Show planner debug panel")
 
         local btnRow = CreateFrame("Frame", nil, f)
         btnRow:SetHeight(30)
@@ -556,6 +638,7 @@ function Diar:ShowPlannerSettingsDialog()
             s.compactZoomToAssignment = CheckboxIsChecked(f.compactZoomAssignChk)
             s.compactAssignZoom = ClampAssignZoom(f.compactAssignZoom)
             s.compactPlanLibrary = CheckboxIsChecked(f.compactLibraryChk)
+            s.minimapHidden = CheckboxIsChecked(f.hideMinimapIconChk)
             s.hideNsrtPlan = CheckboxIsChecked(f.nsrtPopupChk)
             s.hideRaidCheckNotifs = CheckboxIsChecked(f.raidCheckNotifChk)
             s.debugMode = CheckboxIsChecked(f.plannerDebugChk)
@@ -600,6 +683,9 @@ function Diar:ShowPlannerSettingsDialog()
             if Diar.UpdatePushUpdateButton then
                 Diar:UpdatePushUpdateButton()
             end
+            if Diar.InitMinimapButton then
+                Diar:InitMinimapButton()
+            end
             if s.debugMode and Diar.AppendPlannerDebugLine then
                 Diar:AppendPlannerDebugLine("Planner debug mode enabled")
             end
@@ -613,6 +699,8 @@ function Diar:ShowPlannerSettingsDialog()
                 end
             end)
         end
+
+        SetActiveTab("compact")
 
         self.plannerSettingsDialog = f
     end
@@ -639,6 +727,9 @@ function Diar:ShowPlannerSettingsDialog()
     end
     if dlg.compactLibraryChk then
         dlg.compactLibraryChk:SetChecked(self:IsCompactPlanLibraryEnabled())
+    end
+    if dlg.hideMinimapIconChk then
+        dlg.hideMinimapIconChk:SetChecked(settings.minimapHidden == true or settings.minimapHidden == 1)
     end
     dlg.nsrtPopupChk:SetChecked(settings.hideNsrtPlan == true or settings.hideNsrtPlan == 1)
     if dlg.raidCheckNotifChk then
@@ -671,6 +762,9 @@ function Diar:ShowPlannerSettingsDialog()
     dlg:SetFrameStrata("FULLSCREEN_DIALOG")
     dlg:SetFrameLevel((anchor and anchor:GetFrameLevel() or 0) + 100)
     dlg:Raise()
+    if dlg.SetActiveTab then
+        dlg.SetActiveTab(dlg.activeSettingsTab or "compact")
+    end
     dlg:Show()
 end
 

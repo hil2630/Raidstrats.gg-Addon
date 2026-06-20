@@ -24,6 +24,7 @@ local RAID_SORT_ORDER = {
     "March on Quel'Danas",
     "Sporefall",
     "Manaforge Omega",
+    "The Venomous Abyss (WIP)",
     "Liberation of Undermine",
     "Nerub-ar Palace",
     "Other",
@@ -70,7 +71,18 @@ local ARENAS = {
     { key = "midnight_falls_phase3_soaks", label = "Midnight Falls (Phase 3 Soaks)", raid = "March on Quel'Danas", boss = "Midnight Falls", expansion = "Midnight" },
     { key = "vaelgor_ezzorak", label = "Vaelgor & Ezzorak", raid = "The Voidspire", boss = "Vaelgor & Ezzorak", expansion = "Midnight" },
     { key = "cosmos", label = "Crown of the Cosmos", raid = "The Voidspire", boss = "Crown of the Cosmos", expansion = "Midnight" },
-    { key = "rotmire_arena", label = "Rotmire", raid = "Sporefall", boss = "Rotmire", expansion = "Midnight" }
+    { key = "rotmire_arena", label = "Rotmire", raid = "Sporefall", boss = "Rotmire", expansion = "Midnight" },
+
+    -- The Venomous Abyss (WIP)
+    -- No dedicated background images yet; keep these selectable anyway.
+    { key = "tva_nekzali_the_soulcoiler_wip", label = "Nek'zali the Soulcoiler (WIP)", raid = "The Venomous Abyss (WIP)", boss = "Nek'zali the Soulcoiler", expansion = "The War Within", alwaysAvailable = true },
+    { key = "tva_entombed_sentinels_wip", label = "Entombed Sentinels (WIP)", raid = "The Venomous Abyss (WIP)", boss = "Entombed Sentinels", expansion = "The War Within", alwaysAvailable = true },
+    { key = "tva_vashnik_the_malignant_wip", label = "Vashnik the Malignant (WIP)", raid = "The Venomous Abyss (WIP)", boss = "Vashnik the Malignant", expansion = "The War Within", alwaysAvailable = true },
+    { key = "tva_the_lost_explorers_wip", label = "The Lost Explorers (WIP)", raid = "The Venomous Abyss (WIP)", boss = "The Lost Explorers", expansion = "The War Within", alwaysAvailable = true },
+    { key = "tva_sszorak_wip", label = "Sszorak (WIP)", raid = "The Venomous Abyss (WIP)", boss = "Sszorak", expansion = "The War Within", alwaysAvailable = true },
+    { key = "tva_the_twin_fangs_wip", label = "The Twin Fangs (WIP)", raid = "The Venomous Abyss (WIP)", boss = "The Twin Fangs", expansion = "The War Within", alwaysAvailable = true },
+    { key = "tva_the_bargained_crown_wip", label = "The Bargained Crown (WIP)", raid = "The Venomous Abyss (WIP)", boss = "The Bargained Crown", expansion = "The War Within", alwaysAvailable = true },
+    { key = "tva_ula_tek_wip", label = "Ula'tek (WIP)", raid = "The Venomous Abyss (WIP)", boss = "Ula'tek", expansion = "The War Within", alwaysAvailable = true },
 }
 
 local function GetBackgroundLookupKeys(bgKey)
@@ -122,7 +134,7 @@ end
 local function GetAvailableArenas()
     local out = {}
     for _, arena in ipairs(ARENAS) do
-        if ArenaBackgroundExists(arena.key) then
+        if arena.alwaysAvailable or ArenaBackgroundExists(arena.key) then
             out[#out + 1] = arena
         end
     end

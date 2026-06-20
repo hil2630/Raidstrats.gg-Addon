@@ -263,6 +263,51 @@ local function CueContainsPlayer(cue, groups)
     return false
 end
 
+local function NormalizePlanRefForCompare(ref)
+    if type(ref) ~= "string" then return nil end
+    local raw = strtrim(ref)
+    if raw == "" then return nil end
+    local view = raw:match("[?&]view=([^&#]+)")
+    if view and view ~= "" then raw = view end
+    local idOnly = raw:match("^([^/]+)/%d+$")
+    if idOnly and idOnly ~= "" then raw = idOnly end
+    raw = strtrim(raw)
+    if raw == "" then return nil end
+    return strlower(raw)
+end
+
+local function CueMatchesCurrentPlannerPlan(addon, cue)
+    if type(cue) ~= "table" then return false end
+    local token = cue.planToken or cue.planName
+    if type(token) ~= "string" or strtrim(token) == "" then
+        -- Legacy cues without explicit plan token apply to current plan.
+        return true
+    end
+
+    local plan = addon and addon.plannerData
+    local currentPlanId = NormalizePlanRefForCompare(plan and plan.planId)
+    local currentPlanName = (plan and type(plan.planName) == "string") and strlower(strtrim(plan.planName)) or nil
+    local tokenKey = strlower(strtrim(token))
+
+    local binds = addon and addon.rsggPlanBinds
+    local boundRef = (type(binds) == "table") and binds[tokenKey] or nil
+    local cuePlanId = NormalizePlanRefForCompare(boundRef)
+
+    if cuePlanId and currentPlanId then
+        return cuePlanId == currentPlanId
+    end
+    if cuePlanId and not currentPlanId then
+        -- No planId on currently loaded plan: cannot disambiguate bound refs safely.
+        return true
+    end
+
+    -- No bind for token: use legacy plan-name matching when available.
+    if currentPlanName and currentPlanName ~= "" then
+        return tokenKey == currentPlanName
+    end
+    return true
+end
+
 function Diar:GetPlannerSceneAssignmentOptions(sceneIndex)
     sceneIndex = tonumber(sceneIndex) or 1
     local options = {}
@@ -274,7 +319,9 @@ function Diar:GetPlannerSceneAssignmentOptions(sceneIndex)
             for phaseNum, phaseCues in pairs(byPhase) do
                 if type(phaseCues) == "table" then
                     for _, cue in ipairs(phaseCues) do
-                        if cue.sceneIndex == sceneIndex and CueContainsPlayer(cue, self.rsggGroups) then
+                        if cue.sceneIndex == sceneIndex
+                            and CueMatchesCurrentPlannerPlan(self, cue)
+                            and CueContainsPlayer(cue, self.rsggGroups) then
                             options[#options + 1] = {
                                 tag = cue.tag,
                                 tagNames = cue.tagNames,
@@ -451,7 +498,7 @@ function Diar:FindNsrtAssignmentForScene(sceneIndex)
                 for _, phaseCues in pairs(byPhase) do
                     if type(phaseCues) == "table" then
                         for _, cue in ipairs(phaseCues) do
-                            if cue.sceneIndex == sceneIndex then
+                            if cue.sceneIndex == sceneIndex and CueMatchesCurrentPlannerPlan(self, cue) then
                                 matchCount = matchCount + 1
                                 if shouldChoose(cue) then
                                     chosenLineNo = tonumber(cue.sourceLineNo) or 0

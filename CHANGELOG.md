@@ -1,15 +1,46 @@
 # Changelog
 
+## [Alpha v0.0.40] Fixes to backgrounds, importing circle-modes, assignments, debugging and more.
+
+- Upped version to 12.0.7.
+
+- Fixed an issue where imported raidplans with circle mode enabled didn't render correctly
+- Fixed an issue where the midnight falls background didn't work correctly due to spelling mistake :(
+- Fixed an issue where multi-plan assignments would show your assignment twice on multiple scenes, even if you don't have multiple assigns.
+
+- Updated the rsggtest debug to only be local to you and stop it via /rsggtest stop
+- With this update it also works for all phases and not only a specific phase, unless phase specified (e.g. /rsggtest 3183 2 to test phase 2 of Lura note)
+
+- Added a new settings interface
+- Added a way to hide the minimap icon from Settings -> Misc tab
+- Added a way to remove indexes from objects in the plan in the right-click menu on objects.
+- Added grouping to the plan library, so you can now right click a plan -> Group and then drag and drop other plans into thegroup. You can also select multiple plans by holding down Shift + click and rightclicking -> Group.
+- Added a way to share entire groups with your team, this should make it easier for Raidleads to import all plans -> Group -> Share entire group instead of single plans. To share a group simply rightclick the group name -> Share to group. A link will be sent in the chat they can click, just like with a normal plan share.
+
+_WIP Added The Venomus Abyss Boss names in the plan creater, backgrounds coming very soon._
+
 ## [Alpha v0.0.39] Multi-plan assignments, changes to preview & set compact modes, and more.
 
 - Fixed an issue where imported arrows would all point in the same direction
 - Fixed an issue where the preview & set would not correctly show the settings set on the comapct mode (e.g. hide bg, etc. )
+- Fixed an issue where cones could not properly be moved.
+- Fixed an issue where text would sometimes have an index.
+- If they do, the index will be removed on import.
+- Fixed an issue where some objects would be grey even if they had no indexes
+- We recolor objects to grey (default) if they have assignments to differentiate between your assignment and others.
 
 - Added a way to use multiple plans for 1 assignment.
   Note: Each plan now have a unique key based on their UUID of the raidplan from raidstrats.gg. The NSRT Export will automatically fillout this and use this (WIP)
+  In the NSRT Export function on the website, you can now add multiple plans together, simply open up the plans you need to work on and add them in there with aliasses, e.g.:
+  Plan A and Plan B. You do whaatevre you need on Plan A and then you open the NSRT Export and define an Alias, in this case we'll call it A.
+  Plan B you open in a new tab and do your assignments in there, open NSRT Exporter, you should now see Plan A already in there, no simply call this one plan B.
+  All info is automatically added to the note.
+
+  Note that you MUST import both plans for this to work!
 
 - Updated the Preivew & Set/compact to allow a bigger size as well as info-header that it's only for NSRT Triggered plans.
 - Updated the Import Plan input box to now have clear feedback that it's selected.
+- Updated the default cue timers in settings to be 0.
 
 ## [Alpha v0.0.38] Scrubbing in the timeline, frontal animations available and more
 
