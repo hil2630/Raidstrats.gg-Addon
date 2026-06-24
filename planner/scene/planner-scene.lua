@@ -213,6 +213,7 @@ function Diar:SelectPlannerScene(sceneIndex)
         return false
     end
     pf.selectedSceneIndex = idx
+    pf.__debugSceneReason = "select"
     pf.__viewerViewportSceneIdx = nil
     if not pf.nsrtSceneActive then
         self:ApplyNsrtAssignmentForPlannerView(idx)
@@ -242,6 +243,10 @@ end
 
 function Diar:SavePlannerFramePosition(pf)
     if not pf or pf.compactPreviewActive then return end
+    -- Ready-check compact view should never persist drag position.
+    -- It always reuses the existing NSRT compact anchor (or compact fallback)
+    -- so accidental moves during ready-check do not override saved layout.
+    if pf.readyCheckActive then return end
     if pf.__suspendPositionSave then return end
     local point, _, relPoint, x, y = pf:GetPoint(1)
     if not point then return end
@@ -553,7 +558,18 @@ end
 
 function Diar:IsPlannerPreviewNamesVisible()
     local pf = self.plannerFrame
-    return pf and pf.previewNamesVisible == true
+    if not pf then return true end
+    -- User toggles apply only in the normal expanded planner view.
+    if pf.nsrtSceneActive or pf.compactMode then return true end
+    return pf.previewNamesVisible == true
+end
+
+function Diar:IsPlannerAssignmentsVisible()
+    local pf = self.plannerFrame
+    if not pf then return true end
+    -- User toggles apply only in the normal expanded planner view.
+    if pf.nsrtSceneActive or pf.compactMode then return true end
+    return pf.hideAssignments ~= true
 end
 
 function Diar:UpdatePreviewNamesButton(pf)
@@ -570,7 +586,35 @@ function Diar:UpdatePreviewNamesButton(pf)
         btn:SetBackdropColor(unpack(UI.ROW))
         btn.label:SetTextColor(0.92, 0.92, 0.92)
     end
-    if pf.compactMode then
+    if pf.compactMode or pf.nsrtSceneActive then
+        btn:Hide()
+    else
+        btn:Show()
+    end
+end
+
+function Diar:UpdatePreviewAssignmentsButton(pf)
+    pf = pf or self.plannerFrame
+    local btn = pf and pf.previewAssignmentsBtn
+    if not btn or not pf.canvas then return end
+    btn:ClearAllPoints()
+    if pf.previewNamesBtn and pf.previewNamesBtn:IsShown() then
+        btn:SetPoint("TOPRIGHT", pf.previewNamesBtn, "BOTTOMRIGHT", 0, -4)
+    else
+        btn:SetPoint("TOPRIGHT", pf.canvas, "TOPRIGHT", -6, -32)
+    end
+    btn:SetFrameLevel((pf.canvas:GetFrameLevel() or pf:GetFrameLevel()) + 6)
+    local on = self:IsPlannerAssignmentsVisible()
+    SetPlannerBtnText(btn, on and "Hide assignments" or "Show assignments")
+    btn.selected = on
+    if on then
+        btn:SetBackdropColor(0.18, 0.38, 0.72, 1)
+        btn.label:SetTextColor(1, 1, 1)
+    else
+        btn:SetBackdropColor(unpack(UI.ROW))
+        btn.label:SetTextColor(0.92, 0.92, 0.92)
+    end
+    if pf.compactMode or pf.nsrtSceneActive then
         btn:Hide()
     else
         btn:Show()
@@ -582,6 +626,15 @@ function Diar:TogglePlannerPreviewNames()
     if not pf then return end
     pf.previewNamesVisible = not pf.previewNamesVisible
     self:UpdatePreviewNamesButton(pf)
+    if self.RefreshPlannerScene then self:RefreshPlannerScene() end
+end
+
+function Diar:TogglePlannerPreviewAssignments()
+    local pf = self.plannerFrame
+    if not pf then return end
+    pf.hideAssignments = not pf.hideAssignments
+    self:UpdatePreviewAssignmentsButton(pf)
+    self:UpdatePlannerAssignmentButton(pf)
     if self.RefreshPlannerScene then self:RefreshPlannerScene() end
 end
 
@@ -603,6 +656,30 @@ function Diar:EnsurePreviewNamesButton(pf)
     btn:SetPoint("TOPRIGHT", pf.canvas, "TOPRIGHT", -6, -6)
     btn:SetFrameLevel((pf.canvas:GetFrameLevel() or pf:GetFrameLevel()) + 6)
     self:UpdatePreviewNamesButton(pf)
+end
+
+function Diar:EnsurePreviewAssignmentsButton(pf)
+    if not pf or not pf.canvas then return end
+    local btn = pf.previewAssignmentsBtn
+    if not btn then
+        -- Parent to frame (not canvas) so scene refresh doesn't recycle/hide it.
+        btn = CreatePlannerIconBtn(pf, "Hide assignments", 124, 22)
+        btn:SetScript("OnClick", function()
+            Diar:TogglePlannerPreviewAssignments()
+        end)
+        pf.previewAssignmentsBtn = btn
+    end
+    if btn:GetParent() ~= pf then
+        btn:SetParent(pf)
+    end
+    btn:ClearAllPoints()
+    if pf.previewNamesBtn and pf.previewNamesBtn:IsShown() then
+        btn:SetPoint("TOPRIGHT", pf.previewNamesBtn, "BOTTOMRIGHT", 0, -4)
+    else
+        btn:SetPoint("TOPRIGHT", pf.canvas, "TOPRIGHT", -6, -32)
+    end
+    btn:SetFrameLevel((pf.canvas:GetFrameLevel() or pf:GetFrameLevel()) + 6)
+    self:UpdatePreviewAssignmentsButton(pf)
 end
 
 function Diar:UpdatePlannerAssignmentButton(pf)
@@ -628,7 +705,9 @@ function Diar:UpdatePlannerAssignmentButton(pf)
     SetPlannerBtnText(btn, ("Assignment: %d"):format(tonumber(selectedIndex) or 1))
     btn:Show()
     btn:ClearAllPoints()
-    if pf.previewNamesBtn and pf.previewNamesBtn:IsShown() then
+    if pf.previewAssignmentsBtn and pf.previewAssignmentsBtn:IsShown() then
+        btn:SetPoint("TOPRIGHT", pf.previewAssignmentsBtn, "BOTTOMRIGHT", 0, -4)
+    elseif pf.previewNamesBtn and pf.previewNamesBtn:IsShown() then
         btn:SetPoint("TOPRIGHT", pf.previewNamesBtn, "BOTTOMRIGHT", 0, -4)
     else
         btn:SetPoint("TOPRIGHT", pf.canvas, "TOPRIGHT", -6, -32)
@@ -879,6 +958,7 @@ function Diar:PositionPlannerControlsBar(pf)
         if pf.paletteToggleBtn then pf.paletteToggleBtn:Hide() end
         if pf.canvasLockBtn then pf.canvasLockBtn:Hide() end
         if pf.previewNamesBtn then pf.previewNamesBtn:Hide() end
+        if pf.previewAssignmentsBtn then pf.previewAssignmentsBtn:Hide() end
         if pf.assignmentBtn then pf.assignmentBtn:Hide() end
         return
     end
@@ -930,6 +1010,7 @@ function Diar:PositionPlannerControlsBar(pf)
         end
     end
     self:UpdatePreviewNamesButton(pf)
+    self:UpdatePreviewAssignmentsButton(pf)
     self:UpdatePlannerAssignmentButton(pf)
 end
 
@@ -2023,7 +2104,11 @@ local function SetCompactControlButtonsVisible(pf, visible)
         if visible then pf.closeBtn:Show() else pf.closeBtn:Hide() end
     end
     if pf.modeToggleBtn then
-        if visible then pf.modeToggleBtn:Show() else pf.modeToggleBtn:Hide() end
+        if pf.readyCheckActive then
+            pf.modeToggleBtn:Hide()
+        else
+            if visible then pf.modeToggleBtn:Show() else pf.modeToggleBtn:Hide() end
+        end
     end
 end
 
@@ -2096,6 +2181,112 @@ function Diar:UpdateCompactSceneArrowButtons(pf)
     local idx = pf.selectedSceneIndex or 1
     SetCompactSceneArrowButtonState(prevBtn, idx > 1)
     SetCompactSceneArrowButtonState(nextBtn, idx < sceneCount)
+end
+
+local function EnsureReadyCheckAssignmentArrowButtons(pf)
+    if not pf then return end
+    if not pf.readyCheckAssignPrevBtn then
+        local prevBtn = CreatePlannerIconBtn(pf, "<", 28, 34)
+        prevBtn:SetScript("OnClick", function()
+            if Diar.StepReadyCheckAssignment then
+                Diar:StepReadyCheckAssignment(-1)
+            end
+        end)
+        if prevBtn.SetTooltip then
+            prevBtn:SetTooltip("Previous assignment")
+        end
+        pf.readyCheckAssignPrevBtn = prevBtn
+    end
+    if not pf.readyCheckAssignNextBtn then
+        local nextBtn = CreatePlannerIconBtn(pf, ">", 28, 34)
+        nextBtn:SetScript("OnClick", function()
+            if Diar.StepReadyCheckAssignment then
+                Diar:StepReadyCheckAssignment(1)
+            end
+        end)
+        if nextBtn.SetTooltip then
+            nextBtn:SetTooltip("Next assignment")
+        end
+        pf.readyCheckAssignNextBtn = nextBtn
+    end
+    if not pf.readyCheckAssignLabel then
+        local owner = pf.canvas or pf
+        local lbl = owner:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        if lbl.SetFont then
+            local fontName = STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF"
+            lbl:SetFont(fontName, 28, "OUTLINE")
+        end
+        lbl:SetTextColor(0.88, 0.90, 0.94)
+        lbl:SetJustifyH("CENTER")
+        if lbl.SetShadowColor then
+            lbl:SetShadowColor(0, 0, 0, 0.85)
+        end
+        if lbl.SetShadowOffset then
+            lbl:SetShadowOffset(1, -1)
+        end
+        if lbl.SetDrawLayer then
+            lbl:SetDrawLayer("OVERLAY", 7)
+        end
+        pf.readyCheckAssignLabel = lbl
+    end
+end
+
+function Diar:UpdateReadyCheckAssignmentArrows(pf)
+    pf = pf or self.plannerFrame
+    if not pf then return end
+    local list = self.readyCheckAssignments
+    local total = (type(list) == "table") and #list or 0
+    local show = pf.readyCheckActive == true
+        and pf.nsrtSceneActive
+        and pf.compactMode
+        and pf:IsShown()
+        and total > 0
+    if not show then
+        if pf.readyCheckAssignPrevBtn then pf.readyCheckAssignPrevBtn:Hide() end
+        if pf.readyCheckAssignNextBtn then pf.readyCheckAssignNextBtn:Hide() end
+        if pf.readyCheckAssignLabel then pf.readyCheckAssignLabel:Hide() end
+        return
+    end
+
+    EnsureReadyCheckAssignmentArrowButtons(pf)
+    local idx = tonumber(self.readyCheckAssignmentIndex) or 1
+    idx = math.max(1, math.min(total, math.floor(idx + 0.0001)))
+    local entry = (total > 0) and list[idx] or nil
+    local phaseText = entry and tostring(entry.phase or "?") or "?"
+
+    if pf.readyCheckAssignLabel then
+        local anchor = (pf.canvas and pf.canvas:IsShown() and pf.canvas) or pf
+        if pf.readyCheckAssignLabel.SetParent and pf.readyCheckAssignLabel:GetParent() ~= anchor then
+            pf.readyCheckAssignLabel:SetParent(anchor)
+        end
+        pf.readyCheckAssignLabel:SetText(("Assignment %d / %d - Phase %s"):format(idx, total, phaseText))
+        pf.readyCheckAssignLabel:ClearAllPoints()
+        pf.readyCheckAssignLabel:SetPoint("TOP", anchor, "TOP", 0, -6)
+        if pf.readyCheckAssignLabel.SetDrawLayer then
+            pf.readyCheckAssignLabel:SetDrawLayer("OVERLAY", 7)
+        end
+        pf.readyCheckAssignLabel:Show()
+    end
+
+    local prevBtn = pf.readyCheckAssignPrevBtn
+    local nextBtn = pf.readyCheckAssignNextBtn
+    if total > 1 then
+        prevBtn:ClearAllPoints()
+        nextBtn:ClearAllPoints()
+        prevBtn:SetPoint("LEFT", pf, "LEFT", 6, 0)
+        nextBtn:SetPoint("RIGHT", pf, "RIGHT", -6, 0)
+        prevBtn:SetFrameStrata(pf:GetFrameStrata())
+        nextBtn:SetFrameStrata(pf:GetFrameStrata())
+        prevBtn:SetFrameLevel((pf:GetFrameLevel() or 0) + 25)
+        nextBtn:SetFrameLevel((pf:GetFrameLevel() or 0) + 25)
+        SetCompactSceneArrowButtonState(prevBtn, true)
+        SetCompactSceneArrowButtonState(nextBtn, true)
+        prevBtn:Show()
+        nextBtn:Show()
+    else
+        prevBtn:Hide()
+        nextBtn:Hide()
+    end
 end
 
 local function IsMouseOverPlannerCompactChrome(pf)
@@ -2185,8 +2376,13 @@ local function UpdatePlannerModeToggleBtn(pf)
             anchor = pf.compactTopBar
         end
         pf.closeBtn:SetPoint("TOPRIGHT", anchor, "TOPRIGHT", -2, -2)
-        pf.modeToggleBtn:SetPoint("TOPRIGHT", pf.closeBtn, "TOPLEFT", -2, 0)
-        SetPlannerBtnText(pf.modeToggleBtn, "Expand")
+        if pf.readyCheckActive then
+            pf.modeToggleBtn:Hide()
+        else
+            pf.modeToggleBtn:SetPoint("TOPRIGHT", pf.closeBtn, "TOPLEFT", -2, 0)
+            SetPlannerBtnText(pf.modeToggleBtn, "Expand")
+            pf.modeToggleBtn:Show()
+        end
         BindCompactChromeHover(pf)
         RefreshCompactChromeHoverHooks(pf)
         if pf.closeBtn and pf.modeToggleBtn then
@@ -4035,6 +4231,12 @@ end
 function Diar:SanitizePlanData(data)
     if not data or type(data.scenes) ~= "table" then return data end
     for _, scene in ipairs(data.scenes) do
+        -- Imported payloads can carry stale scene viewport snapshots (scene.view /
+        -- scene.viewportState). Those may apply a zoom only on later scenes, making
+        -- identical geometry look much larger. Normalize imported scenes to default
+        -- viewport and let runtime user interactions set viewport state afterwards.
+        scene.view = nil
+        scene.viewportState = nil
         if scene.items then
             for _, item in ipairs(scene.items) do
                 if type(item) == "table" then
@@ -4398,6 +4600,74 @@ function Diar:DebugLogCurrentSceneAssignment(reason)
     )
 end
 
+function Diar:DebugLogSceneRingSizes(reason, scene, sceneIndex, cw, ch, vc)
+    if not (self.GetPlannerSettings and self:GetPlannerSettings().debugMode == true) then return end
+    if not self.AppendPlannerDebugLine then return end
+    if type(scene) ~= "table" or type(scene.items) ~= "table" then return end
+    cw = tonumber(cw) or PLANNER_CANVAS_W
+    ch = tonumber(ch) or PLANNER_CANVAS_H
+    local zoom = (vc and tonumber(vc.zoom)) or 1
+    local panX = (vc and tonumber(vc.panX)) or 0
+    local panY = (vc and tonumber(vc.panY)) or 0
+    self:AppendPlannerDebugLine(
+        ("SceneRingSizes reason=%s scene=%s items=%d canvas=%dx%d zoom=%.3f pan=%.1f,%.1f"):format(
+            tostring(reason or "-"),
+            tostring(sceneIndex or "-"),
+            #scene.items,
+            math.floor(cw + 0.5),
+            math.floor(ch + 0.5),
+            zoom,
+            panX,
+            panY
+        )
+    )
+
+    local logged = 0
+    for i, item in ipairs(scene.items) do
+        if type(item) == "table" then
+            local k = tostring(item.kind or ""):lower()
+            local shp = tostring(item.shape or ""):lower()
+            local isShapeCircle = (k == "shape") and (shp == "circle" or shp == "ellipse")
+            local isPlayerCircle = (k == "icon") and (item.playerCircle == true)
+            if isShapeCircle or isPlayerCircle then
+                local wp = (tonumber(item.w) or 4) / 100
+                local hp = (tonumber(item.h) or 4) / 100
+                local baseW = math.max(2, cw * wp)
+                local baseH = math.max(2, ch * hp)
+                local drawW = math.max(2, SceneViewScale(vc, baseW))
+                local drawH = math.max(2, SceneViewScale(vc, baseH))
+                local ringBase = StrokeThickPx(item, ch)
+                local ringDraw = SceneViewScale(vc, ringBase)
+                local slot = tonumber(item.slotIndex or item.embedIndex)
+                self:AppendPlannerDebugLine(
+                    ("SceneRing item=%d kind=%s shape=%s slot=%s w%%=%.3f h%%=%.3f base=%.1fx%.1f draw=%.1fx%.1f ring=%.2f->%.2f"):format(
+                        i,
+                        k ~= "" and k or "-",
+                        shp ~= "" and shp or "-",
+                        tostring(slot and math.floor(slot + 0.0001) or "-"),
+                        wp * 100,
+                        hp * 100,
+                        baseW,
+                        baseH,
+                        drawW,
+                        drawH,
+                        ringBase,
+                        ringDraw
+                    )
+                )
+                logged = logged + 1
+                if logged >= 20 then
+                    self:AppendPlannerDebugLine("SceneRing ... truncated to first 20 circle items")
+                    break
+                end
+            end
+        end
+    end
+    if logged == 0 then
+        self:AppendPlannerDebugLine("SceneRing no circle/playerCircle items in scene")
+    end
+end
+
 local function ClearCircleRingLayoutCache(w)
     if not w then return end
     w.__ringLayoutIw = nil
@@ -4509,8 +4779,7 @@ end
 
 function Diar.ApplyWidgetLabel(w, item, label, hasSelfOnPlan, playerKey, isNamesVisible)
     if not w then return end
-    local isAttachedLabel = item and item.labelAttached == true
-    local shouldShowLabel = (label ~= "") and ((not isAttachedLabel) or isNamesVisible)
+    local shouldShowLabel = (label ~= "") and (isNamesVisible == true)
     if shouldShowLabel then
         if not w.label then
             w.label = w:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
@@ -4543,6 +4812,7 @@ function Diar.RenderIconWidget(addon, w, item, label, hasSelfOnPlan, playerKey, 
     local skipHelper = (not item.icon or item.icon == "") and label == ""
     if skipHelper then
         w.__suppressed = true
+        w.__tooltipText = nil
         w:Hide()
         if w.text then w.text:Hide() end
         if w.label then w.label:Hide() end
@@ -4586,9 +4856,13 @@ function Diar.RenderIconWidget(addon, w, item, label, hasSelfOnPlan, playerKey, 
         end
         if w.text then w.text:Hide() end
     end
+    w.__tooltipText = (label and label ~= "") and label or nil
     Diar.ApplyWidgetLabel(w, item, label, hasSelfOnPlan, playerKey, addon:IsPlannerPreviewNamesVisible())
     w:SetScript("OnEnter", function(f)
-        local tip = (f.label and f.label:GetText() and f.label:GetText() ~= "") and f.label:GetText() or nil
+        local tip = (f.__tooltipText and f.__tooltipText ~= "") and f.__tooltipText or nil
+        if not tip then
+            tip = (f.label and f.label:GetText() and f.label:GetText() ~= "") and f.label:GetText() or nil
+        end
         if tip then
             GameTooltip:SetOwner(f, "ANCHOR_RIGHT")
             GameTooltip:SetText(tip, 1, 1, 1)
@@ -5502,6 +5776,22 @@ function Diar:ShowPlannerViewer(opts)
             if frame.compactPreviewActive and Diar.EndCompactPositionPreview then
                 Diar:EndCompactPositionPreview(false)
             end
+            -- ESC/hide path for NSRT/ready-check popup: fully reset transient state
+            -- so reopening planner starts in normal expanded mode.
+            if frame.nsrtSceneActive or frame.readyCheckActive then
+                frame.nsrtSceneActive = nil
+                frame.readyCheckActive = nil
+                frame.compactMode = false
+                frame.__forceExpandedOnNextShow = true
+                if frame.canvas then frame.canvas:SetScale(1) end
+                Diar.readyCheckAssignments = nil
+                Diar.readyCheckAssignmentIndex = nil
+                if Diar.CancelReadyCheckAssignmentWatchTimers then
+                    Diar:CancelReadyCheckAssignmentWatchTimers()
+                end
+                Diar._readyCheckWatchActive = nil
+                Diar._readyCheckRetryCount = nil
+            end
             -- If user closed while in manual compact mode, reopen in expanded mode.
             if frame.compactMode and not frame.nsrtSceneActive then
                 frame.compactMode = false
@@ -5939,6 +6229,9 @@ function Diar:ShowPlannerViewer(opts)
         -- Imported attached labels should be visible by default; users can hide them via the toggle.
         pf.previewNamesVisible = true
     end
+    if pf.hideAssignments == nil then
+        pf.hideAssignments = false
+    end
     pf:SetScript("OnSizeChanged", function(s)
         if s.__layoutSyncing or not s.__plannerSizing or s.compactMode then return end
         Diar:SyncPlannerLayoutFromFrame(false)
@@ -5947,6 +6240,7 @@ function Diar:ShowPlannerViewer(opts)
         pf.canvas:SetClipsChildren(true)
     end
     Diar:EnsurePreviewNamesButton(pf)
+    Diar:EnsurePreviewAssignmentsButton(pf)
     Diar:EnsurePlannerAssignmentButton(pf)
     Diar:EnsurePlannerControlsButtons(pf)
     if Diar.EnsurePlannerHelpButton then Diar:EnsurePlannerHelpButton(pf) end
@@ -6106,6 +6400,11 @@ function Diar:ShowPlannerViewer(opts)
 
     pf.selectedSceneIndex = 1
     self:UpdateSceneTabHighlight()
+    if pf.__forceExpandedOnNextShow and not pf.nsrtSceneActive then
+        pf.compactMode = false
+        if pf.canvas then pf.canvas:SetScale(1) end
+        pf.__forceExpandedOnNextShow = nil
+    end
     if pf.nsrtSceneActive or pf.compactMode then
         if pf.nsrtSceneActive and not pf.compactMode then
             pf.compactMode = true
@@ -6482,7 +6781,7 @@ function Diar:RefreshPlannerScene()
     -- so circles remain visible and assignment/background coloring still works.
     local explicitSpots = ResolveSceneSpots(scene, true)
     local groupSpots = nil
-    if activeGroup then
+    if activeGroup and self:IsPlannerAssignmentsVisible() then
         groupSpots = explicitSpots or sceneSpots
     end
     local groupSpotNames = activeGroup and activeGroup.spotNames or nil
@@ -6505,6 +6804,11 @@ function Diar:RefreshPlannerScene()
         previewSpots = previewSpots,
         debugMineHits = debugMineHits,
     }
+    local debugSceneReason = pf.__debugSceneReason
+    pf.__debugSceneReason = nil
+    if self.DebugLogSceneRingSizes then
+        self:DebugLogSceneRingSizes(debugSceneReason or "refresh", scene, idx, cw, ch, vc)
+    end
     for i, item in ipairs(scene.items) do
         Diar.RenderSceneItem(self, pf, root, cw, ch, vc, minSize, item, i, sceneCtx)
     end
@@ -6546,6 +6850,9 @@ function Diar:RefreshPlannerScene()
     end
     if self.UpdateCompactSceneArrowButtons then
         self:UpdateCompactSceneArrowButtons(pf)
+    end
+    if self.UpdateReadyCheckAssignmentArrows then
+        self:UpdateReadyCheckAssignmentArrows(pf)
     end
     if self.UpdatePlannerAssignmentButton then
         self:UpdatePlannerAssignmentButton(pf)

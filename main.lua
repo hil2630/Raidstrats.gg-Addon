@@ -528,6 +528,31 @@ local function ResolveObjectBBoxPercent(obj, canvasW, canvasH)
     return xPct, yPct, widthPct, heightPct
 end
 
+local function ResolveObjectBBoxPercentRaw(obj, canvasW, canvasH)
+    local pct = type(obj.__percentData) == "table" and obj.__percentData or nil
+    local left = ValueToPercent((pct and pct.left) or obj.left, canvasW)
+    local top = ValueToPercent((pct and pct.top) or obj.top, canvasH)
+    local scaleX = CoerceNumber(obj.scaleX) or 1
+    local scaleY = CoerceNumber(obj.scaleY) or 1
+    local rawW = CoerceNumber(obj.width)
+    local rawH = CoerceNumber(obj.height)
+    local widthPct = ValueToPercent(rawW and (rawW * scaleX) or nil, canvasW)
+    local heightPct = ValueToPercent(rawH and (rawH * scaleY) or nil, canvasH)
+    if not left or not top or not widthPct or not heightPct then
+        return nil, nil, nil, nil
+    end
+
+    local originX = strlower(tostring((pct and pct.originX) or obj.originX or "left"))
+    local originY = strlower(tostring((pct and pct.originY) or obj.originY or "top"))
+    local xPct = left
+    local yPct = top
+    if originX == "center" then xPct = xPct - widthPct * 0.5
+    elseif originX == "right" then xPct = xPct - widthPct end
+    if originY == "center" then yPct = yPct - heightPct * 0.5
+    elseif originY == "bottom" then yPct = yPct - heightPct end
+    return xPct, yPct, widthPct, heightPct
+end
+
 local function ResolveIconKeyFromSrc(src)
     if type(src) ~= "string" or src == "" then return nil end
     local clean = strlower(src:gsub("\\", "/"))
@@ -639,6 +664,12 @@ local function ConvertWebSceneObjects(scene, canvasW, canvasH)
                     elseif objType == "textbox" or objType == "text" or objType == "i-text" then
                         local slotIndex = ReadWebObjectSlotIndex(obj)
                         if slotIndex then
+                            -- Use raw width/height + object scale for spot circles.
+                            -- Some exports carry stale __bbox* values that ignore scale.
+                            local sx, sy, sw, sh = ResolveObjectBBoxPercentRaw(obj, canvasW, canvasH)
+                            if sx and sy and sw and sh then
+                                x, y, w, h = sx, sy, sw, sh
+                            end
                             -- Indexed text entries are player spots in some exports:
                             -- import as player circles (assignable/movable) with label below.
                             item = {
@@ -685,6 +716,32 @@ local function ConvertWebSceneObjects(scene, canvasW, canvasH)
                         end
 
                         if circleChild then
+                            -- Use raw width/height + object scale for grouped player circles.
+                            -- Some scene exports carry stale __bbox* values on group wrappers.
+                            local sx, sy, sw, sh = ResolveObjectBBoxPercentRaw(obj, canvasW, canvasH)
+                            if sx and sy and sw and sh then
+                                x, y, w, h = sx, sy, sw, sh
+                            end
+                            -- Prefer the actual circle child geometry for size, multiplied by
+                            -- both child + group scales. Wrapper group bbox can be polluted by
+                            -- text bounds and stale export snapshots on later scenes.
+                            local childScaleX = CoerceNumber(circleChild.scaleX) or 1
+                            local childScaleY = CoerceNumber(circleChild.scaleY) or 1
+                            local groupScaleX = CoerceNumber(obj.scaleX) or 1
+                            local groupScaleY = CoerceNumber(obj.scaleY) or 1
+                            local childRawW = CoerceNumber(circleChild.width)
+                            local childRawH = CoerceNumber(circleChild.height)
+                            local circleW = ValueToPercent(
+                                childRawW and (childRawW * childScaleX * groupScaleX) or nil,
+                                canvasW
+                            )
+                            local circleH = ValueToPercent(
+                                childRawH and (childRawH * childScaleY * groupScaleY) or nil,
+                                canvasH
+                            )
+                            if circleW and circleH and circleW > 0 and circleH > 0 then
+                                w, h = circleW, circleH
+                            end
                             item = {
                                 kind = "icon",
                                 x = x,
@@ -853,7 +910,10 @@ local function ConvertWebPlannerScenes(data)
                 }
                 items, idToIndex, pathByAnimId, objectById = ConvertWebSceneObjects(fallbackScene, canvasW, canvasH)
             end
-            if items and #items > 0 and (type(scene.items) ~= "table" or #scene.items == 0) then
+            if items and #items > 0 then
+                -- Always prefer objectsJSON-derived items for web scenes.
+                -- Some payloads include a stale scene.items snapshot alongside objectsJSON;
+                -- that snapshot can carry unscaled group spot sizes on later scenes.
                 scene.items = items
             end
             local anims = ConvertWebSceneAnimations(scene, idToIndex or {}, pathByAnimId or {}, objectById or {}, canvasW, canvasH)

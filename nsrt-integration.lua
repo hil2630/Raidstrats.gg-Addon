@@ -292,6 +292,9 @@ local function FindNSI()
     return nil
 end
 
+local RegisterNsrtCallbacks
+local TryHookNSRT
+
 local function OnNsrtReminderChanged(addon)
     if addon.AppendPlannerDebugLine then
         local pf = addon.plannerFrame
@@ -302,6 +305,9 @@ local function OnNsrtReminderChanged(addon)
         addon:ReloadRsggCuesFromActiveNote()
     elseif addon.rsggEncounterID then
         addon:ReloadRsggCues(addon.rsggEncounterID)
+    end
+    if addon._readyCheckWatchActive and addon.TryOpenReadyCheckAssignments then
+        addon:TryOpenReadyCheckAssignments(true)
     end
     if addon.RefreshPlannerNsrtAssignmentIfOpen then
         addon:RefreshPlannerNsrtAssignmentIfOpen()
@@ -316,7 +322,81 @@ local function OnNsrtReminderChanged(addon)
     end
 end
 
-local function RegisterNsrtCallbacks(addon)
+local READY_CHECK_RETRY_INTERVAL = 0.65
+local READY_CHECK_MAX_RETRIES = 6
+
+function Raidstrats:CancelReadyCheckAssignmentWatchTimers()
+    if self._readyCheckRetryTimer then
+        self._readyCheckRetryTimer:Cancel()
+        self._readyCheckRetryTimer = nil
+    end
+end
+
+function Raidstrats:EndReadyCheckAssignmentWatch()
+    self._readyCheckWatchActive = nil
+    self._readyCheckRetryCount = nil
+    self:CancelReadyCheckAssignmentWatchTimers()
+    local pf = self.plannerFrame
+    if pf and pf.readyCheckActive and self.CloseReadyCheckAssignments then
+        self:CloseReadyCheckAssignments()
+    end
+end
+
+function Raidstrats:TryOpenReadyCheckAssignments(fromReminderSync)
+    if not self._readyCheckWatchActive then return false end
+    if not self.IsReadyCheckAssignmentsEnabled or not self:IsReadyCheckAssignmentsEnabled() then
+        return false
+    end
+    if not C_AddOns.IsAddOnLoaded("NorthernSkyRaidTools") then
+        return false
+    end
+    TryHookNSRT(self)
+    RegisterNsrtCallbacks(self)
+
+    if self.plannerFrame and self.plannerFrame.readyCheckActive then
+        return true
+    end
+
+    local ok = self.OpenReadyCheckAssignments and self:OpenReadyCheckAssignments({ silent = true })
+    if ok then
+        self:CancelReadyCheckAssignmentWatchTimers()
+        self._readyCheckRetryCount = nil
+        -- Once opened successfully, stop watching so manual close (ESC/X)
+        -- doesn't re-open the compact popup from later reminder callbacks.
+        self._readyCheckWatchActive = nil
+        return true
+    end
+
+    self._readyCheckRetryCount = (self._readyCheckRetryCount or 0) + 1
+    if self._readyCheckRetryCount >= READY_CHECK_MAX_RETRIES then
+        self:CancelReadyCheckAssignmentWatchTimers()
+        if self.OpenReadyCheckAssignments then
+            self:OpenReadyCheckAssignments({ verbose = true })
+        end
+        return false
+    end
+
+    if not fromReminderSync then
+        self:CancelReadyCheckAssignmentWatchTimers()
+        self._readyCheckRetryTimer = C_Timer.After(READY_CHECK_RETRY_INTERVAL, function()
+            self._readyCheckRetryTimer = nil
+            self:TryOpenReadyCheckAssignments(false)
+        end)
+    end
+    return false
+end
+
+function Raidstrats:BeginReadyCheckAssignmentWatch()
+    if not self.IsReadyCheckAssignmentsEnabled or not self:IsReadyCheckAssignmentsEnabled() then
+        return
+    end
+    self._readyCheckWatchActive = true
+    self._readyCheckRetryCount = 0
+    self:CancelReadyCheckAssignmentWatchTimers()
+    self:TryOpenReadyCheckAssignments(false)
+end
+
+RegisterNsrtCallbacks = function(addon)
     if addon._nsrtCallbacksRegistered then return true end
     if not NSAPI or not NSAPI.RegisterCallback then return false end
 
@@ -353,7 +433,7 @@ local function RegisterNsrtCallbacks(addon)
     return true
 end
 
-local function TryHookNSRT(addon)
+TryHookNSRT = function(addon)
     if addon._nsrtHooked then return true end
     RegisterNsrtCallbacks(addon)
 
@@ -798,6 +878,8 @@ function Raidstrats:InitNSRTIntegration()
     frame:RegisterEvent("PLAYER_LOGIN")
     frame:RegisterEvent("ENCOUNTER_START")
     frame:RegisterEvent("ENCOUNTER_END")
+    frame:RegisterEvent("READY_CHECK")
+    frame:RegisterEvent("READY_CHECK_FINISHED")
 
     frame:SetScript("OnEvent", function(_, event, ...)
         if event == "ADDON_LOADED" then
@@ -815,6 +897,14 @@ function Raidstrats:InitNSRTIntegration()
             Raidstrats:OnEncounterStart(...)
         elseif event == "ENCOUNTER_END" then
             Raidstrats:OnEncounterEnd()
+        elseif event == "READY_CHECK" then
+            if Raidstrats.BeginReadyCheckAssignmentWatch then
+                Raidstrats:BeginReadyCheckAssignmentWatch()
+            end
+        elseif event == "READY_CHECK_FINISHED" then
+            if Raidstrats.EndReadyCheckAssignmentWatch then
+                Raidstrats:EndReadyCheckAssignmentWatch()
+            end
         end
     end)
 
@@ -844,5 +934,23 @@ function Raidstrats:InitNSRTIntegration()
         end
         phase = tonumber(input)
         Raidstrats:RunRsggPhaseDebug(phase, nil)
+    end)
+
+    self:RegisterChatCommand("rsggrc", function()
+        if not Raidstrats.IsReadyCheckAssignmentsEnabled or not Raidstrats:IsReadyCheckAssignmentsEnabled() then
+            print("|cffff9900[Raidstrats.gg]|r Enable \"Show assignments on readycheck\" in Settings first.")
+            return
+        end
+        if Raidstrats.CloseReadyCheckAssignments then
+            Raidstrats:CloseReadyCheckAssignments()
+        end
+        Raidstrats._readyCheckWatchActive = true
+        Raidstrats._readyCheckRetryCount = 0
+        if Raidstrats.CancelReadyCheckAssignmentWatchTimers then
+            Raidstrats:CancelReadyCheckAssignmentWatchTimers()
+        end
+        if Raidstrats.TryOpenReadyCheckAssignments then
+            Raidstrats:TryOpenReadyCheckAssignments(false)
+        end
     end)
 end

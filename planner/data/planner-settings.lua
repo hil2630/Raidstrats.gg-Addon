@@ -45,6 +45,8 @@ function Diar:GetPlannerSettings()
     if s.classSpecCircleMode == nil then s.classSpecCircleMode = false end
     if s.compactPlanLibrary == nil then s.compactPlanLibrary = true end
     if s.hideRaidCheckNotifs == nil then s.hideRaidCheckNotifs = false end
+    if s.readyCheckAssignments == nil then s.readyCheckAssignments = false end
+    if s.readyCheckPhase == nil then s.readyCheckPhase = 0 end
     if s.minimapHidden == nil then s.minimapHidden = false end
     if type(s.assignMineFill) ~= "table" then s.assignMineFill = nil end
     if type(s.assignOtherFill) ~= "table" then s.assignOtherFill = nil end
@@ -263,6 +265,17 @@ function Diar:GetRsggShowAfter()
     return math.max(0, v)
 end
 
+function Diar:IsReadyCheckAssignmentsEnabled()
+    local v = self:GetPlannerSettings().readyCheckAssignments
+    if v == true or v == 1 then return true end
+    return false
+end
+
+function Diar:GetReadyCheckPhaseFilter()
+    local v = tonumber(self:GetPlannerSettings().readyCheckPhase) or 0
+    return math.max(0, math.floor(v + 0.0001))
+end
+
 local function ParseSettingsSeconds(text)
     text = strtrim(text or "")
     if text == "" then return 0 end
@@ -274,14 +287,14 @@ end
 function Diar:ShowPlannerSettingsDialog()
     local settings = self:GetPlannerSettings()
 
-    if self.plannerSettingsDialog and not self.plannerSettingsDialog.__settingsV10 then
+    if self.plannerSettingsDialog and not self.plannerSettingsDialog.__settingsV11 then
         self.plannerSettingsDialog:Hide()
         self.plannerSettingsDialog = nil
     end
 
     if not self.plannerSettingsDialog then
         local f = CreateFrame("Frame", "RaidstratsPlannerSettingsDialog", UIParent, "BackdropTemplate")
-        f.__settingsV10 = true
+        f.__settingsV11 = true
         f:SetSize(504, 668)
         f:SetFrameStrata("FULLSCREEN_DIALOG")
         f:SetFrameLevel(500)
@@ -601,6 +614,8 @@ function Diar:ShowPlannerSettingsDialog()
         miscY = AddCheckbox(miscPage, miscY, "hideMinimapIconChk", "Hide minimap icon")
         miscY = AddCheckbox(miscPage, miscY, "nsrtPopupChk", "Hide plan popups (even if assigned)")
         miscY = AddCheckbox(miscPage, miscY, "raidCheckNotifChk", "Hide raidcheck notifications from raid leader")
+        miscY = AddCheckbox(miscPage, miscY, "readyCheckAssignChk", "Show assignments on readycheck")
+        miscY = AddSecondsRow(miscPage, miscY, "Ready check phase filter (0 = all phases)", "readyCheckPhaseEdit")
         miscY = AddCheckbox(miscPage, miscY, "plannerDebugChk", "Show planner debug panel")
 
         local btnRow = CreateFrame("Frame", nil, f)
@@ -641,6 +656,13 @@ function Diar:ShowPlannerSettingsDialog()
             s.minimapHidden = CheckboxIsChecked(f.hideMinimapIconChk)
             s.hideNsrtPlan = CheckboxIsChecked(f.nsrtPopupChk)
             s.hideRaidCheckNotifs = CheckboxIsChecked(f.raidCheckNotifChk)
+            s.readyCheckAssignments = CheckboxIsChecked(f.readyCheckAssignChk)
+            local rcPhase = ParseSettingsSeconds(f.readyCheckPhaseEdit:GetText())
+            if rcPhase == nil then
+                print("|cffff6666[Raidstrats.gg]|r Enter a phase number (0 = all phases).")
+                return
+            end
+            s.readyCheckPhase = rcPhase
             s.debugMode = CheckboxIsChecked(f.plannerDebugChk)
             if f.assignMineColorBtn and f.assignMineColorBtn.__color then
                 local c = f.assignMineColorBtn.__color
@@ -660,6 +682,9 @@ function Diar:ShowPlannerSettingsDialog()
             end
             f.beforeEdit:SetText(tostring(before))
             f.afterEdit:SetText(tostring(after))
+            if f.readyCheckPhaseEdit then
+                f.readyCheckPhaseEdit:SetText(tostring(s.readyCheckPhase or 0))
+            end
             local pf = Diar.plannerFrame
             if pf and pf.compactMode and Diar.SetPlannerCompactMode then
                 pf.nsrtSceneActive = nil
@@ -734,6 +759,12 @@ function Diar:ShowPlannerSettingsDialog()
     dlg.nsrtPopupChk:SetChecked(settings.hideNsrtPlan == true or settings.hideNsrtPlan == 1)
     if dlg.raidCheckNotifChk then
         dlg.raidCheckNotifChk:SetChecked(settings.hideRaidCheckNotifs == true or settings.hideRaidCheckNotifs == 1)
+    end
+    if dlg.readyCheckAssignChk then
+        dlg.readyCheckAssignChk:SetChecked(self:IsReadyCheckAssignmentsEnabled())
+    end
+    if dlg.readyCheckPhaseEdit then
+        dlg.readyCheckPhaseEdit:SetText(tostring(settings.readyCheckPhase ~= nil and settings.readyCheckPhase or 0))
     end
     if dlg.plannerDebugChk then
         dlg.plannerDebugChk:SetChecked(settings.debugMode == true or settings.debugMode == 1)

@@ -1,5 +1,17 @@
 # Changelog
 
+## [Alpha v0.0.41] Fixes to importing, readycheck assignment check and more.
+
+- Fixed an issue where importing raidplans with multiple scenes would show wrong object sizes on other scenes (You will have to
+  re-import the plan from raidstrats.gg)
+- Fixed the preview/show names so it actually works with attached labels now also.
+- Fixed an issue where, when reassigning a circle, the circle color would not change to the class color.
+- Fixed an issue where when hovering an assignment-object, the tooltip wouldn't render correct names after changing them.
+
+- Added a new ready-check setting. When readycheck pops, your assignment will showup and you'll be able to navigate through them using
+  the arrows in the readycheck-compact view. You can enable this in your settings. The position of the assignment is defined by the NSRT Position you set in the settings.
+- Added a "show/hide assignments" in the planner that'll hide any assignments if any.
+
 ## [Alpha v0.0.40] Fixes to backgrounds, importing circle-modes, assignments, debugging and more.
 
 - Upped version to 12.0.7.
@@ -15,7 +27,7 @@
 - Added a way to hide the minimap icon from Settings -> Misc tab
 - Added a way to remove indexes from objects in the plan in the right-click menu on objects.
 - Added grouping to the plan library, so you can now right click a plan -> Group and then drag and drop other plans into thegroup. You can also select multiple plans by holding down Shift + click and rightclicking -> Group.
-- Added a way to share entire groups with your team, this should make it easier for Raidleads to import all plans -> Group -> Share entire group instead of single plans. To share a group simply rightclick the group name -> Share to group. A link will be sent in the chat they can click, just like with a normal plan share.
+- Added a way to share entire groups with your team, this should make it easier for RaidleFads to import all plans -> Group -> Share entire group instead of single plans. To share a group simply rightclick the group name -> Share to group. A link will be sent in the chat they can click, just like with a normal plan share.
 
 _WIP Added The Venomus Abyss Boss names in the plan creater, backgrounds coming very soon._
 

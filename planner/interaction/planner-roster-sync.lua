@@ -637,17 +637,52 @@ function Diar:IsPlayerCircleItem(item)
     return (shp == "circle" or shp == "ellipse") and ItemSlotIndex(item) ~= nil
 end
 
+local function BuildRgbaStringFromColor(r, g, b, a)
+    local rr = math.max(0, math.min(255, math.floor(((tonumber(r) or 0) * 255) + 0.5)))
+    local gg = math.max(0, math.min(255, math.floor(((tonumber(g) or 0) * 255) + 0.5)))
+    local bb = math.max(0, math.min(255, math.floor(((tonumber(b) or 0) * 255) + 0.5)))
+    local aa = tonumber(a)
+    if type(aa) ~= "number" then aa = 1 end
+    aa = math.max(0, math.min(1, aa))
+    return ("rgba(%d,%d,%d,%.3f)"):format(rr, gg, bb, aa)
+end
+
+local function ResolveCircleFillFromIconKey(self, iconKey, item)
+    if not self or type(iconKey) ~= "string" or iconKey == "" then return nil end
+    local opacity = (type(item) == "table" and type(item.opacity) == "number") and item.opacity or 1
+    if self.ResolveClassKeyFromIconKey and self.GetClassCircleColor then
+        local classKey = self.ResolveClassKeyFromIconKey(iconKey)
+        if classKey then
+            local r, g, b, a = self.GetClassCircleColor(classKey, opacity)
+            return BuildRgbaStringFromColor(r, g, b, a)
+        end
+    end
+    if self.ResolveRoleKeyFromIconKey and self.GetRoleCircleColor then
+        local roleKey = self.ResolveRoleKeyFromIconKey(iconKey)
+        if roleKey then
+            local r, g, b, a = self.GetRoleCircleColor(roleKey, opacity)
+            return BuildRgbaStringFromColor(r, g, b, a)
+        end
+    end
+    return nil
+end
+
 function Diar:ApplyIconToPlanItem(item, iconKey)
     if not item or not iconKey or iconKey == "" then return end
     if item.kind == "icon" then
         item.icon = iconKey
-        return
-    end
-    if self.IsPlayerCircleItem and self:IsPlayerCircleItem(item) then
+    elseif self.IsPlayerCircleItem and self:IsPlayerCircleItem(item) then
         item.kind = "icon"
         item.playerCircle = true
         item.shape = nil
         item.icon = iconKey
+    end
+    if self.IsPlayerCircleItem and self:IsPlayerCircleItem(item) then
+        -- Reassignments should recolor spot circles to the assigned class/role color.
+        local fill = ResolveCircleFillFromIconKey(self, iconKey, item)
+        if fill then
+            item.fill = fill
+        end
     end
 end
 
@@ -1159,6 +1194,7 @@ function Diar:HandleRsggDebugCommand(msg)
         print("|cff00aaff[Raidstrats.gg]|r /rsggdebug — toggle fake raid leader (right-click rename, no group needed)")
         print("|cff00aaff[Raidstrats.gg]|r /rsggdebug on | off")
         print("|cff00aaff[Raidstrats.gg]|r /rsggdebug roster Name1,Name2,... — override fake roster names")
+        print("|cff00aaff[Raidstrats.gg]|r /rsggdebug rings — dump current scene ring sizes")
         return
     end
 
@@ -1174,6 +1210,22 @@ function Diar:HandleRsggDebugCommand(msg)
     elseif msg == "roster" then
         s.debugRoster = nil
         print("|cff00aaff[Raidstrats.gg]|r Debug roster reset to defaults.")
+        return
+    elseif msg == "rings" or msg == "sizes" then
+        local pf = self.plannerFrame
+        local data = self.plannerData
+        local sceneIdx = (pf and pf.selectedSceneIndex) or 1
+        local scene = data and data.scenes and data.scenes[sceneIdx]
+        local canvas = pf and pf.canvas
+        local cw = canvas and canvas.GetWidth and canvas:GetWidth() or nil
+        local ch = canvas and canvas.GetHeight and canvas:GetHeight() or nil
+        local vc = pf and pf.sceneViewContext or nil
+        if self.DebugLogSceneRingSizes then
+            self:DebugLogSceneRingSizes("manual", scene, sceneIdx, cw, ch, vc)
+            print("|cff00aaff[Raidstrats.gg]|r Ring size debug dumped to planner debug log.")
+        else
+            print("|cffff6666[Raidstrats.gg]|r Ring size debug is not available.")
+        end
         return
     else
         s.debugMode = not s.debugMode

@@ -639,7 +639,7 @@ end
 
 function Diar:ShowRaidPlanScene(sceneIndex, opts)
     opts = opts or {}
-    if not opts.forceShow and not self:IsNsrtPopupsEnabled() then
+    if not opts.forceShow and not opts.readyCheckMode and not self:IsNsrtPopupsEnabled() then
         return false
     end
     sceneIndex = tonumber(sceneIndex) or 1
@@ -651,14 +651,24 @@ function Diar:ShowRaidPlanScene(sceneIndex, opts)
     if opts.planRef and opts.planRef ~= "" then
         if not self:LoadPlanByRef(opts.planRef) then
             local alias = opts.planAlias and tostring(opts.planAlias) or "?"
-            print(("|cffff6666[Raidstrats.gg]|r Could not resolve bound plan \"%s\" (ref: %s)."):format(
-                alias, tostring(opts.planRef)))
-            return false
+            if opts.readyCheckMode and self.plannerData and self.plannerData.scenes and #self.plannerData.scenes > 0 then
+                -- Ready check: keep the currently loaded plan when bind ref lookup fails.
+            else
+                print(("|cffff6666[Raidstrats.gg]|r Could not resolve bound plan \"%s\" (ref: %s)."):format(
+                    alias, tostring(opts.planRef)))
+                return false
+            end
         end
     end
-    if (not (opts.planRef and opts.planRef ~= "")) and opts.planName and opts.planName ~= "" and not self:LoadPlanByName(opts.planName) then
-        print(("|cffff6666[Raidstrats.gg]|r Could not find saved plan \"%s\"."):format(opts.planName))
-        return false
+    if (not (opts.planRef and opts.planRef ~= "")) and opts.planName and opts.planName ~= "" then
+        if not self:LoadPlanByName(opts.planName) then
+            if opts.readyCheckMode and self.plannerData and self.plannerData.scenes and #self.plannerData.scenes > 0 then
+                -- Ready check: keep the currently loaded plan when bind/name lookup fails.
+            else
+                print(("|cffff6666[Raidstrats.gg]|r Could not find saved plan \"%s\"."):format(opts.planName))
+                return false
+            end
+        end
     end
     if not self.plannerData or not self.plannerData.scenes or #self.plannerData.scenes == 0 then
         print("|cffff6666[Raidstrats.gg]|r No plan loaded — import one with /rsimport.")
@@ -676,6 +686,7 @@ function Diar:ShowRaidPlanScene(sceneIndex, opts)
     if not pf then return false end
 
     pf.nsrtSceneActive = true
+    pf.readyCheckActive = opts.readyCheckMode == true or nil
     pf.selectedSceneIndex = sceneIndex
     pf.__viewerViewportSceneIdx = nil
     self:SetActiveGroupAssignment(opts.tag, opts.tagNames, opts.tagSpotMap)
@@ -700,7 +711,170 @@ function Diar:ShowRaidPlanScene(sceneIndex, opts)
             end)
         end
     end
+    if pf.readyCheckActive and self.UpdateReadyCheckAssignmentArrows then
+        self:UpdateReadyCheckAssignmentArrows(pf)
+    end
     return true
+end
+
+local function NormalizePlanBindKey(raw)
+    if type(raw) ~= "string" then return nil end
+    local trimmed = strtrim(raw)
+    if trimmed == "" then return nil end
+    return strlower(trimmed)
+end
+
+function Diar:ResolveCuePlanRef(cue)
+    if type(cue) ~= "table" then return nil end
+    local key = NormalizePlanBindKey(cue.planToken or cue.planName)
+    if not key then return nil end
+    local binds = self.rsggPlanBinds
+    if type(binds) ~= "table" then return nil end
+    local ref = binds[key]
+    if type(ref) ~= "string" or ref == "" then return nil end
+    return ref
+end
+
+function Diar:ShouldIncludeCueForReadyCheck(cue)
+    if type(cue) ~= "table" then return false end
+    if cue.tagSpotMap or (cue.tagNames and #cue.tagNames > 0) or (cue.tag and cue.tag ~= "") then
+        return CueContainsPlayer(cue, self.rsggGroups)
+    end
+    return true
+end
+
+function Diar:CollectReadyCheckAssignments(phaseFilter)
+    phaseFilter = tonumber(phaseFilter) or 0
+    local cues = self.rsggCues
+    if type(cues) ~= "table" then return {} end
+
+    local list = {}
+    for encID, byPhase in pairs(cues) do
+        if type(encID) == "number" and type(byPhase) == "table" then
+            for phaseNum, phaseCues in pairs(byPhase) do
+                phaseNum = tonumber(phaseNum) or 1
+                if phaseFilter == 0 or phaseNum == phaseFilter then
+                    if type(phaseCues) == "table" then
+                        for _, cue in ipairs(phaseCues) do
+                            if self:ShouldIncludeCueForReadyCheck(cue) then
+                                list[#list + 1] = {
+                                    cue = cue,
+                                    encID = encID,
+                                    phase = phaseNum,
+                                    sceneIndex = cue.sceneIndex,
+                                    time = tonumber(cue.time) or math.huge,
+                                    sourceLineNo = tonumber(cue.sourceLineNo) or math.huge,
+                                }
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    table.sort(list, function(a, b)
+        if a.phase ~= b.phase then return a.phase < b.phase end
+        if a.time ~= b.time then return a.time < b.time end
+        if a.sceneIndex ~= b.sceneIndex then return (a.sceneIndex or 0) < (b.sceneIndex or 0) end
+        return a.sourceLineNo < b.sourceLineNo
+    end)
+    return list
+end
+
+function Diar:ShowReadyCheckAssignment(index)
+    local list = self.readyCheckAssignments
+    if type(list) ~= "table" or #list == 0 then return false end
+    index = tonumber(index) or 1
+    index = math.max(1, math.min(#list, math.floor(index + 0.0001)))
+    self.readyCheckAssignmentIndex = index
+
+    local entry = list[index]
+    local cue = entry and entry.cue
+    if not cue then return false end
+
+    local ok = self:ShowRaidPlanScene(cue.sceneIndex, {
+        planName = cue.planName,
+        planRef = self:ResolveCuePlanRef(cue),
+        planAlias = cue.planToken,
+        compact = cue.compact ~= false,
+        skipAutoHide = true,
+        forceShow = true,
+        readyCheckMode = true,
+        tag = cue.tag,
+        tagNames = cue.tagNames,
+        tagSpotMap = cue.tagSpotMap,
+    })
+    if ok and self.UpdateReadyCheckAssignmentArrows then
+        self:UpdateReadyCheckAssignmentArrows(self.plannerFrame)
+    end
+    return ok
+end
+
+function Diar:StepReadyCheckAssignment(delta)
+    local list = self.readyCheckAssignments
+    if type(list) ~= "table" or #list <= 1 then return false end
+    delta = tonumber(delta) or 1
+    local idx = tonumber(self.readyCheckAssignmentIndex) or 1
+    idx = idx + delta
+    if idx < 1 then idx = #list end
+    if idx > #list then idx = 1 end
+    return self:ShowReadyCheckAssignment(idx)
+end
+
+function Diar:OpenReadyCheckAssignments(opts)
+    opts = opts or {}
+    if not self.IsReadyCheckAssignmentsEnabled or not self:IsReadyCheckAssignmentsEnabled() then
+        return false
+    end
+    if not C_AddOns.IsAddOnLoaded("NorthernSkyRaidTools") then
+        if opts.verbose then
+            print("|cffff6666[Raidstrats.gg]|r Northern Sky Raid Tools is not loaded.")
+        end
+        return false
+    end
+    local noteLoaded = false
+    if self.ReloadRsggCuesFromActiveNote then
+        noteLoaded = self:ReloadRsggCuesFromActiveNote() == true
+    end
+
+    local phaseFilter = self.GetReadyCheckPhaseFilter and self:GetReadyCheckPhaseFilter() or 0
+    local list = self:CollectReadyCheckAssignments(0)
+    if #list == 0 then
+        if opts.verbose then
+            if not noteLoaded then
+                print("|cffff6666[Raidstrats.gg]|r Ready check: no active NSRT note with rsgg lines.")
+            else
+                print("|cffff6666[Raidstrats.gg]|r Ready check: no matching assignments in the active note.")
+            end
+        end
+        return false
+    end
+
+    self.readyCheckAssignments = list
+    local startIndex = 1
+    if phaseFilter > 0 then
+        for i, entry in ipairs(list) do
+            if tonumber(entry and entry.phase) == phaseFilter then
+                startIndex = i
+                break
+            end
+        end
+    end
+    self.readyCheckAssignmentIndex = startIndex
+    local ok = self:ShowReadyCheckAssignment(startIndex)
+    if not ok and opts.verbose then
+        print("|cffff6666[Raidstrats.gg]|r Ready check: found assignments but could not open the plan viewer.")
+    end
+    return ok
+end
+
+function Diar:CloseReadyCheckAssignments()
+    self.readyCheckAssignments = nil
+    self.readyCheckAssignmentIndex = nil
+    if self.HideRaidPlanScene then
+        self:HideRaidPlanScene()
+    end
 end
 
 function Diar:HideRaidPlanScene()
@@ -711,13 +885,22 @@ function Diar:HideRaidPlanScene()
     local pf = self.plannerFrame
     local closedNsrtPopup = pf and pf.nsrtSceneActive
     if closedNsrtPopup then
+        local wasCompact = pf.compactMode == true
         pf.nsrtSceneActive = nil
+        pf.readyCheckActive = nil
+        pf.__forceExpandedOnNextShow = true
         -- Ensure NSRT compact zoom/pan never leaks into normal viewer mode.
         pf.viewerViewport = nil
         pf.__viewerViewportSceneIdx = nil
         pf.__viewportDisplayZoom = 1
         pf.__ignoreNextSceneViewportSync = true
-        if pf.compactMode and pf:IsShown() then
+        if pf.compactMode then
+            pf.compactMode = false
+            if pf.canvas then
+                pf.canvas:SetScale(1)
+            end
+        end
+        if wasCompact and pf:IsShown() then
             pf:Hide()
         end
     end
@@ -731,5 +914,12 @@ function Diar:HideRaidPlanScene()
     else
         self.activeGroup = nil
     end
+    self.readyCheckAssignments = nil
+    self.readyCheckAssignmentIndex = nil
+    if pf and pf.readyCheckAssignLabel then
+        pf.readyCheckAssignLabel:Hide()
+    end
+    if pf and pf.readyCheckAssignPrevBtn then pf.readyCheckAssignPrevBtn:Hide() end
+    if pf and pf.readyCheckAssignNextBtn then pf.readyCheckAssignNextBtn:Hide() end
 end
 
