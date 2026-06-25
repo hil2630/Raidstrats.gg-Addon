@@ -1,6 +1,6 @@
 # Changelog
 
-## [Alpha v0.0.41] Fixes to importing, readycheck assignment check and more.
+## [Alpha v0.0.41] Fixes to importing, readycheck assignment check, group imports and more.
 
 - Fixed an issue where importing raidplans with multiple scenes would show wrong object sizes on other scenes (You will have to
   re-import the plan from raidstrats.gg)
@@ -11,6 +11,7 @@
 - Added a new ready-check setting. When readycheck pops, your assignment will showup and you'll be able to navigate through them using
   the arrows in the readycheck-compact view. You can enable this in your settings. The position of the assignment is defined by the NSRT Position you set in the settings.
 - Added a "show/hide assignments" in the planner that'll hide any assignments if any.
+- Added a way to import groups from the website. If you have multiple plans in a group on the website simply go to the Groups tab under My Plans and Export to addon -> Import this. It'll auto-import all the plans in the group and give the group a name.
 
 ## [Alpha v0.0.40] Fixes to backgrounds, importing circle-modes, assignments, debugging and more.
 

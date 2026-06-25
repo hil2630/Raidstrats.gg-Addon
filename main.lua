@@ -460,8 +460,261 @@ function Raidstrats:LoadLastSavedPlan()
     return false
 end
 
+function Raidstrats:FindSavedPlansGroupByName(groupName)
+    local name = strtrim(tostring(groupName or ""))
+    if name == "" then return nil end
+    RaidstratsggSavedPlans = RaidstratsggSavedPlans or { list = {}, nextId = 1 }
+    local groups = RaidstratsggSavedPlans.groups or {}
+    local target = strlower(name)
+    for _, grp in ipairs(groups) do
+        local gid = tonumber(grp and grp.id)
+        local gname = strtrim(tostring(grp and grp.name or ""))
+        if gid and gname ~= "" and strlower(gname) == target then
+            return gid, gname
+        end
+    end
+    return nil
+end
+
+function Raidstrats:CountSavedPlansInGroup(groupId)
+    local gid = tonumber(groupId)
+    if not gid then return 0 end
+    RaidstratsggSavedPlans = RaidstratsggSavedPlans or { list = {}, nextId = 1 }
+    local count = 0
+    for _, entry in ipairs(RaidstratsggSavedPlans.list or {}) do
+        if tonumber(entry and entry.groupId) == gid then
+            count = count + 1
+        end
+    end
+    return count
+end
+
+function Raidstrats:ShowGroupImportConflictDialog(groupName, existingCount)
+    local normalizedName = strtrim(tostring(groupName or "group-1"))
+    if normalizedName == "" then normalizedName = "group-1" end
+    local count = tonumber(existingCount) or 0
+
+    if not self.groupImportConflictDialog then
+        local f = CreateFrame("Frame", "RaidstratsGroupImportConflictDialog", UIParent, "BackdropTemplate")
+        f:SetSize(520, 260)
+        f:SetPoint("CENTER", 0, 0)
+        f:SetMovable(true)
+        f:EnableMouse(true)
+        if self.SetBackdrop then
+            self.SetBackdrop(f)
+        end
+        tinsert(UISpecialFrames, "RaidstratsGroupImportConflictDialog")
+        f:SetScript("OnMouseDown", function(s, b) if b == "LeftButton" then s:StartMoving() end end)
+        f:SetScript("OnMouseUp", function(s) s:StopMovingOrSizing() end)
+
+        local closeBtn = CreateFrame("Button", nil, f, "UIPanelCloseButton")
+        closeBtn:SetPoint("TOPRIGHT", -5, -5)
+        closeBtn:SetScript("OnClick", function()
+            if Raidstrats then
+                Raidstrats._pendingGroupedImport = nil
+                Raidstrats._pendingGroupedImportUiOpts = nil
+            end
+            f:Hide()
+        end)
+
+        local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+        title:SetPoint("TOP", 0, -18)
+        title:SetText("Group Import Conflict")
+        title:SetTextColor(0.9, 0.9, 0.9)
+
+        local body = f:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        body:SetPoint("TOPLEFT", f, "TOPLEFT", 24, -60)
+        body:SetPoint("TOPRIGHT", f, "TOPRIGHT", -24, -60)
+        body:SetJustifyH("LEFT")
+        body:SetJustifyV("TOP")
+        body:SetSpacing(4)
+        body:SetTextColor(0.75, 0.80, 0.88)
+        f.bodyText = body
+
+        local overrideBtn = self.CreateButton and self.CreateButton(f, "OVERRIDE GROUP") or CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+        overrideBtn:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 24, 20)
+        overrideBtn:SetPoint("RIGHT", f, "CENTER", -8, 0)
+        overrideBtn:SetScript("OnClick", function()
+            local pending = f.pendingData
+            f:Hide()
+            if Raidstrats and Raidstrats.FinalizePendingGroupedImport then
+                Raidstrats:FinalizePendingGroupedImport("override", pending)
+            end
+        end)
+
+        local dupBtn = self.CreateButton and self.CreateButton(f, "IMPORT DUPLICATES") or CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+        dupBtn:SetPoint("LEFT", f, "CENTER", 8, 0)
+        dupBtn:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -24, 20)
+        dupBtn:SetScript("OnClick", function()
+            local pending = f.pendingData
+            f:Hide()
+            if Raidstrats and Raidstrats.FinalizePendingGroupedImport then
+                Raidstrats:FinalizePendingGroupedImport("duplicates", pending)
+            end
+        end)
+
+        self.groupImportConflictDialog = f
+    end
+
+    local dialog = self.groupImportConflictDialog
+    dialog.pendingData = self._pendingGroupedImport
+    if dialog.bodyText then
+        dialog.bodyText:SetText(
+            ("Group \"%s\" already exists with %d plan(s).\n\nChoose how to import:\n- Override: replace existing plans in this group.\n- Import duplicates: keep current plans and add imported plans.")
+                :format(normalizedName, count)
+        )
+    end
+    if self.PrepareModal then
+        self:PrepareModal(dialog, self.plannerFrame or self.frame)
+    end
+    dialog:Show()
+end
+
+function Raidstrats:FinalizePendingGroupedImport(mode, pendingData)
+    local pending = pendingData or self._pendingGroupedImport
+    self._pendingGroupedImport = nil
+    if type(pending) ~= "table" then return false end
+
+    local payload = pending.payload
+    local groupName = pending.groupName
+    if type(payload) ~= "table" or type(payload.plans) ~= "table" or #payload.plans == 0 then
+        return false
+    end
+    if type(groupName) ~= "string" or strtrim(groupName) == "" then
+        groupName = "group-1"
+    end
+    groupName = strtrim(groupName)
+
+    local existingGroupId = pending.existingGroupId
+    local existingCount = tonumber(pending.existingCount) or 0
+    if mode == "override" and existingGroupId and existingCount > 0 then
+        if self.DeleteSavedPlansGroup then
+            self:DeleteSavedPlansGroup(existingGroupId, true)
+        end
+        existingGroupId = nil
+    end
+
+    local importedEntryIds = {}
+    local importedCount = 0
+    local lastImportedData = nil
+
+    for _, planEntry in ipairs(payload.plans) do
+        local candidate = nil
+        if type(planEntry) == "table" then
+            if type(planEntry.payload) == "table" then
+                candidate = planEntry.payload
+            elseif type(planEntry.data) == "table" then
+                candidate = planEntry.data
+            else
+                candidate = planEntry
+            end
+        end
+
+        local data = self:NormalizeDecodedPlanPayload(candidate)
+        if data then
+            local importedName = type(planEntry) == "table" and planEntry.planName or nil
+            if type(importedName) == "string" and strtrim(importedName) ~= "" then
+                data.planName = strtrim(importedName)
+            end
+            -- Group imports should always produce separate saved plans.
+            self:EnsurePlanInstanceKey(data, true)
+            local savedEntryId = self:SaveImportedPlan(data)
+            if savedEntryId then
+                importedEntryIds[#importedEntryIds + 1] = savedEntryId
+            end
+            importedCount = importedCount + 1
+            lastImportedData = data
+        end
+    end
+
+    if importedCount == 0 then return false end
+
+    if #importedEntryIds > 0 and self.EnsureSavedPlansGroupByName and self.SetSavedPlanGroup then
+        local groupId = self:EnsureSavedPlansGroupByName(groupName)
+        if groupId then
+            for _, entryId in ipairs(importedEntryIds) do
+                self:SetSavedPlanGroup(entryId, groupId)
+            end
+        end
+    end
+
+    if self.RefreshSavedPlansList then
+        self:RefreshSavedPlansList()
+    end
+    if lastImportedData then
+        self.plannerData = lastImportedData
+    end
+    if self.ShowPlannerViewer and self.plannerFrame and self.plannerFrame:IsShown() then
+        self:ShowPlannerViewer({ reloadOnly = true })
+    end
+    print(("|cff00aaff[Raidstrats.gg]|r Imported %d plan(s) to group \"%s\" (%s)."):format(
+        importedCount,
+        groupName,
+        mode == "override" and "override" or "duplicates"
+    ))
+
+    local uiOpts = self._pendingGroupedImportUiOpts
+    self._pendingGroupedImportUiOpts = nil
+    if type(uiOpts) == "table" then
+        if uiOpts.clearPlanInput and self.planInputBox then
+            self.planInputBox:SetText("")
+        end
+        local mainWasOpen = self.frame and self.frame:IsShown()
+        local plannerWasOpen = self.plannerFrame and self.plannerFrame:IsShown()
+        if uiOpts.closeMainOnSuccess and self.frame then
+            self.frame:Hide()
+            mainWasOpen = false
+        end
+        if (uiOpts.openPlanner or plannerWasOpen) and self.ShowPlannerViewer then
+            if plannerWasOpen then
+                self:ShowPlannerViewer({ reloadOnly = true })
+            else
+                self:ShowPlannerViewer()
+            end
+        end
+        if mainWasOpen and self.frame then
+            self.frame:Show()
+        end
+        if self.LayoutOpenWindows and (mainWasOpen or (uiOpts.openPlanner and not plannerWasOpen)) then
+            self:LayoutOpenWindows()
+        end
+        if uiOpts.closeImportDialog and self.importPlanDialog then
+            self.importPlanDialog:Hide()
+        end
+        print("|cff00aaff[Raidstrats.gg]|r Plan imported.")
+    end
+    return true
+end
+
 function Raidstrats:ImportPlanFromPasteString(raw)
-    local data = self:DecodePlanFromBase64(raw)
+    local payload = self:DecodeAddonImportPayload(raw)
+    if not payload then return false end
+
+    if type(payload.plans) == "table" and #payload.plans > 0 then
+        local groupName = (type(payload.groupName) == "string" and strtrim(payload.groupName) ~= "")
+            and strtrim(payload.groupName)
+            or "group-1"
+        local existingGroupId = self:FindSavedPlansGroupByName(groupName)
+        local existingCount = existingGroupId and self:CountSavedPlansInGroup(existingGroupId) or 0
+        if existingGroupId and existingCount > 0 then
+            self._pendingGroupedImport = {
+                payload = payload,
+                groupName = groupName,
+                existingGroupId = existingGroupId,
+                existingCount = existingCount,
+            }
+            self:ShowGroupImportConflictDialog(groupName, existingCount)
+            return "pending"
+        end
+        return self:FinalizePendingGroupedImport("duplicates", {
+            payload = payload,
+            groupName = groupName,
+            existingGroupId = existingGroupId,
+            existingCount = existingCount,
+        })
+    end
+
+    local data = self:NormalizeDecodedPlanPayload(payload)
     if not data then return false end
     -- Website / fresh paste: new key. Team share payload already includes instanceKey.
     self:EnsurePlanInstanceKey(data)
@@ -996,7 +1249,7 @@ local function EnsureImportedBossPortraitFallback(data)
     end
 end
 
-function Raidstrats:DecodePlanFromBase64(raw)
+function Raidstrats:DecodeAddonImportPayload(raw)
     if not raw or raw == "" then return nil end
     local b64 = raw:gsub("^%s+", ""):gsub("%s+$", "")
     if b64:sub(1, #PREFIX_PLANNER) == PREFIX_PLANNER then
@@ -1013,12 +1266,20 @@ function Raidstrats:DecodePlanFromBase64(raw)
         if not inflated or inflated == "" then return nil end
         json = inflated
     end
-    local data = DecodeJSON(json)
-    if not data or SceneCount(data.scenes) == 0 then return nil end
+    return DecodeJSON(json)
+end
+
+function Raidstrats:NormalizeDecodedPlanPayload(data)
+    if type(data) ~= "table" or SceneCount(data.scenes) == 0 then return nil end
     ConvertWebPlannerScenes(data)
     EnsureImportedBossPortraitFallback(data)
     if self.SanitizePlanData then self:SanitizePlanData(data) end
     return data
+end
+
+function Raidstrats:DecodePlanFromBase64(raw)
+    local data = self:DecodeAddonImportPayload(raw)
+    return self:NormalizeDecodedPlanPayload(data)
 end
 
 function Raidstrats:GetPlayerShareName()
@@ -1613,9 +1874,19 @@ function Raidstrats:TryImportPlanFromText(raw, opts)
         print("|cffff6666[Raidstrats.gg]|r Paste a plan export string (starts with !raidstrats-addon-).")
         return false
     end
-    if not self:ImportPlanFromPasteString(raw) then
+    local importResult = self:ImportPlanFromPasteString(raw)
+    if not importResult then
         print("|cffff6666[Raidstrats.gg]|r Could not import plan. Check the string is complete and starts with !raidstrats-addon-.")
         return false
+    end
+    if importResult == "pending" then
+        self._pendingGroupedImportUiOpts = {
+            clearPlanInput = opts.clearPlanInput,
+            closeMainOnSuccess = opts.closeMainOnSuccess,
+            openPlanner = opts.openPlanner,
+            closeImportDialog = opts.closeImportDialog,
+        }
+        return true
     end
 
     local addon = self
