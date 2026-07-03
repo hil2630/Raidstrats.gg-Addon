@@ -73,6 +73,97 @@ local function GetClassColor(classFile)
     return 0.82, 0.82, 0.82
 end
 
+function Diar:HideRaidCheckMemberContextDismissOverlay()
+    local o = self._raidCheckMemberCtxDismiss
+    if not o then return end
+    o:Hide()
+    o:SetScript("OnClick", nil)
+    o:SetScript("OnMouseUp", nil)
+end
+
+function Diar:HideRaidCheckMemberContextMenu()
+    self:HideRaidCheckMemberContextDismissOverlay()
+    local menu = self._raidCheckMemberCtxMenu
+    if menu then
+        menu:Hide()
+    end
+end
+
+function Diar:ShowRaidCheckMemberContextMenu(anchor, memberName)
+    memberName = strtrim(tostring(memberName or ""))
+    if memberName == "" then return end
+    self:HideRaidCheckMemberContextMenu()
+
+    local menu = self._raidCheckMemberCtxMenu
+    if not menu then
+        menu = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
+        menu:SetSize(152, 40)
+        menu:SetFrameStrata("FULLSCREEN_DIALOG")
+        menu:SetFrameLevel(540)
+        menu:EnableMouse(true)
+        if SetBackdrop then SetBackdrop(menu, UI.PANEL, UI.BORDER, 1) end
+
+        local notifBtn = CreateFrame("Button", nil, menu, "BackdropTemplate")
+        notifBtn:SetPoint("TOPLEFT", menu, "TOPLEFT", 6, -6)
+        notifBtn:SetPoint("BOTTOMRIGHT", menu, "BOTTOMRIGHT", -6, 6)
+        if SetBackdrop then SetBackdrop(notifBtn, UI.ROW, UI.BORDER, 1) end
+        local lbl = notifBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        lbl:SetPoint("CENTER")
+        lbl:SetText("Send notif")
+        lbl:SetTextColor(0.92, 0.92, 0.92)
+        notifBtn:SetScript("OnEnter", function(s)
+            s:SetBackdropColor(unpack(UI.ROW_HOV))
+            lbl:SetTextColor(1, 1, 1)
+        end)
+        notifBtn:SetScript("OnLeave", function(s)
+            s:SetBackdropColor(unpack(UI.ROW))
+            lbl:SetTextColor(0.92, 0.92, 0.92)
+        end)
+        notifBtn:SetScript("OnClick", function()
+            local target = strtrim(tostring(menu and menu.memberName or ""))
+            Diar:HideRaidCheckMemberContextMenu()
+            if target ~= "" and Diar.SendRaidCheckNotifToMember then
+                Diar:SendRaidCheckNotifToMember(target)
+            end
+        end)
+
+        menu:SetScript("OnHide", function()
+            Diar:HideRaidCheckMemberContextDismissOverlay()
+        end)
+        self._raidCheckMemberCtxMenu = menu
+    end
+
+    menu.memberName = memberName
+    menu:ClearAllPoints()
+    if anchor then
+        menu:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -4)
+    else
+        local x, y = GetCursorPosition()
+        local scale = UIParent:GetEffectiveScale()
+        menu:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", x / scale, y / scale)
+    end
+    menu:Show()
+    if menu.Raise then menu:Raise() end
+
+    if not self._raidCheckMemberCtxDismiss then
+        local o = CreateFrame("Button", "RaidstratsRaidCheckMemberCtxDismiss", UIParent)
+        o:SetAllPoints(UIParent)
+        o:SetFrameStrata("FULLSCREEN_DIALOG")
+        o:EnableMouse(true)
+        o:SetAlpha(0.001)
+        self._raidCheckMemberCtxDismiss = o
+    end
+    local dismiss = self._raidCheckMemberCtxDismiss
+    dismiss:SetFrameLevel(math.max(0, (menu:GetFrameLevel() or 0) - 1))
+    dismiss:SetScript("OnClick", nil)
+    dismiss:SetScript("OnMouseUp", function(_, button)
+        if button == "LeftButton" or button == "RightButton" then
+            Diar:HideRaidCheckMemberContextMenu()
+        end
+    end)
+    dismiss:Show()
+end
+
 function Diar:ShouldShowRaidCheckBar()
     if IsInGroup() then return true end
     return self.IsRsggDebug and self:IsRsggDebug()
@@ -618,8 +709,8 @@ function Diar:RefreshRaidLeadView(pf)
             row:SetScript("OnMouseUp", function(s, button)
                 if button ~= "RightButton" then return end
                 if not s.memberName or s.memberName == "" then return end
-                if Diar.SendRaidCheckNotifToMember then
-                    Diar:SendRaidCheckNotifToMember(s.memberName)
+                if Diar.ShowRaidCheckMemberContextMenu then
+                    Diar:ShowRaidCheckMemberContextMenu(s, s.memberName)
                 end
             end)
             pf.raidLeadRows[i] = row
