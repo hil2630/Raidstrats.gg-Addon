@@ -1330,6 +1330,13 @@ function Raidstrats:IsGuildOnlyShareChannel()
     return IsInGuild() and true or false
 end
 
+function Raidstrats:GetPlanShareChatChannel()
+    if IsInGroup(LE_PARTY_CATEGORY_INSTANCE) then return "INSTANCE_CHAT" end
+    if IsInRaid() then return "RAID" end
+    if IsInGroup() then return "PARTY" end
+    return "SAY"
+end
+
 local function EnsureShareToGuildPopup()
     if StaticPopupDialogs["RAIDSTRATSGG_SHARE_TO_GUILD"] then return end
     StaticPopupDialogs["RAIDSTRATSGG_SHARE_TO_GUILD"] = {
@@ -1352,6 +1359,7 @@ local function ChannelLabel(chan)
     if chan == "INSTANCE_CHAT" then return "instance" end
     if chan == "RAID" then return "raid" end
     if chan == "PARTY" then return "party" end
+    if chan == "SAY" then return "say" end
     if chan == "GUILD" then return "guild" end
     return tostring(chan)
 end
@@ -1380,6 +1388,53 @@ function Raidstrats:BuildSharePayload(data)
         end
     end
     return EncodeBase64(body)
+end
+
+function Raidstrats:BuildPlanShareToken(data)
+    if not data or type(data.scenes) ~= "table" or #data.scenes == 0 then
+        return nil
+    end
+    local payload = self:BuildSharePayload(data)
+    if not payload or payload == "" then
+        return nil
+    end
+    local planName = SanitizeShareName((type(data.planName) == "string" and data.planName ~= "") and data.planName or "Raid plan")
+    self._sharedPlans = self._sharedPlans or {}
+    self._sharedPlans[planName] = { payload = payload, t = time() }
+    return ("[Raidstrats: %s]"):format(planName)
+end
+
+function Raidstrats:InsertShareTokenIntoActiveChat(token)
+    if type(token) ~= "string" or token == "" then
+        return false
+    end
+    local edit = ChatEdit_GetActiveWindow and ChatEdit_GetActiveWindow()
+    if not edit or (edit.IsShown and not edit:IsShown()) then
+        return false
+    end
+
+    local inserted = false
+    if ChatFrameUtil and ChatFrameUtil.InsertLink then
+        inserted = ChatFrameUtil.InsertLink(token) and true or false
+    elseif ChatEdit_InsertLink then
+        inserted = ChatEdit_InsertLink(token) and true or false
+    end
+
+    if not inserted and edit and edit.Insert then
+        local text = edit:GetText() or ""
+        if text ~= "" and not text:match("%s$") then
+            edit:Insert(" ")
+        end
+        edit:Insert(token)
+        inserted = true
+    end
+    return inserted
+end
+
+function Raidstrats:InsertPlanShareTokenIntoActiveChat(data)
+    local token = self:BuildPlanShareToken(data)
+    if not token then return false end
+    return self:InsertShareTokenIntoActiveChat(token)
 end
 
 local SHARE_PLAN_BATCH = 180
@@ -1417,16 +1472,15 @@ function Raidstrats:SharePlanToGroup(data, opts)
         self:PersistCurrentPlanToSaved()
     end
 
-    if self:IsGuildOnlyShareChannel() and not opts.confirmedGuild then
-        EnsureShareToGuildPopup()
-        local planName = SanitizeShareName((type(data.planName) == "string" and data.planName ~= "") and data.planName or "Raid plan")
-        StaticPopup_Show("RAIDSTRATSGG_SHARE_TO_GUILD", planName, nil, data)
-        return false
+    local chan = self.GetPlanShareChatChannel and self:GetPlanShareChatChannel() or self:GetGroupChatChannel()
+    if chan == "GUILD" then
+        chan = "SAY"
     end
-
-    local chan = self:GetGroupChatChannel()
     if not chan then
-        print("|cffff6666[Raidstrats.gg]|r Join a party, raid, or guild to share a plan.")
+        chan = "SAY"
+    end
+    if not chan then
+        print("|cffff6666[Raidstrats.gg]|r Couldn't resolve a chat channel for sharing.")
         return false
     end
 
@@ -1524,9 +1578,12 @@ function Raidstrats:SetupSharedPlanLinks()
     end
 
     for _, event in ipairs({
+        "CHAT_MSG_SAY", "CHAT_MSG_YELL",
         "CHAT_MSG_PARTY", "CHAT_MSG_PARTY_LEADER",
         "CHAT_MSG_RAID", "CHAT_MSG_RAID_LEADER",
         "CHAT_MSG_INSTANCE_CHAT", "CHAT_MSG_INSTANCE_CHAT_LEADER",
+        "CHAT_MSG_CHANNEL",
+        "CHAT_MSG_BATTLEGROUND", "CHAT_MSG_BATTLEGROUND_LEADER",
         "CHAT_MSG_GUILD", "CHAT_MSG_OFFICER",
         "CHAT_MSG_WHISPER", "CHAT_MSG_WHISPER_INFORM",
     }) do

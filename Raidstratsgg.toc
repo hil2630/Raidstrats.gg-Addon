@@ -45,4 +45,4 @@ planner\anim\planner-playback.lua
 # encounter-overview\boss-overview-data.lua
 # encounter-overview\Bosses\The Voidspire\Imperator Averzian.lua
 # encounter-overview\Bosses\Sporefall\Rotmire.lua
-encounter-overview\boss-overview-tab.lua
+# encounter-overview\boss-overview-tab.lua

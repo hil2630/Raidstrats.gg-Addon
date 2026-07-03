@@ -587,6 +587,7 @@ function Diar:RefreshRaidLeadView(pf)
         if not row then
             row = CreateFrame("Frame", nil, child)
             row:SetHeight(ROW_H)
+            row:EnableMouse(true)
             row.dot = row:CreateTexture(nil, "ARTWORK")
             row.dot:SetSize(8, 8)
             row.dot:SetPoint("LEFT", 2, 0)
@@ -614,6 +615,13 @@ function Diar:RefreshRaidLeadView(pf)
                 GameTooltip:Hide()
             end)
             row.autoSwitchBtn = autoSwitchBtn
+            row:SetScript("OnMouseUp", function(s, button)
+                if button ~= "RightButton" then return end
+                if not s.memberName or s.memberName == "" then return end
+                if Diar.SendRaidCheckNotifToMember then
+                    Diar:SendRaidCheckNotifToMember(s.memberName)
+                end
+            end)
             pf.raidLeadRows[i] = row
         end
         row:Show()
@@ -623,6 +631,7 @@ function Diar:RefreshRaidLeadView(pf)
         local unit = self.FindGroupUnitByName and self:FindGroupUnitByName(member.name)
         local _, classFile = unit and UnitClass(unit) or nil
         local cr, cg, cb = GetClassColor(classFile)
+        row.memberName = member.name
         row.nameText:SetText(member.name)
         row.nameText:SetTextColor(cr, cg, cb)
 
@@ -1028,6 +1037,67 @@ function Diar:SendRaidCheckNotif()
     self:SendCommMessage(prefix, msg, chan)
     print(("|cff00aaff[Raidstrats.gg]|r Sent raidcheck notification for \"%s\" to %s."):format(
         planName, chan == "RAID" and "raid" or (chan == "PARTY" and "party" or "group")))
+end
+
+local function BuildWhisperTargetFromMember(name)
+    local trimmed = strtrim(tostring(name or ""))
+    if trimmed == "" then return nil end
+    local unit = Diar.FindGroupUnitByName and Diar:FindGroupUnitByName(trimmed)
+    if not unit then return trimmed end
+    local unitName, unitRealm = UnitName(unit)
+    unitName = strtrim(tostring(unitName or ""))
+    unitRealm = strtrim(tostring(unitRealm or ""))
+    if unitName == "" then return trimmed end
+    if unitRealm ~= "" then
+        return unitName .. "-" .. unitRealm
+    end
+    return unitName
+end
+
+function Diar:SendRaidCheckNotifToMember(memberName)
+    if not self:CanSendRaidCheckNotif() then
+        print("|cffff6666[Raidstrats.gg]|r Only the raid leader can send raidcheck notifications.")
+        return false
+    end
+
+    local target = BuildWhisperTargetFromMember(memberName)
+    if not target or target == "" then
+        print("|cffff6666[Raidstrats.gg]|r Couldn't resolve that player for whisper.")
+        return false
+    end
+
+    local data = self.plannerData
+    if not data or not data.scenes or #data.scenes == 0 then
+        print("|cffff6666[Raidstrats.gg]|r No plan loaded to notify about.")
+        return false
+    end
+    if self.EnsurePlanInstanceKey then self:EnsurePlanInstanceKey(data) end
+    if self.PersistCurrentPlanToSaved then self:PersistCurrentPlanToSaved() end
+
+    local payload = self.BuildSharePayload and self:BuildSharePayload(data)
+    if not payload or payload == "" then
+        print("|cffff6666[Raidstrats.gg]|r Couldn't prepare the plan for notification.")
+        return false
+    end
+
+    local planName = (data.planName and data.planName ~= "") and data.planName or "Raid plan"
+    local planKey = SanitizeCommField(self:GetCurrentPlanPresenceKey())
+    local planId = SanitizeCommField(self:GetCurrentPlanId())
+    local transferId = string.format("rc%x%x", time(), math.random(0, 0xFFFFFF))
+    self._sharedPlans = self._sharedPlans or {}
+    self._sharedPlans[transferId] = { payload = payload, t = time() }
+
+    local owner = self.GetPlayerShareName and self:GetPlayerShareName()
+        or (UnitName("player") or "Unknown")
+    local prefix = self.COMM_PLAN_PREFIX or "RAIDSTRATS_PLAN"
+    local msg = table.concat({
+        "RNOT", SanitizeCommField(planName), planKey, planId,
+        SanitizeCommField(transferId), SanitizeCommField(owner),
+    }, SEP)
+    self:SendCommMessage(prefix, msg, "WHISPER", target, "BULK")
+    print(("|cff00aaff[Raidstrats.gg]|r Sent raidcheck notification for \"%s\" to %s."):format(
+        planName, Ambiguate and Ambiguate(target, "short") or target))
+    return true
 end
 
 function Diar:HideRaidCheckNotifPopup()
