@@ -11,6 +11,7 @@ local SetBackdrop = Diar.SetBackdrop
 local CreateButton = Diar.CreateButton
 local CreateInput = Diar.CreateInput
 local CreateAnimatedCheckbox = Diar.CreateAnimatedCheckbox
+local IMPORT_PROGRESS_UPDATE_MIN_INTERVAL = 0.06
 function Diar:UpdatePlannerPlanLink()
     local pf = self.plannerFrame
     if not pf or not pf.planLinkBox or not pf.planLinkEdit then return end
@@ -347,6 +348,8 @@ function Diar:ShowImportProgress(visible, received, total, status)
     if not pf or not pf.importProgressOverlay then return end
     local overlay = pf.importProgressOverlay
     if not visible then
+        overlay._lastProgressUpdateAt = nil
+        overlay._lastProgressPercent = nil
         overlay:Hide()
         return
     end
@@ -372,8 +375,18 @@ function Diar:UpdateImportProgress(received, total)
     if not pf or not pf.importProgressOverlay or not pf.importProgressOverlay:IsShown() then return end
     local overlay = pf.importProgressOverlay
     local pct = (total and total > 0 and received) and math.min(1, received / total) or 0
+    local pctInt = math.floor(pct * 100)
+    local now = GetTime and GetTime() or 0
+    local lastAt = overlay._lastProgressUpdateAt or 0
+    local lastPct = overlay._lastProgressPercent
+    local done = total and total > 0 and received and received >= total
+    if not done and lastPct == pctInt and (now - lastAt) < IMPORT_PROGRESS_UPDATE_MIN_INTERVAL then
+        return
+    end
+    overlay._lastProgressUpdateAt = now
+    overlay._lastProgressPercent = pctInt
     if overlay.statusText then
-        overlay.statusText:SetText(("Importing plan... %d%%"):format(math.floor(pct * 100)))
+        overlay.statusText:SetText(("Importing plan... %d%%"):format(pctInt))
     end
     local w = (overlay.barWidth or 316) * pct
     if overlay.barFill then

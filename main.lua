@@ -319,7 +319,15 @@ end
 
 function Raidstrats:SaveImportedPlan(data)
     if not data then return end
+    local importAlreadySanitized = data.__rsggImportedSanitized == true
+    local sharedVersion = tonumber(data.__rsggSharedVersion)
+    data.__rsggSharedVersion = nil
     self:EnsurePlanInstanceKey(data)
+    -- Seed our sync version from the shared payload so the first push applies as a delta.
+    if sharedVersion and self.SeedPlanSyncVersionFromImport
+        and type(data.instanceKey) == "string" and data.instanceKey ~= "" then
+        self:SeedPlanSyncVersionFromImport("inst:" .. data.instanceKey, sharedVersion)
+    end
     RaidstratsggSavedPlans = RaidstratsggSavedPlans or { list = {}, nextId = 1 }
     local function cleanMeta(value)
         if type(value) ~= "string" then return nil end
@@ -377,6 +385,7 @@ function Raidstrats:SaveImportedPlan(data)
         for _, entry in ipairs(RaidstratsggSavedPlans.list) do
             if entry.data and entry.data.instanceKey == data.instanceKey then
                 entry.data = CopyPlanData(data)
+                entry.data.__rsggImportedSanitized = nil
                 entry.data.savedEntryId = entry.id
                 if type(data.planName) == "string" and data.planName ~= "" then
                     entry.planName = data.planName
@@ -384,8 +393,11 @@ function Raidstrats:SaveImportedPlan(data)
                 entry.expansion = data.expansion or "Other"
                 entry.raid = data.raid or "Other"
                 entry.boss = data.boss or "Unknown"
-                if self.SanitizePlanData then self:SanitizePlanData(entry.data) end
+                if self.SanitizePlanData and not importAlreadySanitized then
+                    self:SanitizePlanData(entry.data)
+                end
                 data.savedEntryId = entry.id
+                data.__rsggImportedSanitized = nil
                 self:SetLastLoadedPlanId(entry.id)
                 return entry.id
             end
@@ -399,11 +411,15 @@ function Raidstrats:SaveImportedPlan(data)
         boss = data.boss or "Unknown",
         data = CopyPlanData(data),
     }
+    entry.data.__rsggImportedSanitized = nil
     entry.data.savedEntryId = entry.id
-    if self.SanitizePlanData then self:SanitizePlanData(entry.data) end
+    if self.SanitizePlanData and not importAlreadySanitized then
+        self:SanitizePlanData(entry.data)
+    end
     RaidstratsggSavedPlans.nextId = RaidstratsggSavedPlans.nextId + 1
     table.insert(RaidstratsggSavedPlans.list, entry)
     data.savedEntryId = entry.id
+    data.__rsggImportedSanitized = nil
     self:SetLastLoadedPlanId(entry.id)
     return entry.id
 end
@@ -1249,6 +1265,63 @@ local function EnsureImportedBossPortraitFallback(data)
     end
 end
 
+local function BuildImportedItemId(usedIds)
+    local attempt = 0
+    while attempt < 32 do
+        attempt = attempt + 1
+        local candidate = ("obj-%s-%06x"):format(tostring(time() or 0), math.random(0, 0xFFFFFF))
+        if candidate ~= "" and not usedIds[candidate] then
+            return candidate
+        end
+    end
+    local fallbackBase = ("obj-%s"):format(tostring(time() or 0))
+    local idx = 1
+    while true do
+        local candidate = ("%s-%d"):format(fallbackBase, idx)
+        if not usedIds[candidate] then
+            return candidate
+        end
+        idx = idx + 1
+    end
+end
+
+local function EnsureImportedItemIds(data)
+    if type(data) ~= "table" or type(data.scenes) ~= "table" then return end
+    local used = {}
+
+    -- First pass: reserve existing unique ids.
+    for _, scene in ipairs(data.scenes) do
+        if type(scene) == "table" and type(scene.items) == "table" then
+            for _, item in ipairs(scene.items) do
+                if type(item) == "table" then
+                    local id = strtrim(tostring(item.id or ""))
+                    if id ~= "" and not used[id] then
+                        used[id] = true
+                    end
+                end
+            end
+        end
+    end
+
+    -- Second pass: fill missing or duplicate ids.
+    local seenInPlan = {}
+    for _, scene in ipairs(data.scenes) do
+        if type(scene) == "table" and type(scene.items) == "table" then
+            for _, item in ipairs(scene.items) do
+                if type(item) == "table" then
+                    local id = strtrim(tostring(item.id or ""))
+                    if id == "" or seenInPlan[id] then
+                        id = BuildImportedItemId(used)
+                        item.id = id
+                        used[id] = true
+                    end
+                    seenInPlan[id] = true
+                end
+            end
+        end
+    end
+end
+
 function Raidstrats:DecodeAddonImportPayload(raw)
     if not raw or raw == "" then return nil end
     local b64 = raw:gsub("^%s+", ""):gsub("%s+$", "")
@@ -1271,9 +1344,15 @@ end
 
 function Raidstrats:NormalizeDecodedPlanPayload(data)
     if type(data) ~= "table" or SceneCount(data.scenes) == 0 then return nil end
+    -- Capture the shared sync version, then strip it so it never counts as plan content.
+    local sharedVersion = tonumber(data.syncVersion)
+    data.syncVersion = nil
     ConvertWebPlannerScenes(data)
     EnsureImportedBossPortraitFallback(data)
+    EnsureImportedItemIds(data)
     if self.SanitizePlanData then self:SanitizePlanData(data) end
+    data.__rsggImportedSanitized = true
+    if sharedVersion then data.__rsggSharedVersion = sharedVersion end
     return data
 end
 
@@ -1374,15 +1453,23 @@ end
 
 -- Build the base64 plan payload, compressed (0x01 marker) when LibDeflate is available.
 -- Matches ImportPlanFromPasteString, which inflates a 0x01-prefixed deflate stream.
-function Raidstrats:BuildSharePayload(data)
+function Raidstrats:BuildSharePayload(data, opts)
+    -- Ensure a stable team identity before sharing so sync versions line up on import.
+    if data then self:EnsurePlanInstanceKey(data) end
     data = self:PreparePlanDataForShare(data)
     if not data then return nil end
+    -- Stamp the sync version so importers are immediately ready for delta push updates.
+    -- Push updates manage their own version, so they opt out via skipSyncVersionStamp.
+    if self.StampShareSyncVersion and not (opts and opts.skipSyncVersionStamp) then
+        self:StampShareSyncVersion(data)
+    end
     local json = EncodeJSON(data)
     if not json or json == "" then return nil end
     local body = json
     local LibDeflate = LibStub("LibDeflate", true)
     if LibDeflate and LibDeflate.CompressDeflate then
-        local ok, compressed = pcall(function() return LibDeflate:CompressDeflate(json, { level = 9 }) end)
+        -- Use a slightly lower level for better send-time responsiveness.
+        local ok, compressed = pcall(function() return LibDeflate:CompressDeflate(json, { level = 6 }) end)
         if ok and compressed and (#compressed + 1) < #json then
             body = string.char(0x01) .. compressed
         end

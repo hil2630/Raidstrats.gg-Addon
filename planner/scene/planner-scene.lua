@@ -70,9 +70,10 @@ end
 
 function Diar:ShowSceneTabContextMenu(anchor, sceneIndex)
     sceneIndex = tonumber(sceneIndex)
-    if not sceneIndex or sceneIndex <= 1 then return end
+    if not sceneIndex then return end
     local data = self.plannerData
     if not data or not data.scenes or not data.scenes[sceneIndex] then return end
+    if #data.scenes <= 1 then return end
 
     self:HideSceneTabContextMenu()
 
@@ -148,10 +149,6 @@ end
 function Diar:DeletePlannerScene(sceneIndex)
     sceneIndex = tonumber(sceneIndex)
     if not sceneIndex then return false end
-    if sceneIndex <= 1 then
-        print("|cffff6666[Raidstrats.gg]|r Scene 1 cannot be deleted.")
-        return false
-    end
 
     local pf = self.plannerFrame
     local data = self.plannerData
@@ -160,7 +157,7 @@ function Diar:DeletePlannerScene(sceneIndex)
     end
     local scenes = data.scenes
     if #scenes <= 1 then
-        print("|cffff6666[Raidstrats.gg]|r Scene 1 cannot be deleted.")
+        print("|cffff6666[Raidstrats.gg]|r Cannot delete the only scene.")
         return false
     end
 
@@ -6424,7 +6421,6 @@ function Diar:ShowPlannerViewer(opts)
             end)
             btn:SetScript("OnMouseUp", function(s, button)
                 if button ~= "RightButton" then return end
-                if i <= 1 then return end
                 if Diar.ShowSceneTabContextMenu then
                     Diar:ShowSceneTabContextMenu(s, i)
                 end
@@ -6487,7 +6483,15 @@ function Diar:ShowPlannerViewer(opts)
     end)
     self:UpdatePlannerControlButtons()
 
-    pf.selectedSceneIndex = 1
+    do
+        local sceneCount = (data and data.scenes) and #data.scenes or 1
+        if opts.keepScene and type(pf.selectedSceneIndex) == "number" then
+            -- Preserve the viewer's current scene across reloads (e.g. received push updates).
+            pf.selectedSceneIndex = math.max(1, math.min(pf.selectedSceneIndex, math.max(1, sceneCount)))
+        else
+            pf.selectedSceneIndex = 1
+        end
+    end
     self:UpdateSceneTabHighlight()
     if pf.__forceExpandedOnNextShow and not pf.nsrtSceneActive then
         pf.compactMode = false
