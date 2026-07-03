@@ -2003,7 +2003,7 @@ function Raidstrats:StartRosterScan()
     
     if self.includeSpecs and #self.inspectQueue > 0 then
         self.totalToScan = #self.rosterData + #self.inspectQueue
-        if self.genBtn then
+        if self.genBtn and self.genBtn.SetLoadingState then
             self.genBtn:SetLoadingState(true, #self.rosterData, self.totalToScan)
         end
         self:ProcessNextInQueue()
@@ -2016,7 +2016,7 @@ function Raidstrats:ProcessNextInQueue()
     if not self.isScanning then return end 
 
     local done = #self.rosterData
-    if self.genBtn then
+    if self.genBtn and self.genBtn.SetLoadingState then
         self.genBtn:SetLoadingState(true, done, self.totalToScan)
     end
 
@@ -2089,7 +2089,7 @@ function Raidstrats:StopScan()
     self:CancelAllTimers()
     self:UnregisterEvent("INSPECT_READY")
     
-    if self.genBtn then 
+    if self.genBtn and self.genBtn.SetLoadingState then 
         self.genBtn:SetLoadingState(false)
     end
     
@@ -2099,7 +2099,7 @@ end
 
 function Raidstrats:FinishScan()
     self.isScanning = false
-    if self.genBtn then 
+    if self.genBtn and self.genBtn.SetLoadingState then 
         self.genBtn:SetLoadingState(false) 
     end
     if self.stopBtn then self.stopBtn:Hide() end
@@ -2118,134 +2118,10 @@ function Raidstrats:FinishScan()
 end
 
 function Raidstrats:CreateMainWindow()
-    if self.frame then
-        if not self.planInputBox then
-            self.frame:Hide()
-            self.frame = nil
-        else
-            self:UpdateSendButton()
-            self.frame:Show()
-            self:LayoutOpenWindows()
-            return
-        end
+    if self.ShowRosterExportDialog then
+        self:ShowRosterExportDialog()
+        return
     end
-
-    local f = CreateFrame("Frame", "RaidstratsFrame", UIParent, "BackdropTemplate")
-    f:SetSize(500, 600)
-    f:SetPoint("CENTER"); f:SetFrameStrata("DIALOG")
-    f:SetMovable(true); f:EnableMouse(true); f:SetClampedToScreen(true)
-    SetBackdrop(f); tinsert(UISpecialFrames, "RaidstratsFrame")
-    
-    f:SetScript("OnMouseDown", function(s,b) if b=="LeftButton" then s:StartMoving() end end)
-    f:SetScript("OnMouseUp", function(s) s:StopMovingOrSizing() end)
-    f:SetScript("OnShow", function()
-        self:UpdateSendButton()
-        self:LayoutOpenWindows()
-    end)
-    
-    local c = CreateFrame("Button", nil, f, "UIPanelCloseButton"); c:SetPoint("TOPRIGHT", -5, -5)
-    
-    local logo = f:CreateTexture(nil, "ARTWORK")
-    logo:SetSize(523*0.36, 52*0.36) 
-    logo:SetPoint("TOPLEFT", 20, -16)
-    logo:SetTexture("Interface\\AddOns\\Raidstratsgg\\title.tga") 
-
-    local ec, eb = CreateInput(f, "Roster String", true)
-    ec:SetPoint("TOP", 0, -76)
-    ec:SetPoint("LEFT", f, "LEFT", 20, 0)
-    ec:SetPoint("RIGHT", f, "RIGHT", -20, 0)
-    ec:SetHeight(100)
-    if ec.SyncEditWidth then ec:SyncEditWidth() end
-    self.outputBox = eb
-
-    local cb = CreateAnimatedCheckbox(f, "Include spec (slower)")
-    cb:SetPoint("TOPLEFT", ec, "BOTTOMLEFT", 0, -12)
-    self.specCheckbox = cb
-
-    local bGen = CreateLoaderButton(f, "GENERATE ROSTER")
-    bGen:SetPoint("TOP", cb, "BOTTOM", 0, -14)
-    bGen:SetPoint("LEFT", 20, 0); bGen:SetPoint("RIGHT", -20, 0)
-    bGen:SetScript("OnMouseDown", function(s, button) 
-        if button == "LeftButton" and not self.isScanning then
-            self:StartRosterScan() 
-        end
-    end)
-    self.genBtn = bGen
-
-    local bStop = CreateStopButton(f)
-    bStop:SetPoint("RIGHT", bGen, "RIGHT", 0, 0)
-    bStop:SetFrameLevel(bGen:GetFrameLevel() + 10)
-    
-    bStop:SetScript("OnClick", function() self:StopScan() end)
-    bStop:Hide()
-    self.stopBtn = bStop
-
-    local div = f:CreateTexture(nil, "ARTWORK"); div:SetHeight(1); div:SetColorTexture(0.2,0.2,0.2,1)
-    div:SetPoint("LEFT",20,0); div:SetPoint("RIGHT",-20,0); div:SetPoint("TOP", bGen, "BOTTOM", 0, -18)
-
-    local lc, lb = CreateInput(f, "Web Link", false)
-    lc:SetPoint("TOP", div, "BOTTOM", 0, -26)
-    lc:SetPoint("LEFT", f, "LEFT", 20, 0)
-    lc:SetPoint("RIGHT", f, "RIGHT", -20, 0)
-    lc:SetHeight(38)
-    
-    local bSend = CreateButton(f, "BROADCAST TO GROUP")
-    bSend:SetPoint("TOP", lc, "BOTTOM", 0, -12); bSend:SetPoint("LEFT", 20, 0); bSend:SetPoint("RIGHT", -20, 0)
-    bSend:SetScript("OnClick", function()
-        local allowed = self.IsPlanLeader and self:IsPlanLeader()
-            or (not IsInRaid() or UnitIsGroupLeader("player"))
-        if not allowed then return end
-        local u, ch = lb:GetText(), IsInRaid() and "RAID" or "PARTY"
-        if u and u~="" then self:SendCommMessage(COMM_PREFIX, u, ch); print("|cff00aaff[Raidstrats.gg]|r Sent to "..ch) end
-    end)
-    self.sendBtn = bSend
-
-    local div2 = f:CreateTexture(nil, "ARTWORK")
-    div2:SetHeight(1)
-    div2:SetColorTexture(0.2, 0.2, 0.2, 1)
-    div2:SetPoint("LEFT", 20, 0)
-    div2:SetPoint("RIGHT", -20, 0)
-    div2:SetPoint("TOP", bSend, "BOTTOM", 0, -18)
-
-    local pc, pb = CreateInput(f, "Plan String", true)
-    pc:SetPoint("TOP", div2, "BOTTOM", 0, -26)
-    pc:SetPoint("LEFT", f, "LEFT", 20, 0)
-    pc:SetPoint("RIGHT", f, "RIGHT", -20, 0)
-    pc:SetHeight(85)
-    if pc.SyncEditWidth then pc:SyncEditWidth() end
-    pb:SetFontObject("GameFontHighlightSmall")
-    self.planInputBox = pb
-
-    local planBtnRow = CreateFrame("Frame", nil, f)
-    planBtnRow:SetHeight(40)
-    planBtnRow:SetPoint("TOPLEFT", pc, "BOTTOMLEFT", 0, -12)
-    planBtnRow:SetPoint("TOPRIGHT", pc, "BOTTOMRIGHT", 0, -12)
-
-    local bImportPlan = CreateButton(planBtnRow, "IMPORT PLAN")
-    bImportPlan:SetPoint("LEFT", planBtnRow, "LEFT", 0, 0)
-    bImportPlan:SetPoint("RIGHT", planBtnRow, "CENTER", -6, 0)
-    bImportPlan:SetScript("OnClick", function()
-        if self.planInputBox then
-            self:TryImportPlanFromText(self.planInputBox:GetText(), {
-                openPlanner = true,
-                clearPlanInput = true,
-                closeMainOnSuccess = true,
-            })
-        end
-    end)
-
-    local bOpenPlanner = CreateButton(planBtnRow, "OPEN PLANNER")
-    bOpenPlanner:SetPoint("LEFT", planBtnRow, "CENTER", 6, 0)
-    bOpenPlanner:SetPoint("RIGHT", planBtnRow, "RIGHT", 0, 0)
-    bOpenPlanner:SetScript("OnClick", function()
-        if self.frame then self.frame:Hide() end
-        if self.ShowPlannerViewer then
-            self:ShowPlannerViewer({ layoutWindows = true })
-        end
-    end)
-
-    self.frame = f
-    self:UpdateSendButton()
 end
 
 function Raidstrats:UpdateSendButton()

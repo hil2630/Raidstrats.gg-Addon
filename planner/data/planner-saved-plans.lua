@@ -120,6 +120,197 @@ if not StaticPopupDialogs["RAIDSTRATSGG_DELETE_PLAN_GROUP_AND_PLANS"] then
     }
 end
 
+function Diar:EnsureStyledCreatePlanGroupDialog()
+    if self._createPlanGroupDialog then
+        return self._createPlanGroupDialog
+    end
+
+    local f = CreateFrame("Frame", "RaidstratsCreatePlanGroupDialog", UIParent, "BackdropTemplate")
+    f:SetSize(420, 190)
+    f:SetFrameStrata("FULLSCREEN_DIALOG")
+    f:SetFrameLevel(620)
+    f:SetPoint("CENTER")
+    f:SetMovable(true)
+    f:EnableMouse(true)
+    if SetBackdrop then
+        SetBackdrop(f, UI.PANEL, UI.BORDER, 1)
+    end
+    tinsert(UISpecialFrames, "RaidstratsCreatePlanGroupDialog")
+    f:SetScript("OnMouseDown", function(s, button)
+        if button == "LeftButton" then s:StartMoving() end
+    end)
+    f:SetScript("OnMouseUp", function(s)
+        s:StopMovingOrSizing()
+    end)
+
+    local closeBtn = CreateFrame("Button", nil, f, "UIPanelCloseButton")
+    closeBtn:SetPoint("TOPRIGHT", -5, -5)
+
+    local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    title:SetPoint("TOPLEFT", 14, -14)
+    title:SetTextColor(0.92, 0.92, 0.96)
+    title:SetText("Create Group")
+
+    local subtitle = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    subtitle:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -6)
+    subtitle:SetPoint("TOPRIGHT", f, "TOPRIGHT", -14, -6)
+    subtitle:SetJustifyH("LEFT")
+    subtitle:SetTextColor(0.70, 0.74, 0.82)
+    subtitle:SetText("Choose a group name for the selected plans.")
+
+    local inputWrap = CreateFrame("Frame", nil, f, "BackdropTemplate")
+    inputWrap:SetPoint("TOPLEFT", subtitle, "BOTTOMLEFT", 0, -10)
+    inputWrap:SetPoint("TOPRIGHT", f, "TOPRIGHT", -14, -10)
+    inputWrap:SetHeight(30)
+    if SetBackdrop then
+        SetBackdrop(inputWrap, UI.ROW, UI.BORDER, 1)
+    end
+
+    local edit = CreateFrame("EditBox", nil, inputWrap)
+    edit:SetAutoFocus(false)
+    edit:SetPoint("TOPLEFT", inputWrap, "TOPLEFT", 8, -3)
+    edit:SetPoint("BOTTOMRIGHT", inputWrap, "BOTTOMRIGHT", -8, 3)
+    edit:SetFontObject("GameFontHighlightSmall")
+    edit:SetTextColor(0.94, 0.95, 0.98)
+    edit:SetJustifyH("LEFT")
+    edit:SetMaxLetters(48)
+    edit:SetScript("OnEscapePressed", function() f:Hide() end)
+    edit:SetScript("OnEnterPressed", function()
+        local text = strtrim(edit:GetText() or "")
+        f:Hide()
+        if Diar and Diar.CreateSavedPlansGroupForEntries then
+            Diar:CreateSavedPlansGroupForEntries(f.entryIds, text)
+        end
+    end)
+    f.editBox = edit
+
+    local createBtn = CreatePlannerIconBtn(f, "Create", 100, 28)
+    createBtn:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 14, 14)
+    createBtn:SetScript("OnClick", function()
+        local text = strtrim(edit:GetText() or "")
+        f:Hide()
+        if Diar and Diar.CreateSavedPlansGroupForEntries then
+            Diar:CreateSavedPlansGroupForEntries(f.entryIds, text)
+        end
+    end)
+
+    local cancelBtn = CreatePlannerIconBtn(f, "Cancel", 100, 28)
+    cancelBtn:SetPoint("LEFT", createBtn, "RIGHT", 8, 0)
+    cancelBtn:SetScript("OnClick", function()
+        f:Hide()
+    end)
+
+    f:Hide()
+    self._createPlanGroupDialog = f
+    return f
+end
+
+function Diar:ShowStyledCreatePlanGroupDialog(entryIds)
+    local dlg = self:EnsureStyledCreatePlanGroupDialog()
+    if not dlg then return end
+    local ids, seen = {}, {}
+    if type(entryIds) == "table" then
+        for _, raw in ipairs(entryIds) do
+            local id = tonumber(raw)
+            if id and not seen[id] then
+                seen[id] = true
+                ids[#ids + 1] = id
+            end
+        end
+    end
+    dlg.entryIds = ids
+    dlg.editBox:SetText("")
+    dlg:ClearAllPoints()
+    dlg:SetPoint("CENTER")
+    dlg:Show()
+    dlg:Raise()
+    dlg.editBox:SetFocus()
+end
+
+function Diar:EnsureStyledDeletePlanGroupDialog()
+    if self._deletePlanGroupDialog then
+        return self._deletePlanGroupDialog
+    end
+
+    local f = CreateFrame("Frame", "RaidstratsDeletePlanGroupDialog", UIParent, "BackdropTemplate")
+    f:SetSize(440, 184)
+    f:SetFrameStrata("FULLSCREEN_DIALOG")
+    f:SetFrameLevel(620)
+    f:SetPoint("CENTER")
+    f:SetMovable(true)
+    f:EnableMouse(true)
+    if SetBackdrop then
+        SetBackdrop(f, UI.PANEL, UI.BORDER, 1)
+    end
+    tinsert(UISpecialFrames, "RaidstratsDeletePlanGroupDialog")
+    f:SetScript("OnMouseDown", function(s, button)
+        if button == "LeftButton" then s:StartMoving() end
+    end)
+    f:SetScript("OnMouseUp", function(s)
+        s:StopMovingOrSizing()
+    end)
+
+    local closeBtn = CreateFrame("Button", nil, f, "UIPanelCloseButton")
+    closeBtn:SetPoint("TOPRIGHT", -5, -5)
+
+    local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    title:SetPoint("TOPLEFT", 14, -14)
+    title:SetTextColor(0.96, 0.88, 0.88)
+    title:SetText("Delete Group")
+    f.title = title
+
+    local body = f:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    body:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -10)
+    body:SetPoint("TOPRIGHT", f, "TOPRIGHT", -14, -10)
+    body:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 14, 54)
+    body:SetJustifyH("LEFT")
+    body:SetJustifyV("TOP")
+    body:SetWordWrap(true)
+    body:SetTextColor(0.84, 0.86, 0.91)
+    f.body = body
+
+    local confirmBtn = CreatePlannerIconBtn(f, "Delete", 100, 28)
+    confirmBtn:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 14, 14)
+    local cancelBtn = CreatePlannerIconBtn(f, "Cancel", 100, 28)
+    cancelBtn:SetPoint("LEFT", confirmBtn, "RIGHT", 8, 0)
+
+    confirmBtn:SetScript("OnClick", function()
+        local groupId = f.groupId
+        local deletePlans = f.deletePlans == true
+        f:Hide()
+        if groupId and Diar and Diar.DeleteSavedPlansGroup then
+            Diar:DeleteSavedPlansGroup(groupId, deletePlans)
+        end
+    end)
+    cancelBtn:SetScript("OnClick", function()
+        f:Hide()
+    end)
+
+    f:Hide()
+    self._deletePlanGroupDialog = f
+    return f
+end
+
+function Diar:ShowStyledDeletePlanGroupDialog(groupId, groupName, deletePlans)
+    groupId = tonumber(groupId)
+    if not groupId then return end
+    local dlg = self:EnsureStyledDeletePlanGroupDialog()
+    if not dlg then return end
+    local name = tostring(groupName or "Group")
+    dlg.groupId = groupId
+    dlg.groupName = name
+    dlg.deletePlans = deletePlans == true
+    if dlg.deletePlans then
+        dlg.body:SetText(("Delete group \"%s\" and all plans in it?"):format(name))
+    else
+        dlg.body:SetText(("Delete group \"%s\"?\nPlans will be moved to Ungrouped."):format(name))
+    end
+    dlg:ClearAllPoints()
+    dlg:SetPoint("CENTER")
+    dlg:Show()
+    dlg:Raise()
+end
+
 -- Copy plan data so loading from saved doesn't share reference with storage.
 local function CopyPlanData(val)
     if type(val) == "table" then
@@ -795,7 +986,7 @@ function Diar:ShowSavedPlanGroupContextMenu(anchorBtn, groupId)
             local name = tostring(menu.groupName or "Group")
             Diar:HideSavedPlanGroupContextMenu()
             if id then
-                StaticPopup_Show("RAIDSTRATSGG_DELETE_PLAN_GROUP", name, nil, { groupId = id, groupName = name })
+                Diar:ShowStyledDeletePlanGroupDialog(id, name, false)
             end
         end)
         menu.deleteGroupBtn = deleteGroupBtn
@@ -818,7 +1009,7 @@ function Diar:ShowSavedPlanGroupContextMenu(anchorBtn, groupId)
             local name = tostring(menu.groupName or "Group")
             Diar:HideSavedPlanGroupContextMenu()
             if id then
-                StaticPopup_Show("RAIDSTRATSGG_DELETE_PLAN_GROUP_AND_PLANS", name, nil, { groupId = id, groupName = name })
+                Diar:ShowStyledDeletePlanGroupDialog(id, name, true)
             end
         end)
         menu.deleteAllBtn = deleteAllBtn
@@ -1050,7 +1241,7 @@ function Diar:ShowSavedPlanContextMenu(anchorBtn, entryIds)
         end)
         createBtn:SetScript("OnClick", function()
             Diar:HideSavedPlanContextMenu()
-            StaticPopup_Show("RAIDSTRATSGG_CREATE_PLAN_GROUP", nil, nil, { entryIds = menu.entryIds })
+            Diar:ShowStyledCreatePlanGroupDialog(menu.entryIds)
         end)
         menu.createGroupBtn = createBtn
         menu.createGroupLabel = createLbl
@@ -1149,7 +1340,7 @@ local function CreatePlanAutoToggle(parent)
     return toggle
 end
 
-local function ApplySavedPlanRowState(rowFrame, entry, isActive, planKey, autoEnabled, isSelected, isMultiSelected)
+local function ApplySavedPlanRowState(rowFrame, entry, isActive, planKey, autoEnabled, isSelected, isMultiSelected, deleteConfirm)
     rowFrame.entryId = entry.id
     rowFrame.planKey = planKey
 
@@ -1195,6 +1386,19 @@ local function ApplySavedPlanRowState(rowFrame, entry, isActive, planKey, autoEn
     elseif rowFrame.syncToggle then
         rowFrame.syncToggle:Hide()
     end
+
+    if deleteConfirm then
+        rowFrame.meta:SetText("Are you sure?")
+        rowFrame.meta:SetTextColor(0.94, 0.72, 0.72)
+        if rowFrame.delBtn then rowFrame.delBtn:Hide() end
+        if rowFrame.delCancelBtn then rowFrame.delCancelBtn:Show() end
+        if rowFrame.delConfirmBtn then rowFrame.delConfirmBtn:Show() end
+        if rowFrame.syncToggle then rowFrame.syncToggle:Hide() end
+    else
+        if rowFrame.delBtn then rowFrame.delBtn:Show() end
+        if rowFrame.delCancelBtn then rowFrame.delCancelBtn:Hide() end
+        if rowFrame.delConfirmBtn then rowFrame.delConfirmBtn:Hide() end
+    end
 end
 
 local function LayoutSavedPlanRow(rowFrame)
@@ -1215,6 +1419,16 @@ local function LayoutSavedPlanRow(rowFrame)
             rowFrame.delBtn:ClearAllPoints()
             rowFrame.delBtn:SetPoint("RIGHT", rowFrame, "RIGHT", -4, 0)
         end
+        if rowFrame.delConfirmBtn then
+            rowFrame.delConfirmBtn:SetSize(26, 18)
+            rowFrame.delConfirmBtn:ClearAllPoints()
+            rowFrame.delConfirmBtn:SetPoint("RIGHT", rowFrame, "RIGHT", -4, 0)
+        end
+        if rowFrame.delCancelBtn and rowFrame.delConfirmBtn then
+            rowFrame.delCancelBtn:SetSize(26, 18)
+            rowFrame.delCancelBtn:ClearAllPoints()
+            rowFrame.delCancelBtn:SetPoint("RIGHT", rowFrame.delConfirmBtn, "LEFT", -4, 0)
+        end
         if rowFrame.syncToggle and rowFrame.delBtn then
             rowFrame.syncToggle:ClearAllPoints()
             rowFrame.syncToggle:SetPoint("RIGHT", rowFrame.delBtn, "LEFT", -6, 0)
@@ -1231,6 +1445,16 @@ local function LayoutSavedPlanRow(rowFrame)
             rowFrame.delBtn:SetSize(20, 20)
             rowFrame.delBtn:ClearAllPoints()
             rowFrame.delBtn:SetPoint("RIGHT", rowFrame, "RIGHT", -4, 0)
+        end
+        if rowFrame.delConfirmBtn then
+            rowFrame.delConfirmBtn:SetSize(28, 20)
+            rowFrame.delConfirmBtn:ClearAllPoints()
+            rowFrame.delConfirmBtn:SetPoint("RIGHT", rowFrame, "RIGHT", -4, 0)
+        end
+        if rowFrame.delCancelBtn and rowFrame.delConfirmBtn then
+            rowFrame.delCancelBtn:SetSize(28, 20)
+            rowFrame.delCancelBtn:ClearAllPoints()
+            rowFrame.delCancelBtn:SetPoint("RIGHT", rowFrame.delConfirmBtn, "LEFT", -4, 0)
         end
         if rowFrame.syncToggle and rowFrame.delBtn then
             rowFrame.syncToggle:ClearAllPoints()
@@ -1305,6 +1529,73 @@ local function AcquireSavedPlanRow(pf, child, planIndex, w)
         s.label:SetTextColor(0.95, 0.45, 0.45)
         GameTooltip:Hide()
     end)
+    delBtn:SetScript("OnMouseDown", function(_, btn)
+        if btn == "LeftButton" then
+            rowFrame.__blockRowClick = true
+        end
+    end)
+
+    local delConfirmBtn = CreateFrame("Button", nil, rowFrame, "BackdropTemplate")
+    delConfirmBtn:SetSize(28, 20)
+    delConfirmBtn:SetPoint("RIGHT", rowFrame, "RIGHT", -4, 0)
+    SetBackdrop(delConfirmBtn, {0, 0, 0, 0}, {0.22, 0.55, 0.22, 0.95}, 1)
+    local confirmFs = delConfirmBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    confirmFs:SetPoint("CENTER")
+    confirmFs:SetText("Yes")
+    confirmFs:SetTextColor(0.70, 0.98, 0.70)
+    delConfirmBtn.label = confirmFs
+    delConfirmBtn:SetScript("OnEnter", function(s)
+        s:SetBackdropColor(0.08, 0.24, 0.08, 0.75)
+        s:SetBackdropBorderColor(0.30, 0.85, 0.30, 1)
+        s.label:SetTextColor(0.75, 1, 0.75)
+        GameTooltip:SetOwner(s, "ANCHOR_LEFT")
+        GameTooltip:SetText("Confirm delete", 1, 1, 1)
+        GameTooltip:Show()
+    end)
+    delConfirmBtn:SetScript("OnLeave", function(s)
+        s:SetBackdropColor(0, 0, 0, 0)
+        s:SetBackdropBorderColor(0.22, 0.55, 0.22, 0.95)
+        s.label:SetTextColor(0.70, 0.98, 0.70)
+        GameTooltip:Hide()
+    end)
+    delConfirmBtn:SetScript("OnMouseDown", function(_, btn)
+        if btn == "LeftButton" then
+            rowFrame.__blockRowClick = true
+        end
+    end)
+    delConfirmBtn:Hide()
+    rowFrame.delConfirmBtn = delConfirmBtn
+
+    local delCancelBtn = CreateFrame("Button", nil, rowFrame, "BackdropTemplate")
+    delCancelBtn:SetSize(28, 20)
+    delCancelBtn:SetPoint("RIGHT", delConfirmBtn, "LEFT", -4, 0)
+    SetBackdrop(delCancelBtn, {0, 0, 0, 0}, {0.55, 0.22, 0.22, 0.95}, 1)
+    local cancelFs = delCancelBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    cancelFs:SetPoint("CENTER")
+    cancelFs:SetText("No")
+    cancelFs:SetTextColor(0.98, 0.70, 0.70)
+    delCancelBtn.label = cancelFs
+    delCancelBtn:SetScript("OnEnter", function(s)
+        s:SetBackdropColor(0.28, 0.10, 0.10, 0.75)
+        s:SetBackdropBorderColor(0.85, 0.30, 0.30, 1)
+        s.label:SetTextColor(1, 0.55, 0.55)
+        GameTooltip:SetOwner(s, "ANCHOR_LEFT")
+        GameTooltip:SetText("Cancel delete", 1, 1, 1)
+        GameTooltip:Show()
+    end)
+    delCancelBtn:SetScript("OnLeave", function(s)
+        s:SetBackdropColor(0, 0, 0, 0)
+        s:SetBackdropBorderColor(0.55, 0.22, 0.22, 0.95)
+        s.label:SetTextColor(0.98, 0.70, 0.70)
+        GameTooltip:Hide()
+    end)
+    delCancelBtn:SetScript("OnMouseDown", function(_, btn)
+        if btn == "LeftButton" then
+            rowFrame.__blockRowClick = true
+        end
+    end)
+    delCancelBtn:Hide()
+    rowFrame.delCancelBtn = delCancelBtn
 
     local syncToggle = CreatePlanAutoToggle(rowFrame)
     if syncToggle then
@@ -1520,6 +1811,18 @@ function Diar:RefreshSavedPlansList()
     pf.savedPlansSelectedIds = pf.savedPlansSelectedIds or {}
     RaidstratsggSavedPlans = RaidstratsggSavedPlans or { list = {}, nextId = 1 }
     local list = RaidstratsggSavedPlans.list
+    if pf.savedPlansDeleteConfirmId then
+        local keep = false
+        for _, e in ipairs(list or {}) do
+            if tonumber(e and e.id) == tonumber(pf.savedPlansDeleteConfirmId) then
+                keep = true
+                break
+            end
+        end
+        if not keep then
+            pf.savedPlansDeleteConfirmId = nil
+        end
+    end
     local child = pf.savedPlansScrollChild
     local w = pf.savedPlansListW or math.max(1, child:GetWidth())
     child:SetWidth(w)
@@ -1783,12 +2086,17 @@ function Diar:RefreshSavedPlansList()
             local autoEnabled = planKey and self.IsPlanAutoImportEnabled and self:IsPlanAutoImportEnabled(planKey)
             local isActive = activeId and entry.id == activeId
             local isSelected = pf.savedPlansSelectedIds and pf.savedPlansSelectedIds[entry.id] == true
-            ApplySavedPlanRowState(rowFrame, entry, isActive, planKey, autoEnabled, isSelected, selectedCount > 1)
+            local isDeleteConfirm = tonumber(pf.savedPlansDeleteConfirmId) == tonumber(entry.id)
+            ApplySavedPlanRowState(rowFrame, entry, isActive, planKey, autoEnabled, isSelected, selectedCount > 1, isDeleteConfirm)
             rowFrame:ClearAllPoints()
             rowFrame:SetPoint("TOPLEFT", child, "TOPLEFT", 2, y)
             rowFrame.__savedPlanGroupDropId = tonumber(entry and entry.groupId) or "__ungrouped__"
             rowFrame:SetScript("OnClick", function(_, btn)
                 if btn == "RightButton" then return end
+                if rowFrame.__blockRowClick then
+                    rowFrame.__blockRowClick = nil
+                    return
+                end
                 if rowFrame.syncToggle and rowFrame.syncToggle.__blockRowClick then
                     rowFrame.syncToggle.__blockRowClick = nil
                     return
@@ -1891,8 +2199,27 @@ function Diar:RefreshSavedPlansList()
             end)
             rowFrame.delBtn:SetScript("OnClick", function(_, btn)
                 if btn == "RightButton" then return end
-                StaticPopup_Show("RAIDSTRATSGG_DELETE_PLAN", entry.planName or "Unnamed", nil, entry.id)
+                pf.savedPlansDeleteConfirmId = entry.id
+                Diar:RefreshSavedPlansList()
             end)
+            if rowFrame.delCancelBtn then
+                rowFrame.delCancelBtn:SetScript("OnClick", function(_, btn)
+                    if btn == "RightButton" then return end
+                    if tonumber(pf.savedPlansDeleteConfirmId) == tonumber(entry.id) then
+                        pf.savedPlansDeleteConfirmId = nil
+                        Diar:RefreshSavedPlansList()
+                    end
+                end)
+            end
+            if rowFrame.delConfirmBtn then
+                rowFrame.delConfirmBtn:SetScript("OnClick", function(_, btn)
+                    if btn == "RightButton" then return end
+                    pf.savedPlansDeleteConfirmId = nil
+                    if entry and entry.id and Diar and Diar.DeleteSavedPlan then
+                        Diar:DeleteSavedPlan(entry.id)
+                    end
+                end)
+            end
             rowFrame:Show()
             y = y - GetPlanCardHeight() - GetListGap()
         end

@@ -10,6 +10,7 @@ local Diar = Addon
 local SetBackdrop = Diar.SetBackdrop
 local CreateButton = Diar.CreateButton
 local CreateInput = Diar.CreateInput
+local CreateAnimatedCheckbox = Diar.CreateAnimatedCheckbox
 function Diar:UpdatePlannerPlanLink()
     local pf = self.plannerFrame
     if not pf or not pf.planLinkBox or not pf.planLinkEdit then return end
@@ -119,6 +120,7 @@ function Diar:ShowImportPlanDialog()
             end
         end)
         f.inputFrame = inputFrame
+        f.inputFrame = inputFrame
 
         local importBtn = CreateButton and CreateButton(btnRow, "IMPORT") or CreateFrame("Button", nil, btnRow, "UIPanelButtonTemplate")
         if importBtn.SetText then importBtn:SetText("IMPORT") end
@@ -168,6 +170,174 @@ function Diar:ShowImportPlanDialog()
             if self.importPlanDialogEdit.SetCursorPosition then
                 self.importPlanDialogEdit:SetCursorPosition(0)
             end
+        end
+    end
+end
+
+function Diar:ShowRosterExportDialog()
+    if not self.rosterExportDialog then
+        local f = CreateFrame("Frame", "RaidstratsRosterExportDialog", UIParent, "BackdropTemplate")
+        f:SetSize(540, 360)
+        f:SetPoint("CENTER", 0, 0)
+        f:SetMovable(true)
+        f:EnableMouse(true)
+        SetBackdrop(f)
+        tinsert(UISpecialFrames, "RaidstratsRosterExportDialog")
+        f:SetScript("OnMouseDown", function(s, b) if b == "LeftButton" then s:StartMoving() end end)
+        f:SetScript("OnMouseUp", function(s) s:StopMovingOrSizing() end)
+
+        local closeBtn = CreateFrame("Button", nil, f, "UIPanelCloseButton")
+        closeBtn:SetPoint("TOPRIGHT", -5, -5)
+
+        local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+        title:SetPoint("TOP", 0, -18)
+        title:SetText("Export roster")
+        title:SetTextColor(0.9, 0.9, 0.9)
+
+        local hint = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        hint:SetPoint("TOP", title, "BOTTOM", 0, -8)
+        hint:SetWidth(500)
+        hint:SetTextColor(0.55, 0.6, 0.65)
+        hint:SetText("Generate a roster string, then copy it and paste where needed.")
+
+        local btnRow = CreateFrame("Frame", nil, f)
+        btnRow:SetHeight(40)
+        btnRow:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 20, 16)
+        btnRow:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -20, 16)
+
+        local inputFrame = CreateFrame("Frame", nil, f, "BackdropTemplate")
+        inputFrame:SetPoint("TOPLEFT", f, "TOPLEFT", 20, -72)
+        inputFrame:SetPoint("BOTTOMRIGHT", btnRow, "TOPRIGHT", 0, 46)
+        SetBackdrop(inputFrame, {0.05, 0.05, 0.07, 1}, {0.2, 0.2, 0.2, 1}, 1)
+
+        local scroll = CreateFrame("ScrollFrame", nil, inputFrame, "UIPanelScrollFrameTemplate")
+        scroll:SetPoint("TOPLEFT", inputFrame, "TOPLEFT", 8, -8)
+        scroll:SetPoint("BOTTOMRIGHT", inputFrame, "BOTTOMRIGHT", -24, 8)
+
+        local eb = CreateFrame("EditBox", nil, scroll)
+        eb:SetAutoFocus(false)
+        eb:SetMultiLine(true)
+        eb:SetMaxLetters(0)
+        eb:SetWidth(math.max(1, scroll:GetWidth()))
+        eb:SetTextInsets(4, 4, 4, 4)
+        scroll:SetScrollChild(eb)
+        eb:SetFontObject(GameFontHighlightSmall)
+        eb:SetTextColor(0.92, 0.92, 0.92)
+
+        local inactiveBorder = { 0.20, 0.20, 0.20, 1 }
+        local activeBorder = { 0.30, 0.60, 1.00, 1 }
+        eb:SetScript("OnEditFocusGained", function()
+            inputFrame:SetBackdropBorderColor(unpack(activeBorder))
+        end)
+        eb:SetScript("OnEditFocusLost", function()
+            inputFrame:SetBackdropBorderColor(unpack(inactiveBorder))
+        end)
+        inputFrame:EnableMouse(true)
+        inputFrame:SetScript("OnMouseDown", function(_, button)
+            if button == "LeftButton" and eb and eb.SetFocus then
+                eb:SetFocus()
+            end
+        end)
+        scroll:EnableMouse(true)
+        scroll:SetScript("OnMouseDown", function(_, button)
+            if button == "LeftButton" and eb and eb.SetFocus then
+                eb:SetFocus()
+            end
+        end)
+
+        inputFrame._scroll = scroll
+        inputFrame._edit = eb
+        inputFrame.SyncEditWidth = function(self)
+            if not self or not self._scroll or not self._edit then return end
+            local w = self:GetWidth()
+            if not w or w <= 32 then return end
+            local innerW = w - 32
+            self._scroll:SetWidth(innerW)
+            self._edit:SetWidth(innerW)
+        end
+        eb:SetScript("OnTextChanged", function()
+            if inputFrame and inputFrame.SyncEditWidth then
+                inputFrame:SyncEditWidth()
+            end
+        end)
+        inputFrame:SetScript("OnSizeChanged", function(s)
+            if s and s.SyncEditWidth then
+                s:SyncEditWidth()
+            end
+        end)
+
+        local includeSpecChk = CreateAnimatedCheckbox and CreateAnimatedCheckbox(f, "Include spec (slower)") or nil
+        if includeSpecChk then
+            includeSpecChk:SetPoint("TOPLEFT", inputFrame, "BOTTOMLEFT", 0, -8)
+            includeSpecChk:SetScript("OnClick", function(s)
+                s.isChecked = not s.isChecked
+                if s.UpdateVisuals then s:UpdateVisuals() end
+            end)
+        end
+
+        local generateBtn = CreateButton and CreateButton(btnRow, "GENERATE ROSTER") or CreateFrame("Button", nil, btnRow, "UIPanelButtonTemplate")
+        if generateBtn.SetText then generateBtn:SetText("GENERATE ROSTER") end
+        generateBtn:SetPoint("LEFT", btnRow, "LEFT", 0, 0)
+        generateBtn:SetPoint("RIGHT", btnRow, "CENTER", -6, 0)
+
+        local closeActionBtn = CreateButton and CreateButton(btnRow, "CLOSE") or CreateFrame("Button", nil, btnRow, "UIPanelButtonTemplate")
+        if closeActionBtn.SetText then closeActionBtn:SetText("CLOSE") end
+        closeActionBtn:SetPoint("LEFT", btnRow, "CENTER", 6, 0)
+        closeActionBtn:SetPoint("RIGHT", btnRow, "RIGHT", 0, 0)
+        closeActionBtn:SetScript("OnClick", function() f:Hide() end)
+
+        local stopBtn = CreateButton and CreateButton(btnRow, "STOP") or CreateFrame("Button", nil, btnRow, "UIPanelButtonTemplate")
+        if stopBtn.SetText then stopBtn:SetText("STOP") end
+        stopBtn:SetSize(80, 28)
+        stopBtn:SetPoint("RIGHT", generateBtn, "RIGHT", 0, 0)
+        stopBtn:SetScript("OnClick", function()
+            if Diar.StopScan then
+                Diar:StopScan()
+            end
+        end)
+        stopBtn:Hide()
+
+        generateBtn:SetScript("OnClick", function()
+            Diar.outputBox = eb
+            Diar.specCheckbox = includeSpecChk
+            Diar.stopBtn = stopBtn
+            Diar.genBtn = nil
+            if Diar.StartRosterScan then
+                Diar:StartRosterScan()
+            end
+        end)
+
+        f:SetScript("OnHide", function()
+            if Diar.isScanning and Diar.StopScan then
+                Diar:StopScan()
+            end
+        end)
+
+        self.rosterExportDialog = f
+        self.rosterExportDialogEdit = eb
+        self.rosterExportStopBtn = stopBtn
+        self.rosterExportSpecChk = includeSpecChk
+    end
+
+    self.outputBox = self.rosterExportDialogEdit
+    self.specCheckbox = self.rosterExportSpecChk
+    self.stopBtn = self.rosterExportStopBtn
+    self.genBtn = nil
+    self.rosterExportDialogEdit:SetText("")
+    Diar:PrepareModal(self.rosterExportDialog, self.plannerFrame or self.frame)
+    if self.rosterExportDialog.inputFrame and self.rosterExportDialog.inputFrame.SyncEditWidth then
+        self.rosterExportDialog.inputFrame:SyncEditWidth()
+    end
+    self.rosterExportDialog:Show()
+    if self.rosterExportDialogEdit and self.rosterExportDialogEdit.SetFocus then
+        if C_Timer and C_Timer.After then
+            C_Timer.After(0, function()
+                if Diar and Diar.rosterExportDialog and Diar.rosterExportDialog:IsShown() and Diar.rosterExportDialogEdit then
+                    Diar.rosterExportDialogEdit:SetFocus()
+                end
+            end)
+        else
+            self.rosterExportDialogEdit:SetFocus()
         end
     end
 end

@@ -389,7 +389,9 @@ function Diar:ShowCompactPreviewChrome(pf, show)
     end
 end
 
-function Diar:StartCompactPositionPreview()
+function Diar:StartCompactPositionPreview(opts)
+    opts = opts or {}
+    local wasShown = self.plannerFrame and self.plannerFrame:IsShown() or false
     if self.plannerSettingsDialog and self.plannerSettingsDialog:IsShown() then
         self.plannerSettingsDialog:Hide()
     end
@@ -405,6 +407,8 @@ function Diar:StartCompactPositionPreview()
     pf.__previewRestorePos = point and {
         point = point, relPoint = relPoint or point, x = x or 0, y = y or 0,
     } or nil
+    pf.__previewWasShown = wasShown
+    pf.__previewFromEditModeShortcut = opts.fromEditModeShortcut == true
     pf.__previewWasExpanded = not pf.compactMode
     pf.compactPreviewActive = true
 
@@ -438,6 +442,11 @@ function Diar:EndCompactPositionPreview(save)
     if self.UpdatePlannerModeToggleBtn then self.UpdatePlannerModeToggleBtn(pf) end
 
     local wasExpanded = pf.__previewWasExpanded
+    local wasShown = pf.__previewWasShown
+    local fromEditModeShortcut = pf.__previewFromEditModeShortcut == true
+    local restorePos = pf.__previewRestorePos
+    pf.__previewWasShown = nil
+    pf.__previewFromEditModeShortcut = nil
     pf.__previewWasExpanded = nil
     pf.__previewRestorePos = nil
 
@@ -448,14 +457,16 @@ function Diar:EndCompactPositionPreview(save)
             pf.__skipCompactSaveOnce = true
             self:SetPlannerCompactMode(false)
         end
-        local reopen = self.ShowPlannerSettingsDialog
-        if reopen then
-            if C_Timer and C_Timer.After then
-                C_Timer.After(0, function()
-                    if Diar.ShowPlannerSettingsDialog then Diar:ShowPlannerSettingsDialog() end
-                end)
-            else
-                self:ShowPlannerSettingsDialog()
+        if not fromEditModeShortcut then
+            local reopen = self.ShowPlannerSettingsDialog
+            if reopen then
+                if C_Timer and C_Timer.After then
+                    C_Timer.After(0, function()
+                        if Diar.ShowPlannerSettingsDialog then Diar:ShowPlannerSettingsDialog() end
+                    end)
+                else
+                    self:ShowPlannerSettingsDialog()
+                end
             end
         end
     else
@@ -465,9 +476,17 @@ function Diar:EndCompactPositionPreview(save)
                 pf.__skipCompactSaveOnce = true
                 self:SetPlannerCompactMode(false)
             end
-        else
-            self:ApplyPlannerFramePosition(pf)
+            if restorePos and restorePos.point then
+                pf:ClearAllPoints()
+                pf:SetPoint(restorePos.point, UIParent, restorePos.relPoint or restorePos.point, restorePos.x or 0, restorePos.y or 0)
+            end
         end
+        if not wasShown and pf.Hide then
+            pf:Hide()
+        end
+    end
+    if save and not wasShown and pf.Hide then
+        pf:Hide()
     end
 end
 
@@ -1582,16 +1601,30 @@ function Diar:ShowPlannerNsrtExportDialog()
         title:SetTextColor(0.92, 0.92, 0.92)
         title:SetText("Build NSRT Note")
 
+        local legacyWarn = CreateFrame("Frame", nil, f, "BackdropTemplate")
+        legacyWarn:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -6)
+        legacyWarn:SetPoint("TOPRIGHT", f, "TOPRIGHT", -16, -6)
+        legacyWarn:SetHeight(50)
+        SetBackdrop(legacyWarn, {0.26, 0.14, 0.02, 0.95}, {0.96, 0.58, 0.14, 1}, 1)
+
+        local legacyWarnText = legacyWarn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        legacyWarnText:SetPoint("TOPLEFT", legacyWarn, "TOPLEFT", 10, -8)
+        legacyWarnText:SetPoint("BOTTOMRIGHT", legacyWarn, "BOTTOMRIGHT", -10, 8)
+        legacyWarnText:SetJustifyH("LEFT")
+        legacyWarnText:SetJustifyV("MIDDLE")
+        legacyWarnText:SetTextColor(1.00, 0.90, 0.72)
+        legacyWarnText:SetText("Legacy notice: this NSRT modal is kept for backwards compatibility. Please use the builder on raidstrats.gg instead.")
+
         local hint = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        hint:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -6)
+        hint:SetPoint("TOPLEFT", legacyWarn, "BOTTOMLEFT", 0, -6)
         hint:SetPoint("TOPRIGHT", f, "TOPRIGHT", -16, -6)
         hint:SetJustifyH("LEFT")
         hint:SetTextColor(0.58, 0.62, 0.7)
-        hint:SetText("Set time/ph/dur per scene, then copy the generated lines into your NSRT note.")
+        hint:SetText("You can still set time/ph/dur per scene here and copy the generated lines into your NSRT note.")
 
         local rowsWrap = CreateFrame("Frame", nil, f, "BackdropTemplate")
-        rowsWrap:SetPoint("TOPLEFT", f, "TOPLEFT", 16, -64)
-        rowsWrap:SetPoint("TOPRIGHT", f, "TOPRIGHT", -16, -64)
+        rowsWrap:SetPoint("TOPLEFT", hint, "BOTTOMLEFT", 0, -8)
+        rowsWrap:SetPoint("TOPRIGHT", hint, "BOTTOMRIGHT", 0, -8)
         rowsWrap:SetHeight(216)
         SetBackdrop(rowsWrap, {0.05, 0.05, 0.07, 1}, UI.BORDER, 1)
 
@@ -2441,6 +2474,44 @@ Diar.UpdatePlannerModeToggleBtn = UpdatePlannerModeToggleBtn
 local BG_BASE_PATH = "Interface\\AddOns\\" .. tostring(addonName) .. "\\backgrounds\\"
 local ICON_BASE_PATH = "Interface\\AddOns\\" .. tostring(addonName) .. "\\icons\\"
 local SHAPE_BASE_PATH = "Interface\\AddOns\\" .. tostring(addonName) .. "\\shapes\\"
+local BACKGROUND_KEY_ALIASES = {
+    -- Legacy typo variants seen in imported plans.
+    midnigh_falls = "midnight_falls",
+    midnigh_falls_intermission = "midnight_falls_intermission",
+    midnigh_falls_p2 = "midnight_falls_p2",
+    midnigh_falls_p3_soaks = "midnight_falls_phase3_soaks",
+    -- Optional short variant.
+    midnight_falls_p3_soaks = "midnight_falls_phase3_soaks",
+}
+
+local function BuildBackgroundKeyCandidates(bgKey)
+    if type(bgKey) ~= "string" or bgKey == "" then return {} end
+    local clean = bgKey:gsub("^.*/", ""):gsub("%.[^%.]+$", "")
+    if clean == "" then return {} end
+
+    local out, seen = {}, {}
+    local function add(key)
+        if type(key) ~= "string" or key == "" then return end
+        if seen[key] then return end
+        seen[key] = true
+        out[#out + 1] = key
+    end
+
+    add(clean)
+    local lower = strlower(clean)
+    add(lower)
+    add(lower:gsub("[%s%-]+", "_"))
+    add(lower:gsub("[%s_]+", "-"))
+
+    for i = 1, #out do
+        local alias = BACKGROUND_KEY_ALIASES[out[i]]
+        if alias and alias ~= "" then
+            add(alias)
+        end
+    end
+
+    return out
+end
 
 -- Raid target markers: WoW API order (COMBATLOG_OBJECT_RAIDTARGET1-8) -> UI-RaidTargetingIcon_1-8
 -- 1=Star, 2=Circle, 3=Diamond, 4=Triangle, 5=Moon, 6=Square, 7=Cross, 8=Skull
@@ -4152,11 +4223,10 @@ local function ApplySceneBackground(pf, scene, vc, cw, ch)
     end
 
     -- Export sends bg as key (e.g. "chimera_l2"), user can drop matching files in Raidstratsgg/backgrounds/.
-    local clean = bg:gsub("^.*/", ""):gsub("%.[^%.]+$", "")
-    local keyCandidates = { clean }
-    -- Backward-compat for legacy typo present in some exported plans.
-    if clean == "midnigh_falls" then
-        keyCandidates[#keyCandidates + 1] = "midnight_falls"
+    local keyCandidates = BuildBackgroundKeyCandidates(bg)
+    if #keyCandidates == 0 then
+        ApplyTransparentBackground()
+        return
     end
 
     local candidates = {}
@@ -4231,6 +4301,13 @@ end
 function Diar:SanitizePlanData(data)
     if not data or type(data.scenes) ~= "table" then return data end
     for _, scene in ipairs(data.scenes) do
+        local rawBg = scene and (scene.bg or scene.background)
+        if type(rawBg) == "string" and rawBg ~= "" then
+            local bgKeys = BuildBackgroundKeyCandidates(rawBg)
+            if #bgKeys > 0 then
+                scene.bg = bgKeys[1]
+            end
+        end
         -- Imported payloads can carry stale scene viewport snapshots (scene.view /
         -- scene.viewportState). Those may apply a zoom only on later scenes, making
         -- identical geometry look much larger. Normalize imported scenes to default
@@ -5677,6 +5754,9 @@ function Diar:SetPlannerCompactMode(enabled)
         self:RefreshPlannerScene()
     end
     if Diar.ApplyRaidLeadViewLayout then Diar:ApplyRaidLeadViewLayout(pf) end
+    if self.UpdatePlannerEditModeState then
+        self:UpdatePlannerEditModeState()
+    end
 end
 
 function Diar:TogglePlannerCompactMode()
@@ -5771,6 +5851,9 @@ function Diar:ShowPlannerViewer(opts)
             if Diar.UpdatePlannerDebugPanel then
                 Diar:UpdatePlannerDebugPanel()
             end
+            if Diar.UpdatePlannerEditModeState then
+                Diar:UpdatePlannerEditModeState()
+            end
         end)
         pf:SetScript("OnHide", function(frame)
             if frame.compactPreviewActive and Diar.EndCompactPositionPreview then
@@ -5799,6 +5882,9 @@ function Diar:ShowPlannerViewer(opts)
             end
             if Diar.HidePlannerTransientMenus then
                 Diar:HidePlannerTransientMenus()
+            end
+            if Diar.UpdatePlannerEditModeState then
+                Diar:UpdatePlannerEditModeState()
             end
             if frame.debugPanel then frame.debugPanel:Hide() end
             Diar:ClearPlannerDisplay()
@@ -6243,6 +6329,9 @@ function Diar:ShowPlannerViewer(opts)
     Diar:EnsurePreviewAssignmentsButton(pf)
     Diar:EnsurePlannerAssignmentButton(pf)
     Diar:EnsurePlannerControlsButtons(pf)
+    if Diar.EnsurePlannerEditModeIntegration then
+        Diar:EnsurePlannerEditModeIntegration()
+    end
     if Diar.EnsurePlannerHelpButton then Diar:EnsurePlannerHelpButton(pf) end
     if Diar.EnsureRaidLeadViewPanel then Diar:EnsureRaidLeadViewPanel(pf) end
     if Diar.UpdatePlannerDebugPanel then Diar:UpdatePlannerDebugPanel() end

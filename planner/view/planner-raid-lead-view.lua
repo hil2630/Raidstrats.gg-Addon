@@ -12,13 +12,14 @@ local SEP = string.char(31)
 local SetBackdrop = Diar.SetBackdrop
 local SkinScrollBar = Diar.SkinScrollBar
 local CreateAnimatedCheckbox = Diar.CreateAnimatedCheckbox
+local CreateButton = Diar.CreateButton
 
 local PRESENCE_TTL = 45
 local HEARTBEAT_INTERVAL = 15
 local POLL_INTERVAL = 25
 local RAID_VIEW_FRAC = 0.42
 local RAID_VIEW_MIN_H = 96
-local RAID_CHECK_BAR_H = 26
+local RAID_CHECK_BAR_H = 52
 local RAID_NOTIF_BTN_H = 28
 local ROW_H = 22
 local POLL_ACK_WAIT = 4
@@ -1227,11 +1228,23 @@ function Diar:ApplyRaidLeadViewLayout(pf)
         return
     end
 
-    local showBar = self:ShouldShowRaidCheckBar()
-    local active = showBar and self:IsRaidCheckEnabled(pf)
+    local showRaidcheckControls = self:ShouldShowRaidCheckBar()
+    local active = showRaidcheckControls and self:IsRaidCheckEnabled(pf)
 
     if bar then
-        if showBar then bar:Show() else bar:Hide() end
+        bar:Show()
+    end
+    if pf.raidCheckChk then
+        if showRaidcheckControls then pf.raidCheckChk:Show() else pf.raidCheckChk:Hide() end
+    end
+    if pf.raidCheckLabel then
+        if showRaidcheckControls then pf.raidCheckLabel:Show() else pf.raidCheckLabel:Hide() end
+    end
+    if pf.raidCheckRefreshBtn then
+        if active then pf.raidCheckRefreshBtn:Show() else pf.raidCheckRefreshBtn:Hide() end
+    end
+    if pf.raidCheckSummary then
+        if active then pf.raidCheckSummary:Show() else pf.raidCheckSummary:Hide() end
     end
     if pf.raidLeadPanel then
         if active then pf.raidLeadPanel:Show() else pf.raidLeadPanel:Hide() end
@@ -1243,7 +1256,7 @@ function Diar:ApplyRaidLeadViewLayout(pf)
     local topAnchor = panel
     local topInset = -12
 
-    if showBar and bar then
+    if bar then
         bar:ClearAllPoints()
         bar:SetPoint("TOPLEFT", panel, "TOPLEFT", 10, -8)
         bar:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -10, -8)
@@ -1275,8 +1288,8 @@ function Diar:ApplyRaidLeadViewLayout(pf)
     end
 
     title:ClearAllPoints()
-    if showBar or active then
-        title:SetPoint("TOPLEFT", topAnchor, "BOTTOMLEFT", showBar and 2 or 0, topInset)
+    if bar or active then
+        title:SetPoint("TOPLEFT", topAnchor, "BOTTOMLEFT", bar and 2 or 0, topInset)
     else
         title:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, -12)
     end
@@ -1398,10 +1411,24 @@ function Diar:EnsureRaidLeadViewPanel(pf)
     bar:SetHeight(RAID_CHECK_BAR_H)
     pf.raidCheckBar = bar
 
+    local exportBtn = CreateButton and CreateButton(bar, "EXPORT ROSTER") or CreateFrame("Button", nil, bar, "UIPanelButtonTemplate")
+    if exportBtn.SetText then exportBtn:SetText("EXPORT ROSTER") end
+    exportBtn:SetHeight(22)
+    exportBtn:SetPoint("TOPLEFT", bar, "TOPLEFT", 0, 0)
+    exportBtn:SetPoint("TOPRIGHT", bar, "TOPRIGHT", 0, 0)
+    exportBtn:SetScript("OnClick", function()
+        if Diar.ShowRosterExportDialog then
+            Diar:ShowRosterExportDialog()
+        elseif Diar.CreateMainWindow then
+            Diar:CreateMainWindow()
+        end
+    end)
+    pf.rosterExportBtn = exportBtn
+
     local chk = CreateAnimatedCheckbox and CreateAnimatedCheckbox(bar, nil)
     if chk then
         chk:SetSize(20, 20)
-        chk:SetPoint("LEFT", bar, "LEFT", 0, 0)
+        chk:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", 0, 1)
         chk:SetScript("OnClick", function(s)
             s.isChecked = not s.isChecked
             if s.UpdateVisuals then s:UpdateVisuals() end
@@ -1411,13 +1438,13 @@ function Diar:EnsureRaidLeadViewPanel(pf)
     end
 
     local label = bar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    label:SetPoint("LEFT", chk or bar, chk and "RIGHT" or "LEFT", chk and 8 or 0, 0)
+    label:SetPoint("LEFT", chk or bar, chk and "RIGHT" or "LEFT", chk and 8 or 0, chk and 0 or 1)
     label:SetText("Raidcheck")
     label:SetTextColor(0.78, 0.80, 0.84)
     pf.raidCheckLabel = label
 
     local summary = bar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    summary:SetPoint("RIGHT", bar, "RIGHT", -56, 0)
+    summary:SetPoint("RIGHT", bar, "RIGHT", -56, 1)
     summary:SetPoint("LEFT", label, "RIGHT", 8, 0)
     summary:SetJustifyH("RIGHT")
     summary:SetTextColor(0.48, 0.52, 0.58)
@@ -1427,7 +1454,7 @@ function Diar:EnsureRaidLeadViewPanel(pf)
 
     local refreshBtn = CreateFrame("Button", nil, bar)
     refreshBtn:SetSize(52, 20)
-    refreshBtn:SetPoint("RIGHT", bar, "RIGHT", 0, 0)
+    refreshBtn:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", 0, 1)
     local refreshLbl = refreshBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     refreshLbl:SetPoint("CENTER")
     refreshLbl:SetText("Refresh")

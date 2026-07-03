@@ -24,6 +24,7 @@ minimap-button.lua
 nsrt-integration.lua
 planner\core\planner-shared.lua
 planner\scene\planner-scene-shared.lua
+planner\scene\planner-edit-mode.lua
 planner\scene\planner-scene.lua
 planner\anim\planner-path.lua
 planner\anim\planner-stationary.lua
@@ -40,7 +41,8 @@ planner\view\planner-create-plan.lua
 planner\view\planner-help.lua
 planner\view\planner-nsrt-view.lua
 planner\anim\planner-playback.lua
-encounter-overview\boss-overview-data.lua
-encounter-overview\Bosses\The Voidspire\Imperator Averzian.lua
-encounter-overview\Bosses\Sporefall\Rotmire.lua
+# This will come at a later point - if you're reading this, hi :)
+# encounter-overview\boss-overview-data.lua
+# encounter-overview\Bosses\The Voidspire\Imperator Averzian.lua
+# encounter-overview\Bosses\Sporefall\Rotmire.lua
 encounter-overview\boss-overview-tab.lua

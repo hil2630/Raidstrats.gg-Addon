@@ -1195,10 +1195,29 @@ function Diar:HandleRsggDebugCommand(msg)
         print("|cff00aaff[Raidstrats.gg]|r /rsggdebug on | off")
         print("|cff00aaff[Raidstrats.gg]|r /rsggdebug roster Name1,Name2,... — override fake roster names")
         print("|cff00aaff[Raidstrats.gg]|r /rsggdebug rings — dump current scene ring sizes")
+        print("|cff00aaff[Raidstrats.gg]|r /rsggdebug editmode — dump EditMode integration status/log")
+        print("|cff00aaff[Raidstrats.gg]|r /rsggdebug editmode reset — reset + retry EditMode registration")
         return
     end
 
-    if msg == "off" then
+    if msg == "editmode" or msg == "editmode log" then
+        if self.PrintEditModeDebug then
+            self:PrintEditModeDebug()
+        else
+            print("|cffff6666[Raidstrats.gg]|r EditMode debug is not available.")
+        end
+        return
+    elseif msg == "editmode reset" then
+        if self.ResetEditModeDebug then
+            self:ResetEditModeDebug()
+            if self.PrintEditModeDebug then
+                self:PrintEditModeDebug()
+            end
+        else
+            print("|cffff6666[Raidstrats.gg]|r EditMode debug reset is not available.")
+        end
+        return
+    elseif msg == "off" then
         s.debugMode = false
     elseif msg == "on" then
         s.debugMode = true
