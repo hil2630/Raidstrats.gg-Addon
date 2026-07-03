@@ -48,6 +48,7 @@ function Diar:GetPlannerSettings()
     if s.readyCheckAssignments == nil then s.readyCheckAssignments = false end
     if s.readyCheckPhase == nil then s.readyCheckPhase = 0 end
     if s.minimapHidden == nil then s.minimapHidden = false end
+    if s.showEncounterOverviewTab == nil then s.showEncounterOverviewTab = true end
     if type(s.assignMineFill) ~= "table" then s.assignMineFill = nil end
     if type(s.assignOtherFill) ~= "table" then s.assignOtherFill = nil end
     if type(s.assignMineRing) ~= "table" then s.assignMineRing = nil end
@@ -616,6 +617,7 @@ function Diar:ShowPlannerSettingsDialog()
         miscY = AddCheckbox(miscPage, miscY, "raidCheckNotifChk", "Hide raidcheck notifications from raid leader")
         miscY = AddCheckbox(miscPage, miscY, "readyCheckAssignChk", "Show assignments on readycheck")
         miscY = AddSecondsRow(miscPage, miscY, "Ready check phase filter (0 = all phases)", "readyCheckPhaseEdit")
+        miscY = AddCheckbox(miscPage, miscY, "encounterOverviewTabChk", "Show Encounter Journal boss overview tab")
         miscY = AddCheckbox(miscPage, miscY, "plannerDebugChk", "Show planner debug panel")
 
         local btnRow = CreateFrame("Frame", nil, f)
@@ -663,6 +665,7 @@ function Diar:ShowPlannerSettingsDialog()
                 return
             end
             s.readyCheckPhase = rcPhase
+            s.showEncounterOverviewTab = CheckboxIsChecked(f.encounterOverviewTabChk)
             s.debugMode = CheckboxIsChecked(f.plannerDebugChk)
             if f.assignMineColorBtn and f.assignMineColorBtn.__color then
                 local c = f.assignMineColorBtn.__color
@@ -710,6 +713,9 @@ function Diar:ShowPlannerSettingsDialog()
             end
             if Diar.InitMinimapButton then
                 Diar:InitMinimapButton()
+            end
+            if Diar.UpdateEncounterJournalOverviewVisibility then
+                Diar:UpdateEncounterJournalOverviewVisibility()
             end
             if s.debugMode and Diar.AppendPlannerDebugLine then
                 Diar:AppendPlannerDebugLine("Planner debug mode enabled")
@@ -765,6 +771,9 @@ function Diar:ShowPlannerSettingsDialog()
     end
     if dlg.readyCheckPhaseEdit then
         dlg.readyCheckPhaseEdit:SetText(tostring(settings.readyCheckPhase ~= nil and settings.readyCheckPhase or 0))
+    end
+    if dlg.encounterOverviewTabChk then
+        dlg.encounterOverviewTabChk:SetChecked(settings.showEncounterOverviewTab == true or settings.showEncounterOverviewTab == 1)
     end
     if dlg.plannerDebugChk then
         dlg.plannerDebugChk:SetChecked(settings.debugMode == true or settings.debugMode == 1)
