@@ -1,5 +1,39 @@
 # Changelog
 
+## [Alpha 0.0.42]
+
+Info:
+The NSRT Builder is now legacy, I recommend using our new NSRT Builder on the website.
+Planner -> Share -> NSRT Note.
+
+- Added the Compact mode viewer to the editmode, so you can move it via wow's edit mode.
+- Click the Raidstrats.gg logo on the left side of editmode to enable it.
+- Added the Export Roster to the main planner now, to export your current roster to the website.
+- Added a way to reorder plans in the library, simply drag and drop them on top of eachother, one way or another.
+- Added a way to rename plans in the plan library, right click -> Rename.
+- Added a way to shift+click plans in the library to share the plan quickly, instead of clicking the share to group button. (e.g. for Private
+  messages, etc).
+- This also works for groups, shift+click on the group name while your chat is open.
+- Added delta-sharing when pushing updates, so you don't have to fuilly reimport the entire plan on minor changes.
+- This is a new way of updating plans. Now when you update objects and pushes updates, only that specific object is pushed to everyone else
+  that has it. Please report any bugs that may occur. Preferable if you can send debug log (/rsggdebug).
+- Added a new method to the Raidcheck that allows raidleaders to Rightclick a user -> Send notif to send a notification to that specific user
+  instead of all in group.
+
+- Removed the update available popup. I'll now just show in your chat to update.
+- Removed the legacy window for the addon. The planner is now the main window where you do everything now.
+
+- Updated modals to follow our own design aesthetics, rather than wow's default.
+- Updated deleting plans. No more modals, it's just a simply yes/no on the plan row to make it quick.
+- Updated the Share to Group. Now no longer shares to Guild if not in a group, instead it'll send in say chat.
+- Updated import time of plans. Note that big plans with many objects can still take some time to import
+
+- Fixed an issue where loading plans with midnight falls background didn't load the background properly.
+- Fixed some issues with the raidcheck
+- Fixed several ui design issues
+
+Note: We're nearing us an initial beta release. Stay tuned for more and as always, join our discord for the most up-to-date info: https://discord.gg/QtU244VZ8X
+
 ## [Alpha v0.0.41] Fixes to importing, readycheck assignment check, group imports and more.
 
 - Fixed an issue where importing raidplans with multiple scenes would show wrong object sizes on other scenes (You will have to
