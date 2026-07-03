@@ -56,7 +56,11 @@ local function SenderLabel(sender)
     return Ambiguate and Ambiguate(sender, "short") or sender
 end
 
+-- Debug logging for plan-push/delta troubleshooting. Disabled by default; flip
+-- PUSH_DEBUG to true to re-enable the verbose chat output during development.
+local PUSH_DEBUG = false
 local function PushDebug(msg)
+    if not PUSH_DEBUG then return end
     print(("|cff66ccff[Raidstrats.gg Debug]|r %s"):format(tostring(msg or "")))
 end
 
