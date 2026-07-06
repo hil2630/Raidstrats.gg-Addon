@@ -1055,11 +1055,18 @@ local function GetRsggLineKey(line)
     if not line:find("rsgg", 1, true) then return nil end
     local scene = line:match("scene:(%d+)")
     if not scene then return nil end
-    local phase = line:match("ph:(%d+)") or line:match(";ph:(%d+)") or line:match(";ph(%d+)") or line:match("ph(%d+)")
+    local phase = line:match("ph:(%d*%.?%d+)") or line:match(";ph:(%d*%.?%d+)") or line:match(";ph(%d*%.?%d+)") or line:match("ph(%d*%.?%d+)")
     phase = tonumber(phase) or 1
     scene = tonumber(scene)
     if not scene then return nil end
-    return ("ph:%d;scene:%d"):format(phase, scene)
+    local whole = math.floor(phase + 0.0000001)
+    local phaseKey
+    if math.abs(phase - whole) < 0.0001 then
+        phaseKey = tostring(whole)
+    else
+        phaseKey = string.format("%.3f", phase):gsub("0+$", ""):gsub("%.$", "")
+    end
+    return ("ph:%s;scene:%d"):format(phaseKey, scene)
 end
 
 local function GetPlanTokenForMarker(data)

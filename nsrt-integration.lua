@@ -146,6 +146,23 @@ local function ParseTagField(line)
     return nil, parts, nil
 end
 
+local function ParsePhaseToken(raw)
+    local phase = tonumber(raw)
+    if not phase or phase < 1 then return 1 end
+    return phase
+end
+
+local function PhaseKeyString(phase)
+    phase = ParsePhaseToken(phase)
+    local whole = math.floor(phase + 0.0000001)
+    if math.abs(phase - whole) < 0.0001 then
+        return tostring(whole)
+    end
+    local out = string.format("%.3f", phase)
+    out = out:gsub("0+$", ""):gsub("%.$", "")
+    return out
+end
+
 local function ParseRsggCues(noteText)
     local cues = {}
     if not noteText or noteText == "" then return cues end
@@ -169,14 +186,14 @@ local function ParseRsggCues(noteText)
             end
             -- Be tolerant of legacy/manual typos like "time4" (missing colon).
             local time = line:match("time:(%d*%.?%d+)") or line:match("time(%d*%.?%d+)")
-            local phase = line:match("ph:(%d+)") or line:match(";ph:(%d+)") or line:match(";ph(%d+)") or line:match("ph(%d+)")
+            local phase = line:match("ph:(%d*%.?%d+)") or line:match(";ph:(%d*%.?%d+)") or line:match(";ph(%d*%.?%d+)") or line:match("ph(%d*%.?%d+)")
             local sceneIndex = line:match("scene:(%d+)")
             local planToken = line:match("plan:([^;]+)")
             local dur = line:match("dur:(%d+)")
             local compact = line:match("compact:([^;]+)")
             local tag, tagNames, tagSpotMap = ParseTagField(line)
             time = time and tonumber(time)
-            phase = phase and tonumber(phase) or 1
+            phase = ParsePhaseToken(phase)
             sceneIndex = sceneIndex and tonumber(sceneIndex)
             planToken = planToken and strtrim(planToken) or nil
             if encID and encID ~= 0 and time and sceneIndex then
@@ -698,8 +715,8 @@ end
 
 function Raidstrats:OnNSRTPhase(phase)
     if not self.rsggEncounterID then return end
-    phase = tonumber(phase) or 1
-    local key = ("%d:%d"):format(self.rsggEncounterID, phase)
+    phase = ParsePhaseToken(phase)
+    local key = ("%d:%s"):format(self.rsggEncounterID, PhaseKeyString(phase))
     local now = GetTime()
     if self._lastNsrtPhaseKey == key and (now - (self._lastNsrtPhaseAt or 0)) < 2 then
         return
@@ -914,7 +931,7 @@ function Raidstrats:InitNSRTIntegration()
             Raidstrats:StopRsggTest()
             return
         end
-        local encID, phase = input:match("^(%d+)%s+(%d+)$")
+        local encID, phase = input:match("^(%d+)%s+(%d*%.?%d+)$")
         if encID then
             encID = tonumber(encID)
             phase = tonumber(phase)
@@ -927,7 +944,7 @@ function Raidstrats:InitNSRTIntegration()
 
     self:RegisterChatCommand("rsggphase", function(input)
         input = strtrim(input or "")
-        local phase, encID = input:match("^(%d+)%s+(%d+)$")
+        local phase, encID = input:match("^(%d*%.?%d+)%s+(%d+)$")
         if phase then
             Raidstrats:RunRsggPhaseDebug(phase, encID)
             return
