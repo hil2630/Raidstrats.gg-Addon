@@ -413,11 +413,24 @@ function Raidstrats:BeginReadyCheckAssignmentWatch()
     self:TryOpenReadyCheckAssignments(false)
 end
 
+-- CallbackHandler-1.0 invokes callbacks as fn([owner,] eventName, payload...),
+-- and NSRT's NSAPI wrapper may or may not prepend an owner arg. Locate the
+-- event name in the arg list and return everything after it.
+local function ExtractCallbackArgs(eventName, ...)
+    for i = 1, select("#", ...) do
+        if select(i, ...) == eventName then
+            return select(i + 1, ...)
+        end
+    end
+    return ...
+end
+
 RegisterNsrtCallbacks = function(addon)
     if addon._nsrtCallbacksRegistered then return true end
     if not NSAPI or not NSAPI.RegisterCallback then return false end
 
-    NSAPI:RegisterCallback("NSRT_PHASE", function(phase, encID, testrun)
+    NSAPI.RegisterCallback(addon, "NSRT_PHASE", function(...)
+        local phase, encID, testrun = ExtractCallbackArgs("NSRT_PHASE", ...)
         if testrun then return end
         phase = tonumber(phase) or 1
         encID = encID and tonumber(encID) or nil
@@ -431,20 +444,20 @@ RegisterNsrtCallbacks = function(addon)
         if addon.OnNSRTPhase then
             addon:OnNSRTPhase(phase)
         end
-    end, addon)
+    end)
 
-    NSAPI:RegisterCallback("NSRT_HIDE_REMINDERS", function()
+    NSAPI.RegisterCallback(addon, "NSRT_HIDE_REMINDERS", function()
         if addon.HideRaidPlanScene then
             addon:HideRaidPlanScene()
         end
         if addon.OnEncounterEnd then
             addon:OnEncounterEnd()
         end
-    end, addon)
+    end)
 
-    NSAPI:RegisterCallback("NSRT_REMINDER_CHANGED", function()
+    NSAPI.RegisterCallback(addon, "NSRT_REMINDER_CHANGED", function()
         OnNsrtReminderChanged(addon)
-    end, addon)
+    end)
 
     addon._nsrtCallbacksRegistered = true
     return true
@@ -723,6 +736,10 @@ function Raidstrats:OnNSRTPhase(phase)
     end
     self._lastNsrtPhaseKey = key
     self._lastNsrtPhaseAt = now
+    if self.IsRsggDebug and self:IsRsggDebug() and InCombatLockdown() then
+        print(("|cff66ccff[Raidstrats.gg Debug]|r Phase %s started (encounter %d)."):format(
+            PhaseKeyString(phase), self.rsggEncounterID))
+    end
     self:ScheduleRsggCues(self.rsggEncounterID, phase)
 end
 
@@ -733,9 +750,19 @@ function Raidstrats:OnEncounterStart(encID)
     self.rsggEncounterID = encID
     self:ReloadRsggCues(encID)
 
-    local phase1 = self.rsggCues and self.rsggCues[encID] and self.rsggCues[encID][1]
-    if phase1 and #phase1 > 0 then
-        print(("|cff00aaff[Raidstrats.gg]|r Loaded %d rsgg cue(s) for encounter %d."):format(#phase1, encID))
+    local byPhase = self.rsggCues and self.rsggCues[encID]
+    local phaseCount, cueCount = 0, 0
+    if type(byPhase) == "table" then
+        for ph, cues in pairs(byPhase) do
+            if type(ph) == "number" and type(cues) == "table" and #cues > 0 then
+                phaseCount = phaseCount + 1
+                cueCount = cueCount + #cues
+            end
+        end
+    end
+    if cueCount > 0 then
+        print(("|cff00aaff[Raidstrats.gg]|r Loaded %d rsgg cue(s) across %d phase(s) for encounter %d."):format(
+            cueCount, phaseCount, encID))
     end
 
     self:OnNSRTPhase(1)
