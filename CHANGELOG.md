@@ -20,6 +20,7 @@ Info: The NSRT assignments are now fixed, so they should work properly ingame in
 
 - Fixed an issue with NSRT assignments not properly showing when NSRT fires new events. It should now properly work. Please use the NSRT builder on the website to create correct notes.
 - Fixed an issue where colored backgrounds (with no arenas) wasn't properly imported in scenes.
+- Some minor fixes all around to up optimization.
 
 ## [Alpha 0.0.42]
 
