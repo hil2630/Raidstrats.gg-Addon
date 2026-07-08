@@ -1,5 +1,26 @@
 # Changelog
 
+## [Alpha 0.0.43]
+
+Info: The NSRT assignments are now fixed, so they should work properly ingame in combat.
+
+- Added tabs on top of the ready-check compact mode so you can quickly switch between assignments on readycheck.
+- Added a grace period for the compact mode so it doesn't instantly close once everyone is ready. This grace period can be changed in Settings -> Dispaly -> Readycheck Graceperiod.
+- Added a "Raidcheck expand mode" in settings -> Display -> Raidcheck expanded. Enabled by default.
+- Added The Venomus Abyss backgrounds to the planner.
+- Added Arrows/Lines as objects. Rightclick the object in the palette to switch between them.
+- Added a "replace" to the right-click menu when doing it on worldmarkers, so you can quickly replace them.
+
+- Updated the New Plan and New Scene modal to include expansion to have less clutter in the raid list. Should now only show raids from selected expansion.
+- Updated the planner to now also include spell icons when importing plans.
+  - You can enable tooltips on abilities also, by enabling them from the bottom left cornor on plans where abilities are present.
+- Updated Donut shapes to properly render and be moveable
+- Updated Ellipses to also include strokes as other objects by default.
+- Updated arrows & lines to be moveable.
+
+- Fixed an issue with NSRT assignments not properly showing when NSRT fires new events. It should now properly work. Please use the NSRT builder on the website to create correct notes.
+- Fixed an issue where colored backgrounds (with no arenas) wasn't properly imported in scenes.
+
 ## [Alpha 0.0.42]
 
 Info:

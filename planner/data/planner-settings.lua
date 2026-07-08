@@ -47,6 +47,9 @@ function Diar:GetPlannerSettings()
     if s.hideRaidCheckNotifs == nil then s.hideRaidCheckNotifs = false end
     if s.readyCheckAssignments == nil then s.readyCheckAssignments = false end
     if s.readyCheckPhase == nil then s.readyCheckPhase = 0 end
+    if s.readyCheckGrace == nil then s.readyCheckGrace = 5 end
+    if s.raidCheckExpanded == nil then s.raidCheckExpanded = true end
+    if s.enableSpellTooltips == nil then s.enableSpellTooltips = false end
     if s.minimapHidden == nil then s.minimapHidden = false end
     if s.showEncounterOverviewTab == nil then s.showEncounterOverviewTab = true end
     if type(s.assignMineFill) ~= "table" then s.assignMineFill = nil end
@@ -219,6 +222,12 @@ function Diar:IsClassSpecCircleModeEnabled()
     return false
 end
 
+function Diar:IsSpellTooltipsEnabled()
+    local v = self:GetPlannerSettings().enableSpellTooltips
+    if v == true or v == 1 then return true end
+    return false
+end
+
 function Diar:IsCompactPlanLibraryEnabled()
     local v = self:GetPlannerSettings().compactPlanLibrary
     if v == true or v == 1 then return true end
@@ -275,6 +284,18 @@ end
 function Diar:GetReadyCheckPhaseFilter()
     local v = tonumber(self:GetPlannerSettings().readyCheckPhase) or 0
     return math.max(0, math.floor(v + 0.0001))
+end
+
+function Diar:GetReadyCheckGracePeriod()
+    local v = tonumber(self:GetPlannerSettings().readyCheckGrace)
+    if v == nil then v = 5 end
+    return math.max(0, math.floor(v + 0.0001))
+end
+
+function Diar:IsRaidCheckExpandedEnabled()
+    local v = self:GetPlannerSettings().raidCheckExpanded
+    if v == true or v == 1 then return true end
+    return false
 end
 
 local function ParseSettingsSeconds(text)
@@ -461,6 +482,32 @@ function Diar:ShowPlannerSettingsDialog()
             return y - 30
         end
 
+        local function AddNumberRow(parent, y, labelText, key)
+            local lbl = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            lbl:SetPoint("TOPLEFT", parent, "TOPLEFT", 16, y)
+            lbl:SetWidth(300)
+            lbl:SetJustifyH("LEFT")
+            lbl:SetText(labelText)
+            lbl:SetTextColor(0.82, 0.84, 0.88)
+
+            local box = CreateFrame("Frame", nil, parent, "BackdropTemplate")
+            box:SetSize(56, 24)
+            box:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -16, y + 2)
+            SetBackdrop(box, {0.03, 0.03, 0.05, 1}, UI.BORDER, 1)
+
+            local eb = CreateFrame("EditBox", nil, box)
+            eb:SetSize(40, 18)
+            eb:SetPoint("CENTER", box, "CENTER", 0, 0)
+            eb:SetFontObject(GameFontHighlightSmall)
+            eb:SetAutoFocus(false)
+            eb:SetNumeric(true)
+            eb:SetMaxLetters(3)
+            eb:SetTextColor(0.92, 0.92, 0.92)
+
+            f[key] = eb
+            return y - 30
+        end
+
         local function AddCheckbox(parent, y, key, text)
             local chk = CreateAnimatedCheckbox and CreateAnimatedCheckbox(parent, text)
             if not chk then return y - 28 end
@@ -599,6 +646,7 @@ function Diar:ShowPlannerSettingsDialog()
         displayY = AddSectionHeader(displayPage, "Plan display", displayY)
         displayY = AddCheckbox(displayPage, displayY, "highlightChk", "Highlight my name on the plan")
         displayY = AddCheckbox(displayPage, displayY, "classSpecCircleChk", "Render class/spec icons as circles")
+        displayY = AddCheckbox(displayPage, displayY, "raidCheckExpandedChk", "Raidcheck expanded (show right-side box)")
 
         displayY = displayY - 8
         displayY = AddSectionHeader(displayPage, "Assignment colors", displayY)
@@ -616,7 +664,8 @@ function Diar:ShowPlannerSettingsDialog()
         miscY = AddCheckbox(miscPage, miscY, "nsrtPopupChk", "Hide plan popups (even if assigned)")
         miscY = AddCheckbox(miscPage, miscY, "raidCheckNotifChk", "Hide raidcheck notifications from raid leader")
         miscY = AddCheckbox(miscPage, miscY, "readyCheckAssignChk", "Show assignments on readycheck")
-        miscY = AddSecondsRow(miscPage, miscY, "Ready check phase filter (0 = all phases)", "readyCheckPhaseEdit")
+        miscY = AddSecondsRow(miscPage, miscY, "Readycheck grace period (after finished)", "readyCheckGraceEdit")
+        miscY = AddNumberRow(miscPage, miscY, "Ready check phase filter (0 = all phases)", "readyCheckPhaseEdit")
         miscY = AddCheckbox(miscPage, miscY, "encounterOverviewTabChk", "Show Encounter Journal boss overview tab")
         miscY = AddCheckbox(miscPage, miscY, "plannerDebugChk", "Show planner debug panel")
 
@@ -659,12 +708,19 @@ function Diar:ShowPlannerSettingsDialog()
             s.hideNsrtPlan = CheckboxIsChecked(f.nsrtPopupChk)
             s.hideRaidCheckNotifs = CheckboxIsChecked(f.raidCheckNotifChk)
             s.readyCheckAssignments = CheckboxIsChecked(f.readyCheckAssignChk)
+            s.raidCheckExpanded = CheckboxIsChecked(f.raidCheckExpandedChk)
             local rcPhase = ParseSettingsSeconds(f.readyCheckPhaseEdit:GetText())
             if rcPhase == nil then
                 print("|cffff6666[Raidstrats.gg]|r Enter a phase number (0 = all phases).")
                 return
             end
+            local rcGrace = ParseSettingsSeconds(f.readyCheckGraceEdit and f.readyCheckGraceEdit:GetText() or "")
+            if rcGrace == nil then
+                print("|cffff6666[Raidstrats.gg]|r Enter readycheck grace in seconds (0 or higher).")
+                return
+            end
             s.readyCheckPhase = rcPhase
+            s.readyCheckGrace = rcGrace
             s.showEncounterOverviewTab = CheckboxIsChecked(f.encounterOverviewTabChk)
             s.debugMode = CheckboxIsChecked(f.plannerDebugChk)
             if f.assignMineColorBtn and f.assignMineColorBtn.__color then
@@ -687,6 +743,9 @@ function Diar:ShowPlannerSettingsDialog()
             f.afterEdit:SetText(tostring(after))
             if f.readyCheckPhaseEdit then
                 f.readyCheckPhaseEdit:SetText(tostring(s.readyCheckPhase or 0))
+            end
+            if f.readyCheckGraceEdit then
+                f.readyCheckGraceEdit:SetText(tostring(s.readyCheckGrace or 5))
             end
             local pf = Diar.plannerFrame
             if pf and pf.compactMode and Diar.SetPlannerCompactMode then
@@ -769,8 +828,14 @@ function Diar:ShowPlannerSettingsDialog()
     if dlg.readyCheckAssignChk then
         dlg.readyCheckAssignChk:SetChecked(self:IsReadyCheckAssignmentsEnabled())
     end
+    if dlg.raidCheckExpandedChk then
+        dlg.raidCheckExpandedChk:SetChecked(self:IsRaidCheckExpandedEnabled())
+    end
     if dlg.readyCheckPhaseEdit then
         dlg.readyCheckPhaseEdit:SetText(tostring(settings.readyCheckPhase ~= nil and settings.readyCheckPhase or 0))
+    end
+    if dlg.readyCheckGraceEdit then
+        dlg.readyCheckGraceEdit:SetText(tostring(settings.readyCheckGrace ~= nil and settings.readyCheckGrace or 5))
     end
     if dlg.encounterOverviewTabChk then
         dlg.encounterOverviewTabChk:SetChecked(settings.showEncounterOverviewTab == true or settings.showEncounterOverviewTab == 1)

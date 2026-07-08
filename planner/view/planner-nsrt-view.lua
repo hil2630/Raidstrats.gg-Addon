@@ -811,6 +811,24 @@ function Diar:ShowReadyCheckAssignment(index)
     return ok
 end
 
+function Diar:ShowReadyCheckPhase(phase)
+    local list = self.readyCheckAssignments
+    if type(list) ~= "table" or #list == 0 then return false end
+    phase = tonumber(phase) or phase
+    if phase == nil then return false end
+
+    local target = nil
+    for i, entry in ipairs(list) do
+        local entryPhase = tonumber(entry and entry.phase) or entry and entry.phase
+        if entryPhase == phase then
+            target = i
+            break
+        end
+    end
+    if not target then return false end
+    return self:ShowReadyCheckAssignment(target)
+end
+
 function Diar:StepReadyCheckAssignment(delta)
     local list = self.readyCheckAssignments
     if type(list) ~= "table" or #list <= 1 then return false end
@@ -921,5 +939,13 @@ function Diar:HideRaidPlanScene()
     end
     if pf and pf.readyCheckAssignPrevBtn then pf.readyCheckAssignPrevBtn:Hide() end
     if pf and pf.readyCheckAssignNextBtn then pf.readyCheckAssignNextBtn:Hide() end
+    if pf and pf.readyCheckPhaseTabButtons then
+        for _, btn in ipairs(pf.readyCheckPhaseTabButtons) do
+            if btn and btn.Hide then btn:Hide() end
+        end
+    end
+    if self.UpdateReadyCheckAssignmentArrows then
+        self:UpdateReadyCheckAssignmentArrows(pf)
+    end
 end
 

@@ -698,6 +698,79 @@ function Diar:EnsurePreviewAssignmentsButton(pf)
     self:UpdatePreviewAssignmentsButton(pf)
 end
 
+function Diar:SceneHasSpellTooltipCandidates(scene)
+    if type(scene) ~= "table" or type(scene.items) ~= "table" then return false end
+    for _, item in ipairs(scene.items) do
+        if type(item) == "table" then
+            local directSpell = tonumber(item.spellId or item.spellID or item.spell_id)
+            if directSpell and directSpell > 0 then
+                return true
+            end
+            local abilityData = type(item.abilityData) == "table" and item.abilityData or nil
+            local abilitySpell = abilityData and tonumber(abilityData.spellId or abilityData.spellID or abilityData.spell_id)
+            if abilitySpell and abilitySpell > 0 then
+                return true
+            end
+            local icon = type(item.icon) == "string" and item.icon:lower() or ""
+            if icon:find("abilities/", 1, true) then
+                return true
+            end
+            if icon ~= "" and self.ResolveCustomSpellIdFromSrc then
+                local mapped = tonumber(self:ResolveCustomSpellIdFromSrc(icon))
+                if mapped and mapped > 0 then
+                    return true
+                end
+            end
+        end
+    end
+    return false
+end
+
+function Diar:UpdateSpellTooltipToggle(pf)
+    pf = pf or self.plannerFrame
+    local check = pf and pf.spellTooltipCheck
+    if not pf or not check or not pf.canvas then return end
+    local sceneIndex = tonumber(pf.selectedSceneIndex) or 1
+    local scene = self.plannerData and self.plannerData.scenes and self.plannerData.scenes[sceneIndex] or nil
+    local hasAbilities = self.SceneHasSpellTooltipCandidates and self:SceneHasSpellTooltipCandidates(scene)
+    if pf.compactMode or pf.nsrtSceneActive or not hasAbilities then
+        check:Hide()
+        if check.text then check.text:Hide() end
+        return
+    end
+    check:ClearAllPoints()
+    check:SetPoint("BOTTOMLEFT", pf.canvas, "BOTTOMLEFT", 8, 8)
+    check:SetFrameLevel((pf.canvas:GetFrameLevel() or pf:GetFrameLevel()) + 6)
+    check:SetChecked(self.IsSpellTooltipsEnabled and self:IsSpellTooltipsEnabled() or false)
+    check:Show()
+    if check.text then
+        check.text:Show()
+        check.text:SetText("Enable spell tooltips")
+        check.text:SetTextColor(0.90, 0.93, 0.98)
+    end
+end
+
+function Diar:EnsureSpellTooltipToggle(pf)
+    if not pf or not pf.canvas then return end
+    local check = pf.spellTooltipCheck
+    if not check then
+        -- Parent to frame (not canvas) so scene refresh does not recycle this control.
+        check = CreateFrame("CheckButton", nil, pf, "UICheckButtonTemplate")
+        check:SetSize(20, 20)
+        check.text = check:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        check.text:SetPoint("LEFT", check, "RIGHT", 2, 0)
+        check:SetScript("OnClick", function(btn)
+            local s = Diar:GetPlannerSettings()
+            s.enableSpellTooltips = btn:GetChecked() and true or false
+        end)
+        pf.spellTooltipCheck = check
+    end
+    if check:GetParent() ~= pf then
+        check:SetParent(pf)
+    end
+    self:UpdateSpellTooltipToggle(pf)
+end
+
 function Diar:UpdatePlannerAssignmentButton(pf)
     pf = pf or self.plannerFrame
     local btn = pf and pf.assignmentBtn
@@ -976,6 +1049,10 @@ function Diar:PositionPlannerControlsBar(pf)
         if pf.previewNamesBtn then pf.previewNamesBtn:Hide() end
         if pf.previewAssignmentsBtn then pf.previewAssignmentsBtn:Hide() end
         if pf.assignmentBtn then pf.assignmentBtn:Hide() end
+        if pf.spellTooltipCheck then
+            pf.spellTooltipCheck:Hide()
+            if pf.spellTooltipCheck.text then pf.spellTooltipCheck.text:Hide() end
+        end
         return
     end
     if pf.controls then pf.controls:Show() end
@@ -1028,6 +1105,7 @@ function Diar:PositionPlannerControlsBar(pf)
     self:UpdatePreviewNamesButton(pf)
     self:UpdatePreviewAssignmentsButton(pf)
     self:UpdatePlannerAssignmentButton(pf)
+    self:UpdateSpellTooltipToggle(pf)
 end
 
 local ResolveSceneSpots
@@ -2268,6 +2346,39 @@ local function EnsureReadyCheckAssignmentArrowButtons(pf)
     end
 end
 
+local function ReadyCheckPhaseToken(phase)
+    local n = tonumber(phase)
+    if n then
+        local whole = math.floor(n + 0.0000001)
+        if math.abs(n - whole) < 0.0001 then
+            return tostring(whole)
+        end
+        return string.format("%.3f", n):gsub("0+$", ""):gsub("%.$", "")
+    end
+    return tostring(phase or "")
+end
+
+local function SetReadyCheckPhaseTabState(btn, active)
+    if not btn then return end
+    btn.selected = active and true or false
+    if active then
+        btn:SetBackdropColor(0.35, 0.22, 0.52, 0.96)
+        if btn.label then btn.label:SetTextColor(1, 1, 1) end
+    else
+        btn:SetBackdropColor(unpack(UI.ROW))
+        if btn.label then btn.label:SetTextColor(0.86, 0.88, 0.92) end
+    end
+end
+
+local function HideReadyCheckPhaseTabs(pf)
+    if not pf or not pf.readyCheckPhaseTabButtons then return end
+    for _, btn in ipairs(pf.readyCheckPhaseTabButtons) do
+        if btn and btn.Hide then
+            btn:Hide()
+        end
+    end
+end
+
 function Diar:UpdateReadyCheckAssignmentArrows(pf)
     pf = pf or self.plannerFrame
     if not pf then return end
@@ -2282,6 +2393,7 @@ function Diar:UpdateReadyCheckAssignmentArrows(pf)
         if pf.readyCheckAssignPrevBtn then pf.readyCheckAssignPrevBtn:Hide() end
         if pf.readyCheckAssignNextBtn then pf.readyCheckAssignNextBtn:Hide() end
         if pf.readyCheckAssignLabel then pf.readyCheckAssignLabel:Hide() end
+        HideReadyCheckPhaseTabs(pf)
         return
     end
 
@@ -2323,6 +2435,84 @@ function Diar:UpdateReadyCheckAssignmentArrows(pf)
     else
         prevBtn:Hide()
         nextBtn:Hide()
+    end
+
+    local phases = {}
+    local seen = {}
+    for _, item in ipairs(list) do
+        local token = ReadyCheckPhaseToken(item and item.phase)
+        if token ~= "" and not seen[token] then
+            seen[token] = true
+            phases[#phases + 1] = {
+                token = token,
+                value = tonumber(item and item.phase) or item.phase,
+            }
+        end
+    end
+    table.sort(phases, function(a, b)
+        local an, bn = tonumber(a.value), tonumber(b.value)
+        if an and bn and an ~= bn then return an < bn end
+        return tostring(a.token) < tostring(b.token)
+    end)
+
+    if #phases <= 1 then
+        HideReadyCheckPhaseTabs(pf)
+        return
+    end
+
+    pf.readyCheckPhaseTabButtons = pf.readyCheckPhaseTabButtons or {}
+    local phaseButtons = pf.readyCheckPhaseTabButtons
+    local anchor = (pf.canvas and pf.canvas:IsShown() and pf.canvas) or pf
+    local parent = pf
+    local activePhaseToken = ReadyCheckPhaseToken(entry and entry.phase)
+    local gap = 4
+    local widths = {}
+    local totalW = 0
+    for i, ph in ipairs(phases) do
+        local text = ("P%s"):format(ph.token)
+        local w = math.max(34, math.min(70, 16 + (text:len() * 7)))
+        widths[i] = w
+        totalW = totalW + w
+    end
+    totalW = totalW + gap * (#phases - 1)
+    local x = -math.floor(totalW / 2)
+
+    for i, ph in ipairs(phases) do
+        local btn = phaseButtons[i]
+        local text = ("P%s"):format(ph.token)
+        if not btn then
+            btn = CreatePlannerIconBtn(parent, text, widths[i], 22)
+            phaseButtons[i] = btn
+        end
+        if btn.SetParent and btn:GetParent() ~= parent then
+            btn:SetParent(parent)
+        end
+        btn:ClearAllPoints()
+        -- Keep phase tabs above the compact canvas for quick jumping.
+        btn:SetPoint("BOTTOMLEFT", anchor, "TOP", x, 6)
+        btn:SetWidth(widths[i])
+        btn:SetHeight(22)
+        SetPlannerBtnText(btn, text)
+        if btn.label then btn.label:Show() end
+        btn.phaseValue = ph.value
+        btn:SetScript("OnClick", function(s)
+            if Diar.ShowReadyCheckPhase then
+                Diar:ShowReadyCheckPhase(s.phaseValue)
+            end
+        end)
+        if btn.SetTooltip then
+            btn:SetTooltip(("Jump to phase %s"):format(ph.token))
+        end
+        btn:SetFrameStrata(pf:GetFrameStrata())
+        btn:SetFrameLevel((pf:GetFrameLevel() or 0) + 25)
+        SetReadyCheckPhaseTabState(btn, ph.token == activePhaseToken)
+        btn:Show()
+        x = x + widths[i] + gap
+    end
+    for i = #phases + 1, #phaseButtons do
+        if phaseButtons[i] then
+            phaseButtons[i]:Hide()
+        end
     end
 end
 
@@ -2486,6 +2676,16 @@ local BACKGROUND_KEY_ALIASES = {
     midnigh_falls_p3_soaks = "midnight_falls_phase3_soaks",
     -- Optional short variant.
     midnight_falls_p3_soaks = "midnight_falls_phase3_soaks",
+
+    -- Venomous Abyss legacy WIP keys -> real background keys.
+    tva_nekzali_the_soulcoiler_wip = "Soulcoiler",
+    tva_entombed_sentinels_wip = "Entombed_Sentinels",
+    tva_vashnik_the_malignant_wip = "vashnik",
+    tva_the_lost_explorers_wip = "explorers_1",
+    tva_sszorak_wip = "Sszorak",
+    tva_the_twin_fangs_wip = "Twin_Fangs_2",
+    tva_the_bargained_crown_wip = "bargained_crown",
+    tva_ula_tek_wip = "ulatek1",
 }
 
 local function BuildBackgroundKeyCandidates(bgKey)
@@ -3646,7 +3846,10 @@ end
 UpdateCircleWidgetStroke = function(w, item, vc, ch)
     if not w then return end
     local override = w.__ringOverride
-    if not HasStroke(item) and not override then
+    local shp = tostring(item and item.shape or ""):lower()
+    local useDefaultStroke = (not override) and (not HasStroke(item))
+        and (shp == "circle" or shp == "ellipse")
+    if not HasStroke(item) and not override and not useDefaultStroke then
         if w._ringLines then
             for _, ln in ipairs(w._ringLines) do ln:Hide() end
         end
@@ -3659,10 +3862,16 @@ UpdateCircleWidgetStroke = function(w, item, vc, ch)
     local sr, sg, sb, sa
     if override then
         sr, sg, sb, sa = override[1], override[2], override[3], override[4] or 1
+    elseif useDefaultStroke then
+        sr, sg, sb, sa = 1, 1, 1, 0.95
     else
         sr, sg, sb, sa = ParseStrokeColor(item.stroke, item.opacity)
     end
     local thick = SceneViewScale(vc, StrokeThickPx(item, ch))
+    if useDefaultStroke then
+        local fallbackItem = { strokeWidth = tonumber(item and item.strokeWidth) or 0.32 }
+        thick = SceneViewScale(vc, StrokeThickPx(fallbackItem, ch))
+    end
     if override and w.__groupSpotMine then
         thick = thick * 1.35
     end
@@ -3883,24 +4092,48 @@ local function DrawDonutShape(pf, canvas, item, cw, ch, frameLevel)
     local cy = by + hpx / 2
     local outerRx, outerRy = wpx / 2, hpx / 2
     local inner = tonumber(item.innerRatio) or 0.5
-    if inner < 0 then inner = 0 elseif inner > 0.95 then inner = 0.95 end
-    local midRx = outerRx * (1 + inner) / 2
-    local midRy = outerRy * (1 + inner) / 2
-    -- Band (dot diameter) = distance between outer and inner edge.
-    local band = math.max(3, ((outerRx * (1 - inner)) + (outerRy * (1 - inner))) / 2)
+    if inner < 0 then inner = 0 elseif inner > 0.92 then inner = 0.92 end
+    local innerRx = outerRx * inner
+    local innerRy = outerRy * inner
 
-    -- Enough dots so neighbours overlap (spacing <= ~half a dot) for a continuous ring.
-    local circ = math.pi * (midRx + midRy)
-    local segs = math.max(24, math.min(math.ceil(circ / math.max(2, band * 0.45)), 160))
-    for s = 0, segs - 1 do
-        local ang = (s / segs) * math.pi * 2
-        local px = cx + midRx * math.cos(ang)
-        local py = cy + midRy * math.sin(ang)
-        local d = ShapeDot(f)
-        d:SetColorTexture(r, g, b, a)
-        d:SetSize(band, band)
-        d:ClearAllPoints()
-        d:SetPoint("CENTER", canvas, "TOPLEFT", px, -py)
+    -- Fill donut with horizontal scanlines (annulus), so rendering is continuous and
+    -- never shows segmented seams from line joins.
+    local rows = math.max(14, math.min(math.floor(hpx * 1.6), 240))
+    local step = math.max(0.6, hpx / rows)
+    local rowThick = step + 0.9
+    for i = 0, rows - 1 do
+        local y = by + (i + 0.5) * step
+        local dy = y - cy
+        local outerNorm = 1 - ((dy * dy) / math.max(1e-6, outerRy * outerRy))
+        if outerNorm > 0 then
+            local xo = outerRx * math.sqrt(outerNorm)
+            local xi = 0
+            if inner > 0 then
+                local innerNorm = 1 - ((dy * dy) / math.max(1e-6, innerRy * innerRy))
+                if innerNorm > 0 then
+                    xi = innerRx * math.sqrt(innerNorm)
+                end
+            end
+            if xi > 0.3 then
+                local lnL = ShapeLine(f)
+                lnL:SetThickness(rowThick)
+                lnL:SetColorTexture(r, g, b, a)
+                lnL:SetStartPoint("TOPLEFT", canvas, cx - xo, -y)
+                lnL:SetEndPoint("TOPLEFT", canvas, cx - xi, -y)
+
+                local lnR = ShapeLine(f)
+                lnR:SetThickness(rowThick)
+                lnR:SetColorTexture(r, g, b, a)
+                lnR:SetStartPoint("TOPLEFT", canvas, cx + xi, -y)
+                lnR:SetEndPoint("TOPLEFT", canvas, cx + xo, -y)
+            else
+                local ln = ShapeLine(f)
+                ln:SetThickness(rowThick)
+                ln:SetColorTexture(r, g, b, a)
+                ln:SetStartPoint("TOPLEFT", canvas, cx - xo, -y)
+                ln:SetEndPoint("TOPLEFT", canvas, cx + xo, -y)
+            end
+        end
     end
 
     return f
@@ -4114,6 +4347,45 @@ end
 
 Diar.GetPlanIconTexture = GetPlanIconTexture
 
+local function ResolveItemSpellId(item)
+    if type(item) ~= "table" then return nil end
+    local abilityData = type(item.abilityData) == "table" and item.abilityData or nil
+    local candidates = {
+        item.spellId,
+        item.spellID,
+        item.spell_id,
+        abilityData and abilityData.spellId,
+        abilityData and abilityData.spellID,
+        abilityData and abilityData.spell_id,
+    }
+    for i = 1, #candidates do
+        local id = tonumber(candidates[i])
+        if id and id > 0 then
+            return math.floor(id + 0.0001)
+        end
+    end
+    if Diar and type(Diar.ResolveCustomSpellIdFromSrc) == "function" then
+        local mapped = Diar.ResolveCustomSpellIdFromSrc(item.icon)
+        local mappedNum = tonumber(mapped)
+        if mappedNum and mappedNum > 0 then
+            return math.floor(mappedNum + 0.0001)
+        end
+    end
+    local iconKey = type(item.icon) == "string" and item.icon or ""
+    if iconKey ~= "" then
+        local file = iconKey:match("([^/]+)$") or iconKey
+        -- Ability icon keys often embed the spell id as a leading number:
+        -- abilities/rotmire/1221787_inv_misc_herb_zoanthid
+        local fromPrefix = tonumber(file:match("^(%d+)[_%-]"))
+            or tonumber(file:match("^(%d+)$"))
+            or tonumber(iconKey:match("/(%d+)[_%-]"))
+        if fromPrefix and fromPrefix > 0 then
+            return math.floor(fromPrefix + 0.0001)
+        end
+    end
+    return nil
+end
+
 -- Parse fill string (rgba, rgb, or hex) to r,g,b,a in 0..1. Returns nil to use default.
 local function ParseFillColor(fill)
     if not fill or type(fill) ~= "string" or fill == "" then return nil end
@@ -4202,7 +4474,7 @@ local function ApplySceneBackground(pf, scene, vc, cw, ch)
     cw = cw or (pf.plannerCanvasW or PLANNER_CANVAS_W)
     ch = ch or (pf.plannerCanvasH or PLANNER_CANVAS_H)
     local u0, u1, v0, v1 = GetBackgroundTexCoords(vc, cw, ch)
-    local bg = (scene and (scene.bg or scene.background)) or nil
+    local bg = (scene and (scene.bg or scene.background or scene.backgroundColor)) or nil
 
     local function ApplyTransparentBackground()
         pf.canvasBg:Show()
@@ -4216,6 +4488,37 @@ local function ApplySceneBackground(pf, scene, vc, cw, ch)
         end
     end
 
+    local function ApplySolidBackgroundFromToken(bgToken)
+        if type(bgToken) ~= "string" then return false end
+        local token = strtrim(bgToken)
+        if token == "" then return false end
+        local lower = strlower(token)
+        local colorValue = nil
+        if lower:sub(1, 6) == "plain:" then
+            colorValue = strtrim(token:sub(7))
+        elseif lower:sub(1, 6) == "color:" then
+            colorValue = strtrim(token:sub(7))
+        elseif token:match("^#%x%x%x%x%x%x%x%x?$")
+            or lower:match("^rgb%(")
+            or lower:match("^rgba%(") then
+            colorValue = token
+        end
+        if not colorValue or colorValue == "" then return false end
+        local r, g, b, a = ParseFillColor(colorValue)
+        if not r or not g or not b then return false end
+        if a == nil then a = 1 end
+        pf.canvasBg:Show()
+        pf.canvasBg:SetTexture(nil)
+        pf.canvasBg:SetColorTexture(r, g, b, a)
+        pf.canvasBg:SetAlpha(1)
+        if canvas then
+            canvas:SetBackdropColor(0, 0, 0, 0)
+            if canvas.SetBackdropBorderColor then canvas:SetBackdropBorderColor(0, 0, 0, 0) end
+            if canvas.shadow then canvas.shadow:Hide() end
+        end
+        return true
+    end
+
     if pf.compactMode and not Diar:IsCompactBackgroundEnabled() then
         ApplyTransparentBackground()
         return
@@ -4223,6 +4526,9 @@ local function ApplySceneBackground(pf, scene, vc, cw, ch)
 
     if type(bg) ~= "string" or bg == "" then
         ApplyTransparentBackground()
+        return
+    end
+    if ApplySolidBackgroundFromToken(bg) then
         return
     end
 
@@ -4358,6 +4664,14 @@ function Diar:SanitizePlanData(data)
                     local isTrashObject = (kindLower == "trash")
                         or (typeLower == "trash")
                         or (typeLower == "trash_icon")
+                    local itemSpellId = tonumber(item.spellId or item.spellID or item.spell_id)
+                    if (not itemSpellId or itemSpellId <= 0) and Diar and type(Diar.ResolveCustomSpellIdFromSrc) == "function" then
+                        local mappedSpell = Diar.ResolveCustomSpellIdFromSrc(item.icon)
+                        itemSpellId = tonumber(mappedSpell)
+                        if itemSpellId and itemSpellId > 0 then
+                            item.spellId = math.floor(itemSpellId + 0.0001)
+                        end
+                    end
                     if not isBossObject and (kindLower == "" or kindLower == "image" or kindLower == "icon") then
                         local hasBossHints = (item.boss == true)
                             or (item.isBoss == true)
@@ -4396,7 +4710,7 @@ function Diar:SanitizePlanData(data)
                         if type(item.opacity) ~= "number" then
                             item.opacity = 0.95
                         end
-                    elseif isTrashObject then
+                    elseif isTrashObject and not (itemSpellId and itemSpellId > 0) then
                         local rawLabel = ""
                         if type(item.label) == "string" and item.label ~= "" then
                             rawLabel = item.label
@@ -4890,7 +5204,9 @@ end
 function Diar.RenderIconWidget(addon, w, item, label, hasSelfOnPlan, playerKey, spotNum, isMySpot, ch)
     HideWidgetStroke(w)
     ClearBackdropStroke(w)
-    local skipHelper = (not item.icon or item.icon == "") and label == ""
+    local spellId = ResolveItemSpellId(item)
+    local hasSpellSource = spellId ~= nil
+    local skipHelper = (not item.icon or item.icon == "") and (not hasSpellSource) and label == ""
     if skipHelper then
         w.__suppressed = true
         w.__tooltipText = nil
@@ -4918,28 +5234,53 @@ function Diar.RenderIconWidget(addon, w, item, label, hasSelfOnPlan, playerKey, 
         ClearBackdropStroke(w)
         if w.text then w.text:Hide() end
     else
-        local texPath, texCoord, customCandidates = GetPlanIconTexture(item.icon)
-        local customLoaded = SetTextureFromCandidates(w.tex, customCandidates)
-        if customLoaded or texPath then
-            if not customLoaded then
-                w.tex:SetTexture(texPath)
-            end
-            if (not customLoaded) and texCoord and #texCoord >= 4 then
-                w.tex:SetTexCoord(texCoord[1], texCoord[2], texCoord[3], texCoord[4])
-            else
-                w.tex:SetTexCoord(0, 1, 0, 1)
-            end
+        local spellTex = hasSpellSource and Diar.GetSpellTextureSafe(spellId) or nil
+        if spellTex then
+            -- Ability objects should prefer live in-game spell textures over web icon paths.
+            w.tex:SetTexture(spellTex)
+            w.tex:SetTexCoord(0, 1, 0, 1)
             w.tex:Show()
         else
-            w.tex:SetTexCoord(0, 1, 0, 1)
-            w.tex:SetColorTexture(0.35, 0.5, 0.7, 0.9)
-            w.tex:Show()
+            local texPath, texCoord, customCandidates = GetPlanIconTexture(item.icon)
+            local customLoaded = SetTextureFromCandidates(w.tex, customCandidates)
+            if customLoaded or texPath then
+                if not customLoaded then
+                    w.tex:SetTexture(texPath)
+                end
+                if (not customLoaded) and texCoord and #texCoord >= 4 then
+                    w.tex:SetTexCoord(texCoord[1], texCoord[2], texCoord[3], texCoord[4])
+                else
+                    w.tex:SetTexCoord(0, 1, 0, 1)
+                end
+                w.tex:Show()
+            else
+                w.tex:SetTexCoord(0, 1, 0, 1)
+                w.tex:SetColorTexture(0.35, 0.5, 0.7, 0.9)
+                w.tex:Show()
+            end
         end
         if w.text then w.text:Hide() end
     end
     w.__tooltipText = (label and label ~= "") and label or nil
     Diar.ApplyWidgetLabel(w, item, label, hasSelfOnPlan, playerKey, addon:IsPlannerPreviewNamesVisible())
     w:SetScript("OnEnter", function(f)
+        local hoverSpellId = ResolveItemSpellId(item)
+        local spellTooltipsOn = addon and addon.IsSpellTooltipsEnabled and addon:IsSpellTooltipsEnabled()
+        if spellTooltipsOn and hoverSpellId and GameTooltip then
+            GameTooltip:SetOwner(f, "ANCHOR_RIGHT")
+            local shown = false
+            if type(GameTooltip.SetSpellByID) == "function" then
+                local ok = pcall(GameTooltip.SetSpellByID, GameTooltip, hoverSpellId)
+                shown = ok and true or false
+            elseif type(GameTooltip.SetHyperlink) == "function" then
+                local ok = pcall(GameTooltip.SetHyperlink, GameTooltip, ("spell:%d"):format(hoverSpellId))
+                shown = ok and true or false
+            end
+            if shown then
+                GameTooltip:Show()
+                return
+            end
+        end
         local tip = (f.__tooltipText and f.__tooltipText ~= "") and f.__tooltipText or nil
         if not tip then
             tip = (f.label and f.label:GetText() and f.label:GetText() ~= "") and f.label:GetText() or nil
@@ -4966,12 +5307,28 @@ function Diar.RenderSceneItem(addon, pf, root, cw, ch, vc, minSize, item, itemIn
 
     local isStatic = (k == "line")
         or (k == "shape" and (IsFrontalItem(item) or HasQuadCorners(item) or shp == "donut" or shp == "triangle" or shp == "cone"))
-    local allowStaticDragProxy = (k == "shape" and (shp == "triangle" or shp == "cone"))
+    local allowStaticDragProxy = (k == "line") or (k == "shape" and (shp == "donut" or shp == "triangle" or shp == "cone"))
 
     if isStatic then
         if allowStaticDragProxy and not IsFrontalItem(item) then
             local wp = (type(item.w) == "number" and item.w or 4) / 100
             local hp = (type(item.h) == "number" and item.h or 4) / 100
+            local anchorXp, anchorYp = xp, yp
+            if k == "line" then
+                local x1 = (tonumber(item.x1) or 0) / 100
+                local y1 = (tonumber(item.y1) or 0) / 100
+                local x2 = (tonumber(item.x2) or 0) / 100
+                local y2 = (tonumber(item.y2) or 0) / 100
+                local pad = 0.01
+                local left = math.min(x1, x2) - pad
+                local top = math.min(y1, y2) - pad
+                local right = math.max(x1, x2) + pad
+                local bottom = math.max(y1, y2) + pad
+                anchorXp = left
+                anchorYp = top
+                wp = math.max((2 / math.max(1, cw)), right - left)
+                hp = math.max((2 / math.max(1, ch)), bottom - top)
+            end
             local w = item.widget
             if not IsPlannerWidgetFrame(w) then
                 item.widget = nil
@@ -4988,7 +5345,7 @@ function Diar.RenderSceneItem(addon, pf, root, cw, ch, vc, minSize, item, itemIn
             w:SetSize(iw, ih)
             w.basePixelW = iw
             w.basePixelH = ih
-            local px, py = SceneViewPctToCanvas(vc, cw, ch, xp, yp)
+            local px, py = SceneViewPctToCanvas(vc, cw, ch, anchorXp, anchorYp)
             w:SetPoint("TOPLEFT", root, "TOPLEFT", px, -py)
             if w.tex then
                 w.tex:Hide()
@@ -5001,10 +5358,10 @@ function Diar.RenderSceneItem(addon, pf, root, cw, ch, vc, minSize, item, itemIn
             w.__ringOverride = nil
             w.__groupSpotMine = nil
             w.itemIndex = itemIndex
-            w.baseX = xp
-            w.baseY = yp
-            item.currentX = xp
-            item.currentY = yp
+            w.baseX = anchorXp
+            w.baseY = anchorYp
+            item.currentX = anchorXp
+            item.currentY = anchorYp
             if addon.AttachPlannerItemContextMenu then
                 addon:AttachPlannerItemContextMenu(w, itemIndex, item)
             end
@@ -5996,6 +6353,7 @@ function Diar:ShowPlannerViewer(opts)
         EnsurePlannerZoomControls(pf, canvas)
         BindPlannerCanvasViewportInput(pf, canvas)
         Diar:EnsurePreviewNamesButton(pf)
+        Diar:EnsureSpellTooltipToggle(pf)
         Diar:EnsurePlannerAssignmentButton(pf)
 
         local controls = CreateFrame("Frame", nil, pf)
@@ -6331,6 +6689,7 @@ function Diar:ShowPlannerViewer(opts)
     end
     Diar:EnsurePreviewNamesButton(pf)
     Diar:EnsurePreviewAssignmentsButton(pf)
+    Diar:EnsureSpellTooltipToggle(pf)
     Diar:EnsurePlannerAssignmentButton(pf)
     Diar:EnsurePlannerControlsButtons(pf)
     if Diar.EnsurePlannerEditModeIntegration then

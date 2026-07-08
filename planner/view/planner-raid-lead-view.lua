@@ -1363,6 +1363,50 @@ function Diar:HandleRaidCheckNotifComm(msg, sender)
     self:ShowRaidCheckNotifPopup(sender, planName, planKey, planId, transferId, owner)
 end
 
+local function EnsureRaidCheckExpandedHost(pf)
+    if not pf then return nil end
+    if not pf.raidCheckExpandedHost then
+        local host = CreateFrame("Frame", nil, pf, "BackdropTemplate")
+        if SetBackdrop then SetBackdrop(host, UI.PANEL, UI.BORDER, 1) end
+
+        local hdr = host:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        hdr:SetPoint("TOPLEFT", host, "TOPLEFT", 12, -10)
+        hdr:SetText("Raidcheck")
+        hdr:SetTextColor(0.92, 0.94, 0.98)
+        host.title = hdr
+
+        local summary = host:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        summary:SetPoint("RIGHT", host, "RIGHT", -62, -10)
+        summary:SetJustifyH("RIGHT")
+        summary:SetTextColor(0.48, 0.52, 0.58)
+        summary:SetText("")
+        host.summary = summary
+
+        local refreshBtn = CreateFrame("Button", nil, host)
+        refreshBtn:SetSize(52, 20)
+        refreshBtn:SetPoint("TOPRIGHT", host, "TOPRIGHT", -8, -6)
+        local refreshLbl = refreshBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        refreshLbl:SetPoint("CENTER")
+        refreshLbl:SetText("Refresh")
+        refreshLbl:SetTextColor(unpack(UI.LINK))
+        refreshBtn:SetScript("OnEnter", function()
+            refreshLbl:SetTextColor(unpack(UI.LINK_HOV))
+        end)
+        refreshBtn:SetScript("OnLeave", function()
+            refreshLbl:SetTextColor(unpack(UI.LINK))
+        end)
+        refreshBtn:SetScript("OnClick", function()
+            Diar:SendPlanViewPoll()
+            Diar:RefreshRaidLeadView(pf)
+        end)
+        host.refreshBtn = refreshBtn
+
+        host:Hide()
+        pf.raidCheckExpandedHost = host
+    end
+    return pf.raidCheckExpandedHost
+end
+
 function Diar:ApplyRaidLeadViewLayout(pf)
     pf = pf or self.plannerFrame
     if not pf or not pf.savedPlansPanel then return end
@@ -1391,6 +1435,7 @@ function Diar:ApplyRaidLeadViewLayout(pf)
 
     local showRaidcheckControls = self:ShouldShowRaidCheckBar()
     local active = showRaidcheckControls and self:IsRaidCheckEnabled(pf)
+    local useRaidcheckExpanded = active and self.IsRaidCheckExpandedEnabled and self:IsRaidCheckExpandedEnabled()
 
     if bar then
         bar:Show()
@@ -1413,6 +1458,71 @@ function Diar:ApplyRaidLeadViewLayout(pf)
     if pf.raidLeadBottomDivider then
         if active then pf.raidLeadBottomDivider:Show() else pf.raidLeadBottomDivider:Hide() end
     end
+
+    if useRaidcheckExpanded then
+        local host = EnsureRaidCheckExpandedHost(pf)
+        if host then
+            local hostW = (pf.rightPanelW or (panel.GetWidth and panel:GetWidth()) or 248)
+            host:ClearAllPoints()
+            host:SetPoint("TOPLEFT", pf, "TOPRIGHT", 12, 0)
+            host:SetPoint("BOTTOMLEFT", pf, "BOTTOMRIGHT", 12, 0)
+            host:SetWidth(hostW)
+            host:SetFrameStrata(pf:GetFrameStrata())
+            host:SetFrameLevel((pf:GetFrameLevel() or 0) + 5)
+            host:Show()
+            if host.title then host.title:Show() end
+            if host.summary and pf.raidCheckSummary then
+                host.summary:SetText(pf.raidCheckSummary:GetText() or "")
+                host.summary:Show()
+            end
+            if host.refreshBtn then
+                if active then host.refreshBtn:Show() else host.refreshBtn:Hide() end
+            end
+        end
+        panel:Show()
+
+        if bar then
+            -- Keep the existing raidcheck toggle/header where it already lives.
+            if bar:GetParent() ~= panel then bar:SetParent(panel) end
+            bar:Show()
+        end
+        if pf.raidLeadPanel then
+            if host and pf.raidLeadPanel:GetParent() ~= host then pf.raidLeadPanel:SetParent(host) end
+            pf.raidLeadPanel:ClearAllPoints()
+            pf.raidLeadPanel:SetPoint("TOPLEFT", host or panel, "TOPLEFT", 8, -34)
+            pf.raidLeadPanel:SetPoint("BOTTOMRIGHT", host or panel, "BOTTOMRIGHT", -8, 8)
+            pf.raidLeadPanel:Show()
+        end
+        if pf.raidLeadBottomDivider then
+            pf.raidLeadBottomDivider:Hide()
+        end
+        self:RefreshRaidLeadView(pf)
+        if host and host.summary and pf.raidCheckSummary then
+            host.summary:SetText(pf.raidCheckSummary:GetText() or "")
+        end
+        self:UpdateRaidCheckNotifBtn(pf)
+        return
+    end
+
+    if pf.raidCheckExpandedHost then
+        pf.raidCheckExpandedHost:Hide()
+    end
+    if bar and bar:GetParent() ~= panel then
+        bar:SetParent(panel)
+    end
+    if pf.raidLeadPanel and pf.raidLeadPanel:GetParent() ~= panel then
+        pf.raidLeadPanel:SetParent(panel)
+    end
+    panel:Show()
+
+    if title then title:Show() end
+    if count then count:Show() end
+    if subtitle then subtitle:Show() end
+    if searchBox then searchBox:Show() end
+    if raidFilterBtn then raidFilterBtn:Show() end
+    if divider then divider:Show() end
+    if scroll then scroll:Show() end
+    if footer then footer:Show() end
 
     local topAnchor = panel
     local topInset = -12

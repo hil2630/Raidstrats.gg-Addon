@@ -270,6 +270,7 @@ local function ApplyCircleTileIcon(tex, parent, tileSize)
     SetSquareTileIcon(tex, parent, tileSize)
     tex:SetTexture(WHITE_TEX)
     tex:SetTexCoord(0, 1, 0, 1)
+    tex:SetRotation(0)
     tex:SetVertexColor(0.92, 0.30, 0.30, 0.95)
     tex:SetAlpha(1)
     tex:Show()
@@ -294,6 +295,7 @@ local function ApplyRectTileIcon(tex, parent, tileSize)
     tex:SetPoint("CENTER", parent, "CENTER", 0, 0)
     tex:SetTexture(WHITE_TEX)
     tex:SetTexCoord(0, 1, 0, 1)
+    tex:SetRotation(0)
     tex:SetVertexColor(0.30, 0.55, 0.95, 0.95)
     tex:SetAlpha(1)
     tex:Show()
@@ -312,6 +314,32 @@ local function ApplyTextTileIcon(btn, tileSize)
     btn.letter:Show()
 end
 
+local function ApplyLineTileIcon(btn, tileSize, isArrow)
+    if btn.letter then btn.letter:Hide() end
+    if not btn.icon then return end
+    btn.icon:SetRotation(0)
+    btn.icon:SetTexCoord(0, 1, 0, 1)
+    btn.icon:Show()
+    if isArrow then
+        local size = math.max(12, math.floor(tileSize * 0.58 + 0.5))
+        btn.icon:ClearAllPoints()
+        btn.icon:SetSize(size, size)
+        btn.icon:SetPoint("CENTER", btn, "CENTER", 0, 0)
+        -- Cleaner Blizzard arrow icon (chat expand arrow).
+        btn.icon:SetTexture(130940) -- Interface\ChatFrame\ChatFrameExpandArrow
+        btn.icon:SetVertexColor(1, 1, 1, 1)
+    else
+        local w = math.max(14, math.floor(tileSize * 0.68 + 0.5))
+        local h = math.max(2, math.floor(tileSize * 0.08 + 0.5))
+        btn.icon:ClearAllPoints()
+        btn.icon:SetSize(w, h)
+        btn.icon:SetPoint("CENTER", btn, "CENTER", 0, 0)
+        -- Blizzard built-in white texture as line stroke.
+        btn.icon:SetTexture(WHITE_TEX)
+        btn.icon:SetVertexColor(0.92, 0.92, 0.92, 1)
+    end
+end
+
 local function ApplyPaletteTilePreview(btn, previewKind, tileSize)
     tileSize = tileSize or btn:GetWidth() or PALETTE_TILE
     if previewKind == "text" then
@@ -324,6 +352,8 @@ local function ApplyPaletteTilePreview(btn, previewKind, tileSize)
         if btn.letter then btn.letter:Hide() end
         btn.icon:Show()
         ApplyRectTileIcon(btn.icon, btn, tileSize)
+    elseif previewKind == "line" then
+        ApplyLineTileIcon(btn, tileSize, btn.__lineToolMode == "arrow")
     end
 end
 
@@ -684,8 +714,43 @@ function Diar:UpdatePaletteDragPreview(pf, drag)
     self:ShowPaletteDragLayer(pf)
     local template = drag.template
     local shape = template and tostring(template.shape or ""):lower() or ""
+    local isLineTool = template and tostring(template.kind or ""):lower() == "line"
     local x2 = drag.curX or drag.startX
     local y2 = drag.curY or drag.startY
+    if isLineTool then
+        local dx = x2 - drag.startX
+        local dy = y2 - drag.startY
+        local len = math.max(2, math.sqrt(dx * dx + dy * dy))
+        local cx = (drag.startX + x2) * 0.5
+        local cy = (drag.startY + y2) * 0.5
+        preview:ClearAllPoints()
+        preview:SetPoint("CENTER", canvas, "TOPLEFT", cx, -cy)
+        preview:SetSize(len, 4)
+        if preview.__maskOn then
+            preview.previewTex:RemoveMaskTexture(preview.previewMask)
+            preview.__maskOn = false
+        end
+        if preview.borderTex then preview.borderTex:Hide() end
+        if preview.SetBackdrop then preview:SetBackdrop(nil) end
+        preview.previewTex:Show()
+        preview.previewTex:SetAllPoints(preview)
+        preview.previewTex:SetTexture(WHITE_TEX)
+        preview.previewTex:SetVertexColor(1, 0.92, 0.35, 1)
+        preview.previewTex:SetAlpha(0.95)
+        local angle = 0
+        if math.atan2 then
+            angle = math.atan2(dy, dx)
+        else
+            local safeDx = (math.abs(dx) < 0.0001) and (dx >= 0 and 0.0001 or -0.0001) or dx
+            angle = math.atan(dy / safeDx)
+            if dx < 0 then
+                angle = angle + math.pi
+            end
+        end
+        preview.previewTex:SetRotation(-angle)
+        preview:Show()
+        return
+    end
     local left = math.min(drag.startX, x2)
     local top = math.min(drag.startY, y2)
     local w = math.max(2, math.abs(x2 - drag.startX))
@@ -760,6 +825,21 @@ function Diar:FinishPaletteDragDraw()
     local cw, ch = drag.cw or 1, drag.ch or 1
     local dx = math.abs((drag.curX or drag.startX) - drag.startX)
     local dy = math.abs((drag.curY or drag.startY) - drag.startY)
+    if template and tostring(template.kind or ""):lower() == "line" then
+        local endX = drag.curX or drag.startX
+        local endY = drag.curY or drag.startY
+        if dx < MIN_SHAPE_DRAG_PX and dy < MIN_SHAPE_DRAG_PX then
+            endX = drag.startX + 48
+            endY = drag.startY
+        end
+        local x1, y1 = CanvasLocalToItemPercent(pf, drag.startX, drag.startY, cw, ch)
+        local x2, y2 = CanvasLocalToItemPercent(pf, endX, endY, cw, ch)
+        template.x1, template.y1, template.x2, template.y2 = x1, y1, x2, y2
+        self:CancelPaletteDragDraw()
+        self:ClearPalettePlacement()
+        self:AddPlannerItemToScene(template, x1, y1)
+        return
+    end
     local xPct, yPct, wPct, hPct
     if dx < MIN_SHAPE_DRAG_PX and dy < MIN_SHAPE_DRAG_PX then
         local px, py = CanvasLocalToItemPercent(pf, drag.startX, drag.startY, cw, ch)
@@ -787,10 +867,22 @@ function Diar:AddPlannerItemToScene(template, xPct, yPct, opts)
 
     local item = CopyTemplate(template)
     item.id = self:GeneratePlannerItemId()
-    item.x = xPct
-    item.y = yPct
-    if opts.wPct then item.w = opts.wPct end
-    if opts.hPct then item.h = opts.hPct end
+    if item.kind == "line" then
+        if type(item.x1) ~= "number" or type(item.y1) ~= "number" or type(item.x2) ~= "number" or type(item.y2) ~= "number" then
+            local baseX = xPct or 45
+            local baseY = yPct or 45
+            item.x1, item.y1, item.x2, item.y2 = baseX, baseY, baseX + 4, baseY
+        end
+        item.x = nil
+        item.y = nil
+        item.w = nil
+        item.h = nil
+    else
+        item.x = xPct
+        item.y = yPct
+        if opts.wPct then item.w = opts.wPct end
+        if opts.hPct then item.h = opts.hPct end
+    end
     if item.kind == "shape" and tostring(item.shape or ""):lower() == "circle" then
         item.w, item.h = NormalizeCircleItemSize(item, item.w, item.h)
     end
@@ -800,7 +892,7 @@ function Diar:AddPlannerItemToScene(template, xPct, yPct, opts)
         item.h = hPct
     end
 
-    if not IsWorldMarkerPaletteItem(item) then
+    if item.kind ~= "line" and not IsWorldMarkerPaletteItem(item) then
         local slotIndex = PUI.GetNextAvailableSlotIndex(scene)
         item.slotIndex = slotIndex
         item.embedIndex = slotIndex
@@ -830,15 +922,23 @@ end
 function Diar:ClearPalettePlacement()
     local pf = self.plannerFrame
     if not pf then return end
+    local hadPlacement = pf.__palettePlacement ~= nil
     if self.HidePaletteSpecPicker then
         self:HidePaletteSpecPicker()
     end
     self:StopPaletteGhostTracking(pf)
     self:CancelPaletteDragDraw()
+    if pf.__paletteSelectedTile and self.SetPaletteTileSelected then
+        self:SetPaletteTileSelected(pf.__paletteSelectedTile, false)
+        pf.__paletteSelectedTile = nil
+    end
     pf.__palettePlacement = nil
     if pf.objectPaletteHint then
         pf.objectPaletteHint:SetText(PALETTE_HINT_DEFAULT)
         pf.objectPaletteHint:SetTextColor(0.45, 0.50, 0.58)
+    end
+    if hadPlacement and self.RefreshPlannerScene then
+        self:RefreshPlannerScene()
     end
 end
 
@@ -861,6 +961,10 @@ function Diar:BeginPalettePlacement(template, label, opts)
     end
     self:StopPaletteGhostTracking(pf)
     self:CancelPaletteDragDraw()
+    if pf.__paletteSelectedTile and self.SetPaletteTileSelected then
+        self:SetPaletteTileSelected(pf.__paletteSelectedTile, false)
+        pf.__paletteSelectedTile = nil
+    end
     pf.__palettePlacement = CopyTemplate(template)
     pf.__palettePlacement.__dragDraw = opts and opts.dragDraw or nil
     if pf.__palettePlacement.kind == "icon" and not pf.__palettePlacement.__dragDraw then
@@ -874,6 +978,13 @@ function Diar:BeginPalettePlacement(template, label, opts)
             pf.objectPaletteHint:SetText(("Click canvas to place %s (right-click cancel)"):format(label or "object"))
         end
         pf.objectPaletteHint:SetTextColor(0.55, 0.78, 1, 1)
+    end
+    if opts and opts.sourceTile and self.SetPaletteTileSelected then
+        pf.__paletteSelectedTile = opts.sourceTile
+        self:SetPaletteTileSelected(opts.sourceTile, true)
+    end
+    if self.RefreshPlannerScene then
+        self:RefreshPlannerScene()
     end
 end
 
@@ -948,19 +1059,51 @@ local function CreatePaletteTile(parent, size, tooltip, previewKind)
     else
         SetSquareTileIcon(b.icon, b, size)
     end
+    local function UpdateTileBackdrop(s, hovered)
+        if not s then return end
+        if s.__paletteSelected then
+            if hovered then
+                s:SetBackdropColor(0.20, 0.43, 0.80, 1)
+            else
+                s:SetBackdropColor(0.18, 0.38, 0.72, 1)
+            end
+            return
+        end
+        if hovered then
+            s:SetBackdropColor(unpack(UI.ROW_HOV))
+        else
+            s:SetBackdropColor(unpack(UI.ROW))
+        end
+    end
     b:SetScript("OnEnter", function(s)
-        s:SetBackdropColor(unpack(UI.ROW_HOV))
-        if tooltip and GameTooltip then
+        UpdateTileBackdrop(s, true)
+        local hoverTip = s.__paletteTooltip or tooltip
+        if hoverTip and GameTooltip then
             GameTooltip:SetOwner(s, "ANCHOR_RIGHT")
-            GameTooltip:SetText(tooltip, 1, 1, 1)
+            GameTooltip:SetText(hoverTip, 1, 1, 1)
             GameTooltip:Show()
         end
     end)
     b:SetScript("OnLeave", function(s)
-        s:SetBackdropColor(unpack(UI.ROW))
+        UpdateTileBackdrop(s, false)
         if GameTooltip then GameTooltip:Hide() end
     end)
+    b.__updatePaletteBackdrop = UpdateTileBackdrop
     return b
+end
+
+function Diar:SetPaletteTileSelected(btn, selected)
+    if not btn then return end
+    btn.__paletteSelected = selected and true or false
+    if btn.__updatePaletteBackdrop then
+        btn.__updatePaletteBackdrop(btn, false)
+    else
+        if btn.__paletteSelected then
+            btn:SetBackdropColor(0.18, 0.38, 0.72, 1)
+        else
+            btn:SetBackdropColor(unpack(UI.ROW))
+        end
+    end
 end
 
 local function WirePaletteTile(btn, template, label, opts)
@@ -974,10 +1117,17 @@ local function WirePaletteTile(btn, template, label, opts)
             end
             return
         end
+        local placeTemplate, placeLabel = template, label
+        if opts.resolvePlacement then
+            placeTemplate, placeLabel = opts.resolvePlacement(btn, template, label)
+        end
         if opts.promptText then
-            Diar:PromptPaletteTextLabel(template, label)
+            Diar:PromptPaletteTextLabel(placeTemplate, placeLabel)
         else
-            Diar:BeginPalettePlacement(template, label, opts)
+            local beginOpts = {}
+            for k, v in pairs(opts) do beginOpts[k] = v end
+            beginOpts.sourceTile = btn
+            Diar:BeginPalettePlacement(placeTemplate, placeLabel, beginOpts)
         end
     end)
 end
@@ -1008,6 +1158,14 @@ local PALETTE_SHAPES = {
         template = {
             kind = "text", label = "Label", w = 10, h = 3, fontSize = 4,
             textColor = "#ffffff", stroke = "#000000", strokeWidth = 0.2,
+        },
+    },
+    {
+        label = "Line",
+        tooltip = "Line tool (right-click to switch line/arrow)",
+        previewKind = "line",
+        template = {
+            kind = "line", shape = "line", stroke = "#ffffff", strokeWidth = 0.42,
         },
     },
 }
@@ -1440,6 +1598,29 @@ function Diar:EnsureObjectPalettePanel(pf)
         shapesSec.tiles[#shapesSec.tiles + 1] = { btn = btn, col = shapeCol, row = shapeRow }
         if entry.template.kind == "text" then
             WirePaletteTile(btn, entry.template, entry.label, { promptText = true })
+        elseif entry.template.kind == "line" then
+            btn.__lineToolMode = "line"
+            btn.__paletteTooltip = "Line tool (right-click: line/arrow)"
+            WirePaletteTile(btn, entry.template, entry.label, {
+                dragDraw = true,
+                resolvePlacement = function(anchorBtn, baseTemplate)
+                    local mode = (anchorBtn and anchorBtn.__lineToolMode) or "line"
+                    local t = CopyTemplate(baseTemplate)
+                    t.shape = (mode == "arrow") and "arrow" or "line"
+                    return t, (mode == "arrow") and "Arrow" or "Line"
+                end,
+                onRightClick = function(anchorBtn)
+                    local mode = (anchorBtn and anchorBtn.__lineToolMode) or "line"
+                    mode = (mode == "arrow") and "line" or "arrow"
+                    if anchorBtn then
+                        anchorBtn.__lineToolMode = mode
+                        anchorBtn.__paletteTooltip = (mode == "arrow")
+                            and "Arrow tool (right-click: switch to line)"
+                            or "Line tool (right-click: switch to arrow)"
+                        ApplyPaletteTilePreview(anchorBtn, "line", anchorBtn:GetWidth() or PALETTE_TILE)
+                    end
+                end,
+            })
         elseif entry.previewKind == "circle" or entry.previewKind == "rect" then
             WirePaletteTile(btn, entry.template, entry.label, { dragDraw = true })
         else

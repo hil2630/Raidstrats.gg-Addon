@@ -351,6 +351,7 @@ function Raidstrats:SaveImportedPlan(data)
             ["the dreamrift"] = "Midnight",
             ["march on quel'danas"] = "Midnight",
             ["sporefall"] = "Midnight",
+            ["the venomous abyss"] = "Midnight",
             ["manaforge omega"] = "The War Within",
             ["liberation of undermine"] = "The War Within",
             ["nerub-ar palace"] = "The War Within",
@@ -834,6 +835,46 @@ local function ResolveIconKeyFromSrc(src)
     return (key ~= "" and key) or nil
 end
 
+local function ResolveSpellIdFromWebObject(obj)
+    if type(obj) ~= "table" then return nil end
+    local abilityData = type(obj.abilityData) == "table" and obj.abilityData or nil
+    if NS and type(NS.ResolveCustomSpellIdFromSrc) == "function" then
+        local mapped = NS.ResolveCustomSpellIdFromSrc(obj.src)
+            or NS.ResolveCustomSpellIdFromSrc(abilityData and abilityData.icon or nil)
+        local mappedNum = tonumber(mapped)
+        if mappedNum and mappedNum > 0 then
+            return math.floor(mappedNum + 0.0001)
+        end
+    end
+    local candidates = {
+        obj.spellId,
+        obj.spellID,
+        obj.spell_id,
+        abilityData and abilityData.spellId,
+        abilityData and abilityData.spellID,
+        abilityData and abilityData.spell_id,
+        abilityData and abilityData.id,
+    }
+    for i = 1, #candidates do
+        local id = tonumber(candidates[i])
+        if id and id > 0 then
+            return math.floor(id + 0.0001)
+        end
+    end
+    local iconKey = ResolveIconKeyFromSrc(obj.src)
+        or ResolveIconKeyFromSrc(abilityData and abilityData.icon or nil)
+    if type(iconKey) == "string" and iconKey ~= "" then
+        local file = iconKey:match("([^/]+)$") or iconKey
+        local fromPrefix = tonumber(file:match("^(%d+)[_%-]"))
+            or tonumber(file:match("^(%d+)$"))
+            or tonumber(iconKey:match("/(%d+)[_%-]"))
+        if fromPrefix and fromPrefix > 0 then
+            return math.floor(fromPrefix + 0.0001)
+        end
+    end
+    return nil
+end
+
 local function RegisterSceneItemId(map, id, index)
     if not map or not id then return end
     map[tostring(id)] = index
@@ -921,13 +962,17 @@ local function ConvertWebSceneObjects(scene, canvasW, canvasH)
                     local item = nil
                     local objType = strlower(tostring(obj.type or ""))
                     if objType == "image" then
+                        local spellId = ResolveSpellIdFromWebObject(obj)
+                        local iconKey = ResolveIconKeyFromSrc(obj.src)
+                            or ResolveIconKeyFromSrc(type(obj.abilityData) == "table" and obj.abilityData.icon or nil)
                         item = {
                             kind = "icon",
                             x = x,
                             y = y,
                             w = w,
                             h = h,
-                            icon = ResolveIconKeyFromSrc(obj.src),
+                            icon = iconKey,
+                            spellId = spellId,
                             label = (type(obj.name) == "string" and obj.name ~= "") and obj.name or "",
                         }
                     elseif objType == "textbox" or objType == "text" or objType == "i-text" then

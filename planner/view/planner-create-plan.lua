@@ -24,10 +24,31 @@ local RAID_SORT_ORDER = {
     "March on Quel'Danas",
     "Sporefall",
     "Manaforge Omega",
-    "The Venomous Abyss (WIP)",
+    "The Venomous Abyss",
     "Liberation of Undermine",
     "Nerub-ar Palace",
     "Other",
+}
+-- Newest expansion first in picker tabs.
+local EXPANSION_SORT_ORDER = {
+    "Midnight",
+    "The War Within",
+    "Dragonflight",
+    "Shadowlands",
+    "Battle for Azeroth",
+    "Legion",
+}
+local BOSS_SORT_ORDER_BY_RAID = {
+    ["The Venomous Abyss"] = {
+        "Nek'zali the Soulcoiler",
+        "Entombed Sentinels",
+        "Vashnik the Malignant",
+        "The Lost Explorers",
+        "Sszorak",
+        "The Twin Fangs",
+        "The Bargained Crown",
+        "Ula'tek",
+    },
 }
 local BACKGROUND_EXISTS_CACHE = {}
 local BACKGROUND_PROBE_TEX = nil
@@ -39,6 +60,16 @@ local BACKGROUND_KEY_ALIASES = {
     midnigh_falls_p3_soaks = "midnight_falls_phase3_soaks",
     -- Optional alias if someone used p3_soaks without "phase".
     midnight_falls_p3_soaks = "midnight_falls_phase3_soaks",
+
+    -- Venomous Abyss legacy WIP keys -> real background keys.
+    tva_nekzali_the_soulcoiler_wip = "Soulcoiler",
+    tva_entombed_sentinels_wip = "Entombed_Sentinels",
+    tva_vashnik_the_malignant_wip = "vashnik",
+    tva_the_lost_explorers_wip = "explorers_1",
+    tva_sszorak_wip = "Sszorak",
+    tva_the_twin_fangs_wip = "Twin_Fangs_2",
+    tva_the_bargained_crown_wip = "bargained_crown",
+    tva_ula_tek_wip = "ulatek1",
 }
 
 local ARENAS = {
@@ -73,16 +104,16 @@ local ARENAS = {
     { key = "cosmos", label = "Crown of the Cosmos", raid = "The Voidspire", boss = "Crown of the Cosmos", expansion = "Midnight" },
     { key = "rotmire_arena", label = "Rotmire", raid = "Sporefall", boss = "Rotmire", expansion = "Midnight" },
 
-    -- The Venomous Abyss (WIP)
-    -- No dedicated background images yet; keep these selectable anyway.
-    { key = "tva_nekzali_the_soulcoiler_wip", label = "Nek'zali the Soulcoiler (WIP)", raid = "The Venomous Abyss (WIP)", boss = "Nek'zali the Soulcoiler", expansion = "The War Within", alwaysAvailable = true },
-    { key = "tva_entombed_sentinels_wip", label = "Entombed Sentinels (WIP)", raid = "The Venomous Abyss (WIP)", boss = "Entombed Sentinels", expansion = "The War Within", alwaysAvailable = true },
-    { key = "tva_vashnik_the_malignant_wip", label = "Vashnik the Malignant (WIP)", raid = "The Venomous Abyss (WIP)", boss = "Vashnik the Malignant", expansion = "The War Within", alwaysAvailable = true },
-    { key = "tva_the_lost_explorers_wip", label = "The Lost Explorers (WIP)", raid = "The Venomous Abyss (WIP)", boss = "The Lost Explorers", expansion = "The War Within", alwaysAvailable = true },
-    { key = "tva_sszorak_wip", label = "Sszorak (WIP)", raid = "The Venomous Abyss (WIP)", boss = "Sszorak", expansion = "The War Within", alwaysAvailable = true },
-    { key = "tva_the_twin_fangs_wip", label = "The Twin Fangs (WIP)", raid = "The Venomous Abyss (WIP)", boss = "The Twin Fangs", expansion = "The War Within", alwaysAvailable = true },
-    { key = "tva_the_bargained_crown_wip", label = "The Bargained Crown (WIP)", raid = "The Venomous Abyss (WIP)", boss = "The Bargained Crown", expansion = "The War Within", alwaysAvailable = true },
-    { key = "tva_ula_tek_wip", label = "Ula'tek (WIP)", raid = "The Venomous Abyss (WIP)", boss = "Ula'tek", expansion = "The War Within", alwaysAvailable = true },
+    -- The Venomous Abyss
+    { key = "Soulcoiler", label = "Nek'zali the Soulcoiler", raid = "The Venomous Abyss", boss = "Nek'zali the Soulcoiler", expansion = "Midnight" },
+    { key = "Entombed_Sentinels", label = "Entombed Sentinels", raid = "The Venomous Abyss", boss = "Entombed Sentinels", expansion = "Midnight" },
+    { key = "vashnik", label = "Vashnik the Malignant", raid = "The Venomous Abyss", boss = "Vashnik the Malignant", expansion = "Midnight" },
+    { key = "explorers_1", label = "The Lost Explorers (Route 1)", raid = "The Venomous Abyss", boss = "The Lost Explorers", expansion = "Midnight" },
+    { key = "Explorers_2", label = "The Lost Explorers (Route 2)", raid = "The Venomous Abyss", boss = "The Lost Explorers", expansion = "Midnight" },
+    { key = "Sszorak", label = "Sszorak", raid = "The Venomous Abyss", boss = "Sszorak", expansion = "Midnight" },
+    { key = "Twin_Fangs_2", label = "The Twin Fangs", raid = "The Venomous Abyss", boss = "The Twin Fangs", expansion = "Midnight" },
+    { key = "bargained_crown", label = "The Bargained Crown", raid = "The Venomous Abyss", boss = "The Bargained Crown", expansion = "Midnight" },
+    { key = "ulatek1", label = "Ula'tek", raid = "The Venomous Abyss", boss = "Ula'tek", expansion = "Midnight" },
 }
 
 local function GetBackgroundLookupKeys(bgKey)
@@ -193,6 +224,31 @@ local function BuildRaidOptions(arenas)
     return out
 end
 
+local function BuildExpansionOptions(arenas)
+    local out = {}
+    local seen = {}
+    for _, arena in ipairs(arenas or {}) do
+        local expansion = tostring(arena.expansion or "Other")
+        if expansion ~= "" and not seen[expansion] then
+            seen[expansion] = true
+            out[#out + 1] = { expansion = expansion }
+        end
+    end
+    local order = {}
+    for i, name in ipairs(EXPANSION_SORT_ORDER or {}) do
+        order[tostring(name)] = i
+    end
+    table.sort(out, function(a, b)
+        local ae, be = tostring(a.expansion or ""), tostring(b.expansion or "")
+        local ai, bi = order[ae], order[be]
+        if ai and bi and ai ~= bi then return ai < bi end
+        if ai and not bi then return true end
+        if bi and not ai then return false end
+        return ae < be
+    end)
+    return out
+end
+
 local function BuildBossOptionsForRaid(raidNode)
     local out = {}
     local byKey = {}
@@ -214,8 +270,20 @@ local function BuildBossOptionsForRaid(raidNode)
         end
         node.arenas[#node.arenas + 1] = arena
     end
+    local orderList = raidNode and BOSS_SORT_ORDER_BY_RAID[tostring(raidNode.raid or "")]
+    local orderMap = {}
+    if type(orderList) == "table" then
+        for i, bossName in ipairs(orderList) do
+            orderMap[tostring(bossName)] = i
+        end
+    end
     table.sort(out, function(a, b)
-        return (a.boss or "") < (b.boss or "")
+        local ab, bb = tostring(a.boss or ""), tostring(b.boss or "")
+        local ai, bi = orderMap[ab], orderMap[bb]
+        if ai and bi and ai ~= bi then return ai < bi end
+        if ai and not bi then return true end
+        if bi and not ai then return false end
+        return ab < bb
     end)
     return out
 end
@@ -588,25 +656,35 @@ function Diar:ShowCreatePlanDialog(opts)
         hint:SetPoint("TOP", title, "BOTTOM", 0, -8)
         hint:SetWidth(940)
         hint:SetTextColor(0.55, 0.6, 0.65)
-        hint:SetText("Select Raid -> Boss -> Background for Scene 1.")
+        hint:SetText("Select Expansion -> Raid -> Boss -> Background for Scene 1.")
+
+        local expansionLabel = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        expansionLabel:SetPoint("TOPLEFT", f, "TOPLEFT", 18, -74)
+        expansionLabel:SetText("EXPANSIONS")
+        expansionLabel:SetTextColor(unpack(UI.ACCENT))
+
+        local expansionTabsContainer = CreateFrame("Frame", nil, f)
+        expansionTabsContainer:SetPoint("TOPLEFT", f, "TOPLEFT", 16, -92)
+        expansionTabsContainer:SetPoint("TOPRIGHT", f, "TOPRIGHT", -16, -92)
+        expansionTabsContainer:SetHeight(28)
 
         local raidLabel = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        raidLabel:SetPoint("TOPLEFT", f, "TOPLEFT", 18, -74)
+        raidLabel:SetPoint("TOPLEFT", f, "TOPLEFT", 18, -126)
         raidLabel:SetText("RAIDS")
         raidLabel:SetTextColor(unpack(UI.ACCENT))
 
         local bossLabel = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        bossLabel:SetPoint("TOPLEFT", f, "TOPLEFT", 330, -74)
+        bossLabel:SetPoint("TOPLEFT", f, "TOPLEFT", 330, -126)
         bossLabel:SetText("BOSSES")
         bossLabel:SetTextColor(unpack(UI.ACCENT))
 
         local rightLabel = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        rightLabel:SetPoint("TOPLEFT", f, "TOPLEFT", 642, -74)
+        rightLabel:SetPoint("TOPLEFT", f, "TOPLEFT", 642, -126)
         rightLabel:SetText("BACKGROUNDS")
         rightLabel:SetTextColor(unpack(UI.ACCENT))
 
         local raidScroll = CreateFrame("ScrollFrame", nil, f, "UIPanelScrollFrameTemplate")
-        raidScroll:SetPoint("TOPLEFT", f, "TOPLEFT", 16, -92)
+        raidScroll:SetPoint("TOPLEFT", f, "TOPLEFT", 16, -144)
         raidScroll:SetPoint("BOTTOMRIGHT", f, "BOTTOMLEFT", 302, 56)
         local raidChild = CreateFrame("Frame", nil, raidScroll)
         raidChild:SetWidth(276)
@@ -615,7 +693,7 @@ function Diar:ShowCreatePlanDialog(opts)
         if PUI.SkinPlannerScroll then PUI.SkinPlannerScroll(raidScroll) end
 
         local bossScroll = CreateFrame("ScrollFrame", nil, f, "UIPanelScrollFrameTemplate")
-        bossScroll:SetPoint("TOPLEFT", f, "TOPLEFT", 328, -92)
+        bossScroll:SetPoint("TOPLEFT", f, "TOPLEFT", 328, -144)
         bossScroll:SetPoint("BOTTOMRIGHT", f, "BOTTOMLEFT", 614, 56)
         local bossChild = CreateFrame("Frame", nil, bossScroll)
         bossChild:SetWidth(276)
@@ -624,7 +702,7 @@ function Diar:ShowCreatePlanDialog(opts)
         if PUI.SkinPlannerScroll then PUI.SkinPlannerScroll(bossScroll) end
 
         local bgScroll = CreateFrame("ScrollFrame", nil, f, "UIPanelScrollFrameTemplate")
-        bgScroll:SetPoint("TOPLEFT", f, "TOPLEFT", 640, -92)
+        bgScroll:SetPoint("TOPLEFT", f, "TOPLEFT", 640, -144)
         bgScroll:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -16, 260)
         local bgChild = CreateFrame("Frame", nil, bgScroll)
         bgChild:SetWidth(300)
@@ -686,6 +764,7 @@ function Diar:ShowCreatePlanDialog(opts)
         f.previewTex = previewTex
         f.previewHint = previewHint
         f.previewCaption = previewCaption
+        f.expansionTabsContainer = expansionTabsContainer
         f.createBtn = createBtn
         f.title = title
         f.hint = hint
@@ -720,13 +799,23 @@ function Diar:ShowCreatePlanDialog(opts)
             row:SetParent(nil)
         end
     end
+    if f.expansionTabs then
+        for _, tab in ipairs(f.expansionTabs) do
+            tab:Hide()
+            tab:SetParent(nil)
+        end
+    end
     f.raidRows = {}
     f.bossRows = {}
     f.bgRows = {}
+    f.expansionTabs = {}
 
     local arenas = GetAvailableArenas()
-    f.raids = BuildRaidOptions(arenas)
+    f.expansions = BuildExpansionOptions(arenas)
+    f.allRaids = BuildRaidOptions(arenas)
+    f.raids = {}
     f.bosses = {}
+    f.selectedExpansion = nil
     f.selectedRaidIndex = nil
     f.selectedBossIndex = nil
     f.selectedArena = nil
@@ -755,6 +844,20 @@ function Diar:ShowCreatePlanDialog(opts)
             row:SetBackdropColor(unpack(selected and UI.ROW_HOV or UI.ROW))
             if row.label then
                 row.label:SetTextColor(selected and 1 or 0.92, selected and 1 or 0.92, selected and 1 or 0.92)
+            end
+        end
+    end
+
+    local function UpdateExpansionTabState()
+        for i, tab in ipairs(f.expansionTabs or {}) do
+            local selected = f.selectedExpansion == tab.expansion
+            tab.selected = selected
+            if selected then
+                tab:SetBackdropColor(unpack(UI.ACCENT))
+                if tab.label then tab.label:SetTextColor(1, 1, 1) end
+            else
+                tab:SetBackdropColor(unpack(UI.ROW))
+                if tab.label then tab.label:SetTextColor(0.92, 0.92, 0.92) end
             end
         end
     end
@@ -895,47 +998,82 @@ function Diar:ShowCreatePlanDialog(opts)
         end
     end
 
-    local y = -4
-    for i, raidNode in ipairs(f.raids or {}) do
-        local raidIndex = i
-        local row = CreateFrame("Button", nil, raidChild, "BackdropTemplate")
-        row:SetSize(raidW, rowH)
-        row:SetPoint("TOPLEFT", raidChild, "TOPLEFT", 0, y)
-        SetBackdrop(row, UI.ROW, UI.BORDER, 1)
-        local lbl = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-        lbl:SetPoint("LEFT", row, "LEFT", 10, 5)
-        lbl:SetPoint("RIGHT", row, "RIGHT", -10, 5)
-        lbl:SetJustifyH("LEFT")
-        lbl:SetText(raidNode.raid or "Other")
-        lbl:SetTextColor(0.92, 0.92, 0.92)
-        row.label = lbl
-        local sub = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        sub:SetPoint("TOPLEFT", lbl, "BOTTOMLEFT", 0, -1)
-        sub:SetPoint("RIGHT", row, "RIGHT", -10, 0)
-        sub:SetJustifyH("LEFT")
-        local bossCount = #BuildBossOptionsForRaid(raidNode)
-        sub:SetText((raidNode.expansion or "Other") .. ("  (%d bosses)"):format(bossCount))
-        sub:SetTextColor(0.56, 0.60, 0.66)
-        row:SetScript("OnEnter", function(s)
-            if f.selectedRaidIndex ~= raidIndex then
-                s:SetBackdropColor(unpack(UI.ROW_HOV))
+    local function RenderRaidsForExpansion()
+        if f.raidRows then
+            for _, row in ipairs(f.raidRows) do
+                row:Hide()
+                row:SetParent(nil)
             end
-        end)
-        row:SetScript("OnLeave", function(s)
-            if f.selectedRaidIndex ~= raidIndex then
-                s:SetBackdropColor(unpack(UI.ROW))
+        end
+        f.raidRows = {}
+        f.selectedRaidIndex = nil
+
+        local filtered = {}
+        local targetExpansion = tostring(f.selectedExpansion or "")
+        for _, raidNode in ipairs(f.allRaids or {}) do
+            if targetExpansion == "" or tostring(raidNode.expansion or "") == targetExpansion then
+                filtered[#filtered + 1] = raidNode
             end
-        end)
-        row:SetScript("OnClick", function()
-            f.selectedRaidIndex = raidIndex
+        end
+        f.raids = filtered
+
+        local y = -4
+        for i, raidNode in ipairs(f.raids or {}) do
+            local raidIndex = i
+            local row = CreateFrame("Button", nil, raidChild, "BackdropTemplate")
+            row:SetSize(raidW, rowH)
+            row:SetPoint("TOPLEFT", raidChild, "TOPLEFT", 0, y)
+            SetBackdrop(row, UI.ROW, UI.BORDER, 1)
+            local lbl = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+            lbl:SetPoint("LEFT", row, "LEFT", 10, 5)
+            lbl:SetPoint("RIGHT", row, "RIGHT", -10, 5)
+            lbl:SetJustifyH("LEFT")
+            lbl:SetText(raidNode.raid or "Other")
+            lbl:SetTextColor(0.92, 0.92, 0.92)
+            row.label = lbl
+            local sub = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            sub:SetPoint("TOPLEFT", lbl, "BOTTOMLEFT", 0, -1)
+            sub:SetPoint("RIGHT", row, "RIGHT", -10, 0)
+            sub:SetJustifyH("LEFT")
+            local bossCount = #BuildBossOptionsForRaid(raidNode)
+            sub:SetText((raidNode.expansion or "Other") .. ("  (%d bosses)"):format(bossCount))
+            sub:SetTextColor(0.56, 0.60, 0.66)
+            row:SetScript("OnEnter", function(s)
+                if f.selectedRaidIndex ~= raidIndex then
+                    s:SetBackdropColor(unpack(UI.ROW_HOV))
+                end
+            end)
+            row:SetScript("OnLeave", function(s)
+                if f.selectedRaidIndex ~= raidIndex then
+                    s:SetBackdropColor(unpack(UI.ROW))
+                end
+            end)
+            row:SetScript("OnClick", function()
+                f.selectedRaidIndex = raidIndex
+                UpdateRaidRowState()
+                RenderBossesForRaid()
+            end)
+            f.raidRows[#f.raidRows + 1] = row
+            y = y - rowH - gap
+        end
+        raidChild:SetHeight(math.max(1, -y + 8))
+        if f.raidScroll then f.raidScroll:SetVerticalScroll(0) end
+
+        if #f.raids > 0 then
+            local defaultRaidIndex = 1
+            for i, raidNode in ipairs(f.raids) do
+                if raidNode.raid == CURRENT_TIER_RAID then
+                    defaultRaidIndex = i
+                    break
+                end
+            end
+            f.selectedRaidIndex = defaultRaidIndex
             UpdateRaidRowState()
             RenderBossesForRaid()
-        end)
-        f.raidRows[#f.raidRows + 1] = row
-        y = y - rowH - gap
+        else
+            RenderBossesForRaid()
+        end
     end
-    raidChild:SetHeight(math.max(1, -y + 8))
-    if f.raidScroll then f.raidScroll:SetVerticalScroll(0) end
 
     if f.createBtn then
         if f.createBtn.SetText then
@@ -958,17 +1096,31 @@ function Diar:ShowCreatePlanDialog(opts)
         end)
     end
 
-    if (f.raids and #f.raids > 0) then
-        local defaultRaidIndex = 1
-        for i, raidNode in ipairs(f.raids) do
-            if raidNode.raid == CURRENT_TIER_RAID then
-                defaultRaidIndex = i
-                break
-            end
+    if f.expansionTabsContainer then
+        local x = 0
+        local tabGap = 6
+        for i, expNode in ipairs(f.expansions or {}) do
+            local exp = tostring(expNode.expansion or "Other")
+            local tab = CreatePlannerIconBtn(f.expansionTabsContainer, exp, 120, 24)
+            local w = math.min(180, math.max(76, 18 + (exp:len() * 7)))
+            tab:SetWidth(w)
+            tab:ClearAllPoints()
+            tab:SetPoint("LEFT", f.expansionTabsContainer, "LEFT", x, 0)
+            tab.expansion = exp
+            tab:SetScript("OnClick", function(s)
+                f.selectedExpansion = s.expansion
+                UpdateExpansionTabState()
+                RenderRaidsForExpansion()
+            end)
+            f.expansionTabs[#f.expansionTabs + 1] = tab
+            x = x + w + tabGap
         end
-        f.selectedRaidIndex = defaultRaidIndex
-        UpdateRaidRowState()
-        RenderBossesForRaid()
+    end
+
+    if f.expansions and #f.expansions > 0 then
+        f.selectedExpansion = tostring(f.expansions[1].expansion or "")
+        UpdateExpansionTabState()
+        RenderRaidsForExpansion()
     else
         RefreshCreateButton()
     end
@@ -978,9 +1130,9 @@ function Diar:ShowCreatePlanDialog(opts)
     end
     if f.hint then
         if sceneMode then
-            f.hint:SetText("Select Raid -> Boss -> Background for the new scene.")
+            f.hint:SetText("Select Expansion -> Raid -> Boss -> Background for the new scene.")
         else
-            f.hint:SetText("Select Raid -> Boss -> Background for Scene 1.")
+            f.hint:SetText("Select Expansion -> Raid -> Boss -> Background for Scene 1.")
         end
     end
 

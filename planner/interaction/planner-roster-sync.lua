@@ -267,6 +267,17 @@ local function CursorInsideItemShape(widget, item)
     return lx >= 0 and lx <= width and ly >= 0 and ly <= height
 end
 
+local function GetLineDragAnchor(item)
+    if type(item) ~= "table" then return nil, nil end
+    local x1 = tonumber(item.x1)
+    local y1 = tonumber(item.y1)
+    local x2 = tonumber(item.x2)
+    local y2 = tonumber(item.y2)
+    if not x1 or not y1 or not x2 or not y2 then return nil, nil end
+    local pad = 0.01
+    return math.min(x1, x2) - pad, math.min(y1, y2) - pad
+end
+
 function Diar:IsRsggDebug()
     local s = self.GetPlannerSettings and self:GetPlannerSettings()
     return s and s.debugMode == true
@@ -334,10 +345,78 @@ local RAID_MARKER_KEYS = {
     star = true, circle = true, diamond = true, triangle = true,
     moon = true, square = true, cross = true, skull = true,
 }
+local RAID_MARKER_ORDER = { "star", "circle", "diamond", "triangle", "moon", "square", "cross", "skull" }
+local RAID_MARKER_TEXTURE_BY_INDEX = {
+    [1] = "Interface\\TargetingFrame\\UI-RaidTargetingIcon_1",
+    [2] = "Interface\\TargetingFrame\\UI-RaidTargetingIcon_2",
+    [3] = "Interface\\TargetingFrame\\UI-RaidTargetingIcon_3",
+    [4] = "Interface\\TargetingFrame\\UI-RaidTargetingIcon_4",
+    [5] = "Interface\\TargetingFrame\\UI-RaidTargetingIcon_5",
+    [6] = "Interface\\TargetingFrame\\UI-RaidTargetingIcon_6",
+    [7] = "Interface\\TargetingFrame\\UI-RaidTargetingIcon_7",
+    [8] = "Interface\\TargetingFrame\\UI-RaidTargetingIcon_8",
+}
+local WORLD_MARKER_ALIAS_TO_KEY = {
+    worldmarker1 = "star",
+    worldmarker2 = "circle",
+    worldmarker3 = "diamond",
+    worldmarker4 = "triangle",
+    worldmarker5 = "moon",
+    worldmarker6 = "square",
+    worldmarker7 = "cross",
+    worldmarker8 = "skull",
+    wm1 = "star",
+    wm2 = "circle",
+    wm3 = "diamond",
+    wm4 = "triangle",
+    wm5 = "moon",
+    wm6 = "square",
+    wm7 = "cross",
+    wm8 = "skull",
+}
 
 local ROLE_ICON_KEYS = {
     tank = true, healer = true, rdps = true, mdps = true,
 }
+
+local function SetWorldMarkerTexture(tex, markerIndex)
+    if not tex then return end
+    markerIndex = tonumber(markerIndex)
+    if not markerIndex or markerIndex < 1 or markerIndex > 8 then
+        tex:SetTexture(nil)
+        return
+    end
+    tex:SetTexCoord(0, 1, 0, 1)
+    local texPath = RAID_MARKER_TEXTURE_BY_INDEX[markerIndex]
+    if texPath then
+        tex:SetTexture(texPath)
+        return
+    end
+    if SetRaidTargetIconTexture then
+        SetRaidTargetIconTexture(tex, markerIndex)
+    else
+        tex:SetTexture("Interface\\TargetingFrame\\UI-RaidTargetingIcons")
+    end
+end
+
+local function ResolveWorldMarkerKey(item)
+    if type(item) ~= "table" then return nil end
+    if tostring(item.kind or ""):lower() ~= "icon" then return nil end
+    local raw = tostring(item.icon or ""):lower():gsub("\\", "/")
+    if raw == "" then return nil end
+    local base = raw:match("([^/]+)$") or raw
+    if RAID_MARKER_KEYS[base] then return base end
+    if WORLD_MARKER_ALIAS_TO_KEY[base] then return WORLD_MARKER_ALIAS_TO_KEY[base] end
+    if raw:find("/worldmarkers/", 1, true) or raw:find("worldmarkers/", 1, true)
+        or raw:find("worldmarker", 1, true) or raw:find("world-marker", 1, true)
+        or raw:find("world_marker", 1, true) then
+        local n = tonumber(base:match("(%d+)")) or tonumber(raw:match("worldmarkers?/?(%d+)"))
+        if n and n >= 1 and n <= 8 then
+            return RAID_MARKER_ORDER[n]
+        end
+    end
+    return nil
+end
 
 function Diar:CanAssignPlayerToItem(item)
     if not item then return false end
@@ -772,6 +851,9 @@ function Diar:HidePlannerContextMenu()
     if self._plannerCtxMenu then
         self._plannerCtxMenu:Hide()
     end
+    if self._worldMarkerReplaceMenu then
+        self._worldMarkerReplaceMenu:Hide()
+    end
 end
 
 function Diar:RemovePlannerItemIndex(itemIndex)
@@ -797,6 +879,96 @@ function Diar:RemovePlannerItemIndex(itemIndex)
     return true
 end
 
+function Diar:ReplaceWorldMarker(itemIndex, markerKey)
+    markerKey = tostring(markerKey or ""):lower()
+    if not RAID_MARKER_KEYS[markerKey] then return false end
+    if not (self.CanEditPlannerItems and self:CanEditPlannerItems()) then return false end
+    local pf = self.plannerFrame
+    local data = self.plannerData
+    if not pf or not data or not data.scenes then return false end
+    local sceneIdx = pf.selectedSceneIndex or 1
+    local scene = data.scenes[sceneIdx]
+    if not scene or not scene.items then return false end
+    local item = scene.items[itemIndex]
+    if not item then return false end
+    if not ResolveWorldMarkerKey(item) then return false end
+
+    item.kind = "icon"
+    item.icon = markerKey
+    item.worldMarker = true
+    item.isWorldMarker = true
+    item.playerCircle = nil
+    item.label = item.label or ""
+    item.labelAttached = nil
+    item.slotIndex = nil
+    item.embedIndex = nil
+
+    if self.RefreshPlannerScene then
+        self:RefreshPlannerScene()
+    end
+    if self.PersistCurrentPlanToSaved then
+        self:PersistCurrentPlanToSaved()
+    end
+    return true
+end
+
+function Diar:ShowWorldMarkerReplaceMenu(anchor, itemIndex, item)
+    if not anchor or not item or not ResolveWorldMarkerKey(item) then return end
+    if self:IsPlannerCompactMode() then return end
+    if not (self.CanEditPlannerItems and self:CanEditPlannerItems()) then return end
+
+    if self._worldMarkerReplaceMenu then
+        self._worldMarkerReplaceMenu:Hide()
+        self._worldMarkerReplaceMenu = nil
+    end
+
+    local menu = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
+    menu:SetSize(148, 8 + (#RAID_MARKER_ORDER * 24) + 8)
+    menu:SetFrameStrata("FULLSCREEN_DIALOG")
+    menu:SetFrameLevel(525)
+    menu:EnableMouse(true)
+    if SetBackdrop then SetBackdrop(menu, UI.ROW, UI.BORDER, 1) end
+    menu:SetPoint("TOPLEFT", anchor, "TOPRIGHT", 4, 0)
+
+    local y = -6
+    for i = 1, #RAID_MARKER_ORDER do
+        local key = RAID_MARKER_ORDER[i]
+        local btn = CreateFrame("Button", nil, menu, "BackdropTemplate")
+        btn:SetSize(132, 22)
+        btn:SetPoint("TOP", menu, "TOP", 0, y)
+        SetBackdrop(btn, UI.ROW, UI.BORDER, 1)
+        local icon = btn:CreateTexture(nil, "ARTWORK")
+        icon:SetSize(14, 14)
+        icon:SetPoint("LEFT", btn, "LEFT", 8, 0)
+        SetWorldMarkerTexture(icon, i)
+        local lbl = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        lbl:SetPoint("LEFT", icon, "RIGHT", 8, 0)
+        lbl:SetText(key:sub(1, 1):upper() .. key:sub(2))
+        lbl:SetTextColor(0.92, 0.92, 0.92)
+        btn:SetScript("OnEnter", function(s)
+            s:SetBackdropColor(unpack(UI.ROW_HOV))
+            lbl:SetTextColor(1, 1, 1)
+        end)
+        btn:SetScript("OnLeave", function(s)
+            s:SetBackdropColor(unpack(UI.ROW))
+            lbl:SetTextColor(0.92, 0.92, 0.92)
+        end)
+        btn:SetScript("OnClick", function()
+            Diar:HidePlannerContextMenu()
+            Diar:ReplaceWorldMarker(itemIndex, key)
+        end)
+        y = y - 24
+    end
+
+    menu:SetScript("OnHide", function()
+        if Diar._worldMarkerReplaceMenu == menu then
+            Diar._worldMarkerReplaceMenu = nil
+        end
+    end)
+    self._worldMarkerReplaceMenu = menu
+    menu:Show()
+end
+
 function Diar:ShowPlannerContextMenu(anchor, itemIndex, item)
     if self:IsPlannerCompactMode() then return end
 
@@ -805,7 +977,8 @@ function Diar:ShowPlannerContextMenu(anchor, itemIndex, item)
     local canDelete = canEdit
     local canCustomLabel = canEdit and item ~= nil
     local canRemoveIndex = canEdit and item ~= nil and ItemSlotIndex(item) ~= nil
-    if not canAssign and not canDelete and not canCustomLabel and not canRemoveIndex then return end
+    local canReplaceMarker = canEdit and item ~= nil and ResolveWorldMarkerKey(item) ~= nil
+    if not canAssign and not canDelete and not canCustomLabel and not canRemoveIndex and not canReplaceMarker then return end
 
     self:HidePlannerContextMenu()
 
@@ -813,6 +986,7 @@ function Diar:ShowPlannerContextMenu(anchor, itemIndex, item)
         + (canAssign and 30 or 0)
         + (canCustomLabel and 30 or 0)
         + (canRemoveIndex and 30 or 0)
+        + (canReplaceMarker and 30 or 0)
         + (canDelete and 30 or 0)
     local menu = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
     menu:SetSize(148, menuH)
@@ -874,6 +1048,12 @@ function Diar:ShowPlannerContextMenu(anchor, itemIndex, item)
         end)
         y = y - 30
     end
+    if canReplaceMarker then
+        makeMenuBtn("Replace marker", y, function()
+            Diar:ShowWorldMarkerReplaceMenu(menu, itemIndex, item)
+        end)
+        y = y - 30
+    end
     if canDelete then
         makeMenuBtn("Delete", y, function()
             Diar:HidePlannerContextMenu()
@@ -909,6 +1089,9 @@ function Diar:HidePlannerTransientMenus()
     end
     if self.HidePlannerContextMenu then
         self:HidePlannerContextMenu()
+    end
+    if self._worldMarkerReplaceMenu then
+        self._worldMarkerReplaceMenu:Hide()
     end
     if self.HideMemberPicker then
         self:HideMemberPicker()
@@ -1336,7 +1519,8 @@ function Diar:BeginPlannerItemDrag(widget)
     local scene = data and data.scenes and data.scenes[sceneIdx]
     local item = scene and scene.items and scene.items[widget.itemIndex] or nil
     local shapeKey = item and tostring(item.shape or ""):lower() or ""
-    local liveStaticShape = item and item.kind == "shape" and (shapeKey == "triangle" or shapeKey == "cone")
+    local liveStaticShape = (item and item.kind == "line")
+        or (item and item.kind == "shape" and (shapeKey == "triangle" or shapeKey == "cone" or shapeKey == "donut"))
 
     self._plannerDrag = {
         widget = widget,
@@ -1474,15 +1658,31 @@ function Diar:ApplyItemPositionChange(itemIndex, xPct, yPct, opts)
     local item = scene.items[itemIndex]
     if not item then return end
 
-    local oldX = tonumber(item.x) or xPct
-    local oldY = tonumber(item.y) or yPct
-    local dx = xPct - oldX
-    local dy = yPct - oldY
-
-    item.x = xPct
-    item.y = yPct
-    item.currentX = xPct / 100
-    item.currentY = yPct / 100
+    local dx, dy = 0, 0
+    if item.kind == "line" then
+        local oldAX, oldAY = GetLineDragAnchor(item)
+        if oldAX and oldAY then
+            dx = xPct - oldAX
+            dy = yPct - oldAY
+            item.x1 = (tonumber(item.x1) or oldAX) + dx
+            item.y1 = (tonumber(item.y1) or oldAY) + dy
+            item.x2 = (tonumber(item.x2) or oldAX) + dx
+            item.y2 = (tonumber(item.y2) or oldAY) + dy
+        end
+        item.x = nil
+        item.y = nil
+        item.currentX = nil
+        item.currentY = nil
+    else
+        local oldX = tonumber(item.x) or xPct
+        local oldY = tonumber(item.y) or yPct
+        dx = xPct - oldX
+        dy = yPct - oldY
+        item.x = xPct
+        item.y = yPct
+        item.currentX = xPct / 100
+        item.currentY = yPct / 100
+    end
     if type(item.corners) == "table" and #item.corners >= 3 and (math.abs(dx) > 0.0001 or math.abs(dy) > 0.0001) then
         for _, p in ipairs(item.corners) do
             if type(p) == "table" then
@@ -1538,6 +1738,16 @@ end
 
 function Diar:AttachPlannerItemContextMenu(widget, itemIndex, item)
     if not widget or widget.__suppressed or not item then return end
+
+    local pf = self.plannerFrame
+    local palettePlacementActive = pf and pf.__palettePlacement ~= nil
+    if palettePlacementActive then
+        -- While placing from palette, let canvas receive clicks for placement/draw.
+        widget:EnableMouse(false)
+        widget:SetScript("OnMouseDown", nil)
+        widget:SetScript("OnMouseUp", nil)
+        return
+    end
 
     widget:EnableMouse(true)
     widget.itemIndex = itemIndex

@@ -342,6 +342,13 @@ end
 local READY_CHECK_RETRY_INTERVAL = 0.65
 local READY_CHECK_MAX_RETRIES = 6
 
+function Raidstrats:CancelReadyCheckCloseTimer()
+    if self._readyCheckCloseTimer then
+        self._readyCheckCloseTimer:Cancel()
+        self._readyCheckCloseTimer = nil
+    end
+end
+
 function Raidstrats:CancelReadyCheckAssignmentWatchTimers()
     if self._readyCheckRetryTimer then
         self._readyCheckRetryTimer:Cancel()
@@ -354,9 +361,26 @@ function Raidstrats:EndReadyCheckAssignmentWatch()
     self._readyCheckRetryCount = nil
     self:CancelReadyCheckAssignmentWatchTimers()
     local pf = self.plannerFrame
-    if pf and pf.readyCheckActive and self.CloseReadyCheckAssignments then
-        self:CloseReadyCheckAssignments()
+    if not (pf and pf.readyCheckActive and self.CloseReadyCheckAssignments) then
+        return
     end
+    self:CancelReadyCheckCloseTimer()
+    local grace = 5
+    if self.GetReadyCheckGracePeriod then
+        grace = tonumber(self:GetReadyCheckGracePeriod()) or grace
+    end
+    grace = math.max(0, grace)
+    if grace <= 0 then
+        self:CloseReadyCheckAssignments()
+        return
+    end
+    self._readyCheckCloseTimer = C_Timer.NewTimer(grace, function()
+        self._readyCheckCloseTimer = nil
+        local frame = self.plannerFrame
+        if frame and frame.readyCheckActive and self.CloseReadyCheckAssignments then
+            self:CloseReadyCheckAssignments()
+        end
+    end)
 end
 
 function Raidstrats:TryOpenReadyCheckAssignments(fromReminderSync)
@@ -407,6 +431,7 @@ function Raidstrats:BeginReadyCheckAssignmentWatch()
     if not self.IsReadyCheckAssignmentsEnabled or not self:IsReadyCheckAssignmentsEnabled() then
         return
     end
+    self:CancelReadyCheckCloseTimer()
     self._readyCheckWatchActive = true
     self._readyCheckRetryCount = 0
     self:CancelReadyCheckAssignmentWatchTimers()
@@ -769,6 +794,7 @@ function Raidstrats:OnEncounterStart(encID)
 end
 
 function Raidstrats:OnEncounterEnd()
+    self:CancelReadyCheckCloseTimer()
     self:CancelRsggTimers()
     self.rsggTestActive = false
     if self.HideRaidPlanScene then
