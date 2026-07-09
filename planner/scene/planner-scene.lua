@@ -6072,7 +6072,7 @@ function Diar:SyncPlannerLayoutFromFrame(snapFrame)
     pf.__layoutSyncing = nil
 end
 
-function Diar:SetPlannerCompactMode(enabled)
+function Diar:SetPlannerCompactMode(enabled, skipSceneRefresh)
     local pf = self.plannerFrame
     if not pf then return end
     enabled = not not enabled
@@ -6111,7 +6111,7 @@ function Diar:SetPlannerCompactMode(enabled)
             self:ApplyNsrtAssignmentForPlannerView(pf.selectedSceneIndex or 1)
         end
     end
-    if self.RefreshPlannerScene then
+    if not skipSceneRefresh and self.RefreshPlannerScene then
         self:RefreshPlannerScene()
     end
     if Diar.ApplyRaidLeadViewLayout then Diar:ApplyRaidLeadViewLayout(pf) end
@@ -6673,6 +6673,9 @@ function Diar:ShowPlannerViewer(opts)
     end
 
     local pf = self.plannerFrame
+    if opts.nsrtSceneActive ~= nil then
+        pf.nsrtSceneActive = opts.nsrtSceneActive == true or nil
+    end
     if pf.previewNamesVisible == nil then
         -- Imported attached labels should be visible by default; users can hide them via the toggle.
         pf.previewNamesVisible = true
@@ -6851,7 +6854,9 @@ function Diar:ShowPlannerViewer(opts)
 
     do
         local sceneCount = (data and data.scenes) and #data.scenes or 1
-        if opts.keepScene and type(pf.selectedSceneIndex) == "number" then
+        if type(opts.selectedSceneIndex) == "number" then
+            pf.selectedSceneIndex = math.max(1, math.min(opts.selectedSceneIndex, math.max(1, sceneCount)))
+        elseif opts.keepScene and type(pf.selectedSceneIndex) == "number" then
             -- Preserve the viewer's current scene across reloads (e.g. received push updates).
             pf.selectedSceneIndex = math.max(1, math.min(pf.selectedSceneIndex, math.max(1, sceneCount)))
         else
@@ -6859,7 +6864,7 @@ function Diar:ShowPlannerViewer(opts)
         end
     end
     self:UpdateSceneTabHighlight()
-    if pf.__forceExpandedOnNextShow and not pf.nsrtSceneActive then
+    if pf.__forceExpandedOnNextShow and not pf.nsrtSceneActive and not opts.preparingNsrtScene then
         pf.compactMode = false
         if pf.canvas then pf.canvas:SetScale(1) end
         pf.__forceExpandedOnNextShow = nil
@@ -6880,10 +6885,12 @@ function Diar:ShowPlannerViewer(opts)
         EnsurePlannerZoomControls(pf, pf.canvas)
         BindPlannerCanvasViewportInput(pf, pf.canvas)
     end
-    if not pf.nsrtSceneActive then
+    if not pf.nsrtSceneActive and not opts.skipNsrtAssignment then
         self:ApplyNsrtAssignmentForPlannerView(pf.selectedSceneIndex or 1)
     end
-    self:RefreshPlannerScene()
+    if not opts.skipSceneRefresh then
+        self:RefreshPlannerScene()
+    end
     self:RefreshSavedPlansList()
     if self.UpdatePushUpdateButton then self:UpdatePushUpdateButton() end
     if self.ApplyRaidLeadViewLayout then self:ApplyRaidLeadViewLayout(pf) end
@@ -7220,7 +7227,6 @@ function Diar:RefreshPlannerScene()
     end
 
     if canvas then canvas:SetAlpha(1) end
-    ApplySceneBackground(pf, scene, vc, cw, ch)
     local playerKey = GetPlayerNameKey()
     local hasSelfOnPlan = self:IsHighlightMyNameEnabled() and SceneHasPlayerName(scene, playerKey)
 
@@ -7233,8 +7239,8 @@ function Diar:RefreshPlannerScene()
         vc = BuildSceneViewContext(pf.viewerViewport, cw, ch)
         pf.sceneViewContext = vc
         pf.__viewportDisplayZoom = pf.viewerViewport and pf.viewerViewport.zoom or 1
-        ApplySceneBackground(pf, scene, vc, cw, ch)
     end
+    ApplySceneBackground(pf, scene, vc, cw, ch)
     -- Prefer explicit indices for assignment recolor. If a scene has no explicit
     -- indices at all (common on imported circle spreads), fall back to auto spots
     -- so circles remain visible and assignment/background coloring still works.

@@ -676,11 +676,15 @@ function Diar:ShowRaidPlanScene(sceneIndex, opts)
     end
     sceneIndex = math.max(1, math.min(sceneIndex, #self.plannerData.scenes))
 
-    if self.plannerFrame then
-        self.plannerFrame.nsrtSceneActive = true
-    end
     local wasShown = self.plannerFrame and self.plannerFrame:IsShown()
-    self:ShowPlannerViewer({ reloadOnly = wasShown })
+    self:ShowPlannerViewer({
+        reloadOnly = wasShown,
+        selectedSceneIndex = sceneIndex,
+        nsrtSceneActive = opts.compact ~= false,
+        preparingNsrtScene = true,
+        skipNsrtAssignment = true,
+        skipSceneRefresh = true,
+    })
 
     local pf = self.plannerFrame
     if not pf then return false end
@@ -692,7 +696,7 @@ function Diar:ShowRaidPlanScene(sceneIndex, opts)
     self:SetActiveGroupAssignment(opts.tag, opts.tagNames, opts.tagSpotMap)
     self:UpdateSceneTabHighlight()
     self:StopPlannerAnimation()
-    self:SetPlannerCompactMode(opts.compact ~= false)
+    self:SetPlannerCompactMode(opts.compact ~= false, true)
     self:RefreshPlannerScene()
     if self.OnPlannerSceneChanged then self:OnPlannerSceneChanged() end
     Diar.ApplyPlannerChromeTransparent(pf)
