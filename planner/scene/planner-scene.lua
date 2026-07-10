@@ -2215,6 +2215,7 @@ local HOVER_LEAVE_DELAY = 0.05
 local function SetCompactControlButtonsVisible(pf, visible)
     if not pf then return end
     if pf.compactPreviewActive then visible = false end
+    if pf.nsrtSceneActive then visible = false end
     if pf.closeBtn then
         if visible then pf.closeBtn:Show() else pf.closeBtn:Hide() end
     end
@@ -2596,6 +2597,12 @@ local function UpdatePlannerModeToggleBtn(pf)
         if pf.versionLabel then pf.versionLabel:Hide() end
         if pf.compactPreviewActive then
             SetCompactControlButtonsVisible(pf, false)
+            return
+        end
+        if pf.nsrtSceneActive then
+            -- NSRT compact scenes are display-only; never show close/expand buttons.
+            SetCompactControlButtonsVisible(pf, false)
+            UnbindCompactChromeHover(pf)
             return
         end
         local anchor = pf
@@ -4446,6 +4453,10 @@ local function ClearFrameBackdrop(f)
         if f.SetBackdropColor then f:SetBackdropColor(0, 0, 0, 0) end
         if f.SetBackdropBorderColor then f:SetBackdropBorderColor(0, 0, 0, 0) end
     end
+    if f.shadow then
+        f.shadow:SetAlpha(0)
+        f.shadow:Hide()
+    end
 end
 
 local function ApplyPlannerChromeTransparent(pf)
@@ -4520,6 +4531,11 @@ local function ApplySceneBackground(pf, scene, vc, cw, ch)
     end
 
     if pf.compactMode and not Diar:IsCompactBackgroundEnabled() then
+        if Diar.IsCompactObjectsOnlyEnabled and Diar:IsCompactObjectsOnlyEnabled() then
+            -- "Objects only" is an additive override for compact background-off mode.
+            -- If compact background is enabled, always show the scene background.
+            ApplyPlannerChromeTransparent(pf)
+        end
         ApplyTransparentBackground()
         return
     end
@@ -5695,7 +5711,41 @@ local function EnsureCompactViewport(pf)
         vp:EnableMouse(true)
         pf.compactViewport = vp
     end
-    return pf.compactViewport
+    local vp = pf.compactViewport
+    -- Hard reset any inherited backdrop/tint layers so compact "objects only"
+    -- can render truly transparent.
+    ClearFrameBackdrop(vp)
+    for _, region in ipairs({ vp:GetRegions() }) do
+        if region and region.GetObjectType and region:GetObjectType() == "Texture" then
+            if region.SetTexture then region:SetTexture(nil) end
+            if region.SetColorTexture then region:SetColorTexture(0, 0, 0, 0) end
+            if region.SetAlpha then region:SetAlpha(0) end
+            if region.Hide then region:Hide() end
+        end
+    end
+    return vp
+end
+
+function Diar:ApplyCompactInteractionState(pf)
+    if not pf then return end
+    local lockNsrtCompact = self.IsNsrtCompactClickThroughEnabled and self:IsNsrtCompactClickThroughEnabled()
+    local clickThrough = pf.compactMode and pf.nsrtSceneActive and lockNsrtCompact
+
+    -- NSRT compact popup should be presentation-only:
+    -- do not capture mouse so world clicks pass through.
+    if pf.EnableMouse then pf:EnableMouse(not clickThrough) end
+    if pf.compactViewport and pf.compactViewport.EnableMouse then
+        pf.compactViewport:EnableMouse(not clickThrough)
+    end
+    if pf.canvas and pf.canvas.EnableMouse then
+        pf.canvas:EnableMouse(not clickThrough)
+    end
+    if pf.compactTopBar and pf.compactTopBar.EnableMouse then
+        pf.compactTopBar:EnableMouse(not clickThrough)
+    end
+    if pf.resizeGrip and pf.resizeGrip.EnableMouse then
+        pf.resizeGrip:EnableMouse(not clickThrough)
+    end
 end
 
 local function RestorePlannerSceneBackground(pf)
@@ -5734,6 +5784,7 @@ local function ApplyPlannerNormalLayout(pf, keepFrameSize)
     end
     if pf.compactViewport then pf.compactViewport:Hide() end
     pf.canvas:SetParent(pf)
+    Diar:ApplyCompactInteractionState(pf)
 
     if pf.versionLabel then
         pf.versionLabel:Show()
@@ -5831,6 +5882,7 @@ local function ApplyPlannerCompactLayout(pf, keepFrameSize, snapFrame)
     if pf.raidCheckBar then pf.raidCheckBar:Hide() end
     if pf.raidLeadPanel then pf.raidLeadPanel:Hide() end
     if pf.raidLeadBottomDivider then pf.raidLeadBottomDivider:Hide() end
+    if pf.raidCheckExpandedHost then pf.raidCheckExpandedHost:Hide() end
     if pf.patreonPanel then pf.patreonPanel:Hide() end
     if pf.patreonLabel then pf.patreonLabel:Hide() end
     if pf.compactBar then pf.compactBar:Hide() end
@@ -5922,6 +5974,7 @@ local function ApplyPlannerCompactLayout(pf, keepFrameSize, snapFrame)
     if nsrtOverlay then
         ApplyPlannerChromeTransparent(pf)
     end
+    Diar:ApplyCompactInteractionState(pf)
     ApplyPlannerResizeBounds(pf)
     UpdatePlannerModeToggleBtn(pf)
     RefreshCompactChromeHoverHooks(pf)

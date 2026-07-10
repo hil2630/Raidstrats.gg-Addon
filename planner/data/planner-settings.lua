@@ -30,6 +30,8 @@ function Diar:GetPlannerSettings()
     if s.rsggShowAfter == nil then s.rsggShowAfter = 0 end
     if s.highlightMyName == nil then s.highlightMyName = true end
     if s.compactShowBackground == nil then s.compactShowBackground = true end
+    if s.compactObjectsOnly == nil then s.compactObjectsOnly = false end
+    if s.compactNsrtClickThrough == nil then s.compactNsrtClickThrough = true end
     if s.hideNsrtPlan == nil then
         if s.showNsrtPopups ~= nil then
             s.hideNsrtPlan = s.showNsrtPopups == false or s.showNsrtPopups == 0
@@ -46,6 +48,7 @@ function Diar:GetPlannerSettings()
     if s.compactPlanLibrary == nil then s.compactPlanLibrary = true end
     if s.hideRaidCheckNotifs == nil then s.hideRaidCheckNotifs = false end
     if s.readyCheckAssignments == nil then s.readyCheckAssignments = false end
+    if s.readyCheckRaidOnlyInRaid == nil then s.readyCheckRaidOnlyInRaid = true end
     if s.readyCheckPhase == nil then s.readyCheckPhase = 0 end
     if s.readyCheckGrace == nil then s.readyCheckGrace = 5 end
     if s.raidCheckExpanded == nil then s.raidCheckExpanded = true end
@@ -210,6 +213,18 @@ function Diar:IsCompactBackgroundEnabled()
     return true
 end
 
+function Diar:IsCompactObjectsOnlyEnabled()
+    local v = self:GetPlannerSettings().compactObjectsOnly
+    if v == true or v == 1 then return true end
+    return false
+end
+
+function Diar:IsNsrtCompactClickThroughEnabled()
+    local v = self:GetPlannerSettings().compactNsrtClickThrough
+    if v == false or v == 0 then return false end
+    return true
+end
+
 function Diar:IsHighlightMyNameEnabled()
     local v = self:GetPlannerSettings().highlightMyName
     if v == false or v == 0 then return false end
@@ -279,6 +294,19 @@ function Diar:IsReadyCheckAssignmentsEnabled()
     local v = self:GetPlannerSettings().readyCheckAssignments
     if v == true or v == 1 then return true end
     return false
+end
+
+function Diar:IsReadyCheckRaidOnlyInRaidEnabled()
+    local v = self:GetPlannerSettings().readyCheckRaidOnlyInRaid
+    if v == false or v == 0 then return false end
+    return true
+end
+
+function Diar:CanOpenReadyCheckAssignmentsInCurrentGroup()
+    if not self:IsReadyCheckRaidOnlyInRaidEnabled() then
+        return true
+    end
+    return IsInRaid() == true
 end
 
 function Diar:GetReadyCheckPhaseFilter()
@@ -557,6 +585,8 @@ function Diar:ShowPlannerSettingsDialog()
         local compactY = -18
         compactY = AddSectionHeader(compactPage, "Compact view", compactY)
         compactY = AddCheckbox(compactPage, compactY, "compactBgChk", "Show background in compact view")
+        compactY = AddCheckbox(compactPage, compactY, "compactObjectsOnlyChk", "Objects only (hide compact opacity background)")
+        compactY = AddCheckbox(compactPage, compactY, "compactNsrtClickThroughChk", "Lock NSRT compact (click-through, no move/resize)")
         compactY = AddCheckbox(compactPage, compactY, "compactSceneArrowsChk", "Show scene arrows in compact view")
         compactY = AddCheckbox(compactPage, compactY, "compactZoomAssignChk", "Zoom to my assignment in compact mode")
         do
@@ -632,6 +662,8 @@ function Diar:ShowPlannerSettingsDialog()
         previewBtn:SetScript("OnClick", function()
             local s = Diar:GetPlannerSettings()
             s.compactShowBackground = CheckboxIsChecked(f.compactBgChk)
+            s.compactObjectsOnly = CheckboxIsChecked(f.compactObjectsOnlyChk)
+            s.compactNsrtClickThrough = CheckboxIsChecked(f.compactNsrtClickThroughChk)
             s.compactSceneArrows = CheckboxIsChecked(f.compactSceneArrowsChk)
             s.compactZoomToAssignment = CheckboxIsChecked(f.compactZoomAssignChk)
             s.compactAssignZoom = ClampAssignZoom(f.compactAssignZoom)
@@ -664,9 +696,10 @@ function Diar:ShowPlannerSettingsDialog()
         miscY = AddCheckbox(miscPage, miscY, "nsrtPopupChk", "Hide plan popups (even if assigned)")
         miscY = AddCheckbox(miscPage, miscY, "raidCheckNotifChk", "Hide raidcheck notifications from raid leader")
         miscY = AddCheckbox(miscPage, miscY, "readyCheckAssignChk", "Show assignments on readycheck")
+        miscY = AddCheckbox(miscPage, miscY, "readyCheckRaidOnlyChk", "Show only readycheck in raid group")
         miscY = AddSecondsRow(miscPage, miscY, "Readycheck grace period (after finished)", "readyCheckGraceEdit")
         miscY = AddNumberRow(miscPage, miscY, "Ready check phase filter (0 = all phases)", "readyCheckPhaseEdit")
-        miscY = AddCheckbox(miscPage, miscY, "encounterOverviewTabChk", "Show Encounter Journal boss overview tab")
+        miscY = AddCheckbox(miscPage, miscY, "encounterOverviewTabChk", "Show Encounter Journal boss overview tab (WIP)")
         miscY = AddCheckbox(miscPage, miscY, "plannerDebugChk", "Show planner debug panel")
 
         local btnRow = CreateFrame("Frame", nil, f)
@@ -699,6 +732,8 @@ function Diar:ShowPlannerSettingsDialog()
             s.rsggShowAfter = after
             s.highlightMyName = CheckboxIsChecked(f.highlightChk)
             s.compactShowBackground = CheckboxIsChecked(f.compactBgChk)
+            s.compactObjectsOnly = CheckboxIsChecked(f.compactObjectsOnlyChk)
+            s.compactNsrtClickThrough = CheckboxIsChecked(f.compactNsrtClickThroughChk)
             s.classSpecCircleMode = CheckboxIsChecked(f.classSpecCircleChk)
             s.compactSceneArrows = CheckboxIsChecked(f.compactSceneArrowsChk)
             s.compactZoomToAssignment = CheckboxIsChecked(f.compactZoomAssignChk)
@@ -708,6 +743,7 @@ function Diar:ShowPlannerSettingsDialog()
             s.hideNsrtPlan = CheckboxIsChecked(f.nsrtPopupChk)
             s.hideRaidCheckNotifs = CheckboxIsChecked(f.raidCheckNotifChk)
             s.readyCheckAssignments = CheckboxIsChecked(f.readyCheckAssignChk)
+            s.readyCheckRaidOnlyInRaid = CheckboxIsChecked(f.readyCheckRaidOnlyChk)
             s.raidCheckExpanded = CheckboxIsChecked(f.raidCheckExpandedChk)
             local rcPhase = ParseSettingsSeconds(f.readyCheckPhaseEdit:GetText())
             if rcPhase == nil then
@@ -800,6 +836,12 @@ function Diar:ShowPlannerSettingsDialog()
     dlg.afterEdit:SetText(tostring(settings.rsggShowAfter ~= nil and settings.rsggShowAfter or 0))
     dlg.highlightChk:SetChecked(self:IsHighlightMyNameEnabled())
     dlg.compactBgChk:SetChecked(self:IsCompactBackgroundEnabled())
+    if dlg.compactObjectsOnlyChk then
+        dlg.compactObjectsOnlyChk:SetChecked(self:IsCompactObjectsOnlyEnabled())
+    end
+    if dlg.compactNsrtClickThroughChk then
+        dlg.compactNsrtClickThroughChk:SetChecked(self:IsNsrtCompactClickThroughEnabled())
+    end
     if dlg.classSpecCircleChk then
         dlg.classSpecCircleChk:SetChecked(self:IsClassSpecCircleModeEnabled())
     end
@@ -827,6 +869,9 @@ function Diar:ShowPlannerSettingsDialog()
     end
     if dlg.readyCheckAssignChk then
         dlg.readyCheckAssignChk:SetChecked(self:IsReadyCheckAssignmentsEnabled())
+    end
+    if dlg.readyCheckRaidOnlyChk then
+        dlg.readyCheckRaidOnlyChk:SetChecked(self:IsReadyCheckRaidOnlyInRaidEnabled())
     end
     if dlg.raidCheckExpandedChk then
         dlg.raidCheckExpandedChk:SetChecked(self:IsRaidCheckExpandedEnabled())

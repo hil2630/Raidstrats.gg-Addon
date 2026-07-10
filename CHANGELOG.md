@@ -1,5 +1,14 @@
 # Changelog
 
+## [Alpha 0.0.44]
+
+- Added a new setting to only show ready-check assignments in raid groups. Enabled by default.
+- Added a new setting to remove background tint when NSRT triggers compact mode in combat so you'll only see objects and nothing else (if background is also disabled)
+
+- updated the NSRT Compact mode to be click-through and non-expandable during combat
+  - This means you can place it anywhere and wont move it by mistake during combat. And even have it on top of your char if needed (cool for arrow assignment)
+    This is a setting in the settings panel and enabled by default.
+
 ## [Alpha 0.0.43]
 
 Info: The NSRT assignments are now fixed, so they should work properly ingame in combat.

@@ -388,6 +388,9 @@ function Raidstrats:TryOpenReadyCheckAssignments(fromReminderSync)
     if not self.IsReadyCheckAssignmentsEnabled or not self:IsReadyCheckAssignmentsEnabled() then
         return false
     end
+    if self.CanOpenReadyCheckAssignmentsInCurrentGroup and not self:CanOpenReadyCheckAssignmentsInCurrentGroup() then
+        return false
+    end
     if not C_AddOns.IsAddOnLoaded("NorthernSkyRaidTools") then
         return false
     end
@@ -429,6 +432,9 @@ end
 
 function Raidstrats:BeginReadyCheckAssignmentWatch()
     if not self.IsReadyCheckAssignmentsEnabled or not self:IsReadyCheckAssignmentsEnabled() then
+        return
+    end
+    if self.CanOpenReadyCheckAssignmentsInCurrentGroup and not self:CanOpenReadyCheckAssignmentsInCurrentGroup() then
         return
     end
     self:CancelReadyCheckCloseTimer()
@@ -1009,6 +1015,10 @@ function Raidstrats:InitNSRTIntegration()
     self:RegisterChatCommand("rsggrc", function()
         if not Raidstrats.IsReadyCheckAssignmentsEnabled or not Raidstrats:IsReadyCheckAssignmentsEnabled() then
             print("|cffff9900[Raidstrats.gg]|r Enable \"Show assignments on readycheck\" in Settings first.")
+            return
+        end
+        if Raidstrats.CanOpenReadyCheckAssignmentsInCurrentGroup and not Raidstrats:CanOpenReadyCheckAssignmentsInCurrentGroup() then
+            print("|cffff9900[Raidstrats.gg]|r Ready check assignments are raid-only while \"Show only readycheck in raid group\" is enabled.")
             return
         end
         if Raidstrats.CloseReadyCheckAssignments then

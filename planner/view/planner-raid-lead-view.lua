@@ -1430,6 +1430,7 @@ function Diar:ApplyRaidLeadViewLayout(pf)
         if pf.raidCheckBar then pf.raidCheckBar:Hide() end
         if pf.raidLeadPanel then pf.raidLeadPanel:Hide() end
         if pf.raidLeadBottomDivider then pf.raidLeadBottomDivider:Hide() end
+        if pf.raidCheckExpandedHost then pf.raidCheckExpandedHost:Hide() end
         return
     end
 

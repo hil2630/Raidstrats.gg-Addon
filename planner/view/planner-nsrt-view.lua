@@ -849,6 +849,12 @@ function Diar:OpenReadyCheckAssignments(opts)
     if not self.IsReadyCheckAssignmentsEnabled or not self:IsReadyCheckAssignmentsEnabled() then
         return false
     end
+    if self.CanOpenReadyCheckAssignmentsInCurrentGroup and not self:CanOpenReadyCheckAssignmentsInCurrentGroup() then
+        if opts.verbose then
+            print("|cffff6666[Raidstrats.gg]|r Ready check assignments are raid-only while \"Show only readycheck in raid group\" is enabled.")
+        end
+        return false
+    end
     if not C_AddOns.IsAddOnLoaded("NorthernSkyRaidTools") then
         if opts.verbose then
             print("|cffff6666[Raidstrats.gg]|r Northern Sky Raid Tools is not loaded.")
