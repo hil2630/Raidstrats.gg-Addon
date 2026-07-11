@@ -5448,6 +5448,12 @@ function Diar.RenderSceneItem(addon, pf, root, cw, ch, vc, minSize, item, itemIn
     local spotNum = sceneCtx.groupSpots and sceneCtx.groupSpots[itemIndex]
     local isMySpot = spotNum and sceneCtx.activeGroup and sceneCtx.activeGroup.mySpots and sceneCtx.activeGroup.mySpots[spotNum]
     local spotName = spotNum and sceneCtx.previewNamesOn and sceneCtx.groupSpotNames and sceneCtx.groupSpotNames[spotNum] or nil
+    -- Temporary NSRT-driven label override: render-only, never mutates/saves plan data.
+    local renderLabel = label
+    if spotName and spotName ~= "" then
+        renderLabel = spotName
+    end
+    w.__renderLabelOverride = (spotName and spotName ~= "") and renderLabel or nil
     if sceneCtx.debugMineHits and spotNum and isMySpot then
         sceneCtx.debugMineHits[#sceneCtx.debugMineHits + 1] = ("%d@item%d:%s"):format(spotNum, itemIndex, k)
     end
@@ -5456,11 +5462,11 @@ function Diar.RenderSceneItem(addon, pf, root, cw, ch, vc, minSize, item, itemIn
         w.tex:Hide()
         HideWidgetStroke(w)
         if w.label then w.label:Hide() end
-        local tr, tg, tb = ApplyTextWidgetContent(w, item, label, vc, ch, minSize)
+        local tr, tg, tb = ApplyTextWidgetContent(w, item, renderLabel, vc, ch, minSize)
         if spotNum then
             ApplyGroupSpotText(w, isMySpot, ch, item)
         end
-        if sceneCtx.hasSelfOnPlan and LabelMatchesPlayer(label, sceneCtx.playerKey) then
+        if sceneCtx.hasSelfOnPlan and LabelMatchesPlayer(renderLabel, sceneCtx.playerKey) then
             ApplyNameHighlight(w, true, true, tr, tg, tb, w.text)
         else
             ClearNameHighlight(w, w.text, tr, tg, tb)
@@ -5502,10 +5508,10 @@ function Diar.RenderSceneItem(addon, pf, root, cw, ch, vc, minSize, item, itemIn
             end
             w.text:Show()
         else
-            Diar.ApplyWidgetLabel(w, item, label, sceneCtx.hasSelfOnPlan, sceneCtx.playerKey, addon:IsPlannerPreviewNamesVisible())
+            Diar.ApplyWidgetLabel(w, item, renderLabel, sceneCtx.hasSelfOnPlan, sceneCtx.playerKey, addon:IsPlannerPreviewNamesVisible())
         end
     else
-        Diar.RenderIconWidget(addon, w, item, label, sceneCtx.hasSelfOnPlan, sceneCtx.playerKey, spotNum, isMySpot, ch)
+        Diar.RenderIconWidget(addon, w, item, renderLabel, sceneCtx.hasSelfOnPlan, sceneCtx.playerKey, spotNum, isMySpot, ch)
     end
 
     w.itemIndex = itemIndex
@@ -6098,7 +6104,9 @@ function Diar:RefreshPlannerLayoutLive()
         if IsPlannerWidgetFrame(w) and w:IsShown() and not w.__suppressed then
             LayoutItemWidget(w, item, vc, cw, ch, root, minSize)
             if w.text and w.text:IsShown() and item.kind == "text" then
-                local lbl = (item.label and item.label ~= "") and item.label or ""
+                local lbl = (w.__renderLabelOverride and w.__renderLabelOverride ~= "")
+                    and w.__renderLabelOverride
+                    or ((item.label and item.label ~= "") and item.label or "")
                 ApplyTextWidgetContent(w, item, lbl, vc, ch, minSize)
             end
         end

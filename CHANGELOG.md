@@ -4,10 +4,17 @@
 
 - Added a new setting to only show ready-check assignments in raid groups. Enabled by default.
 - Added a new setting to remove background tint when NSRT triggers compact mode in combat so you'll only see objects and nothing else (if background is also disabled)
+- Added a new setting to keep the Compact mode open during combat so it'll always show your next assignment coming up.
+  - This is disabled by default and needs to be enabled under Misc.
 
 - updated the NSRT Compact mode to be click-through and non-expandable during combat
   - This means you can place it anywhere and wont move it by mistake during combat. And even have it on top of your char if needed (cool for arrow assignment)
     This is a setting in the settings panel and enabled by default.
+
+- Updated how tagging works. You can now push an NSRT note with assignments and the labels in the plans affected will be updated accordingly to the NSRT Note, but only while the NSRT Note is loaded. This means you don't have to change labels in the plan anymore to make it show "correctly" for everyone.
+
+- Fixed an issue where the Raidcheck would show on the NSRT trigggered compact mode.
+- Fixed an issue where hiding the background wouldn't work sometimes
 
 ## [Alpha 0.0.43]
 

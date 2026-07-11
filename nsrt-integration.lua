@@ -659,6 +659,7 @@ function Raidstrats:ScheduleRsggCues(encID, phase, opts)
     if #phaseRuns == 0 then return end
 
     local showBefore, showAfter = self:GetRsggTiming()
+    local keepCompactOpen = self.IsNsrtCompactAlwaysOpenEnabled and self:IsNsrtCompactAlwaysOpenEnabled()
     local testLeadIn = 1
     self.rsggTimers = {}
     self.rsggHideTimers = {}
@@ -666,6 +667,8 @@ function Raidstrats:ScheduleRsggCues(encID, phase, opts)
     local scheduled = 0
     local timerIdx = 0
     local phaseOffset = 0
+    local firstPersistentCue, firstPersistentCueRef
+    local firstPersistentShowAt = nil
 
     for _, run in ipairs(phaseRuns) do
         local runPhase = run.phase
@@ -706,6 +709,11 @@ function Raidstrats:ScheduleRsggCues(encID, phase, opts)
                     showAt = math.max(0, cue.time - showBefore)
                     hideAt = cue.time + after
                 end
+                if keepCompactOpen and (firstPersistentShowAt == nil or showAt < firstPersistentShowAt) then
+                    firstPersistentShowAt = showAt
+                    firstPersistentCue = cue
+                    firstPersistentCueRef = cuePlanRef
+                end
                 scheduled = scheduled + 1
                 timerIdx = timerIdx + 1
                 local slot = timerIdx
@@ -719,7 +727,7 @@ function Raidstrats:ScheduleRsggCues(encID, phase, opts)
                         planAlias = cue.planToken,
                         compact = cue.compact,
                         skipAutoHide = true,
-                        forceShow = testMode,
+                        forceShow = testMode or keepCompactOpen,
                         dur = cue.dur,
                         tag = cue.tag,
                         tagNames = cue.tagNames,
@@ -737,12 +745,14 @@ function Raidstrats:ScheduleRsggCues(encID, phase, opts)
                         print(("|cffff6666[Raidstrats.gg]|r Failed to show scene %d — import a plan first (/rsimport)."):format(
                             cue.sceneIndex))
                     end
-                    local hideDelay = math.max(0.1, hideAt - showAt)
-                    self.rsggHideTimers[slot] = C_Timer.NewTimer(hideDelay, function()
-                        if self.rsggShowGeneration == gen and self.HideRaidPlanScene then
-                            self:HideRaidPlanScene()
-                        end
-                    end)
+                    if not keepCompactOpen then
+                        local hideDelay = math.max(0.1, hideAt - showAt)
+                        self.rsggHideTimers[slot] = C_Timer.NewTimer(hideDelay, function()
+                            if self.rsggShowGeneration == gen and self.HideRaidPlanScene then
+                                self:HideRaidPlanScene()
+                            end
+                        end)
+                    end
                 end)
             end
         end
@@ -754,6 +764,20 @@ function Raidstrats:ScheduleRsggCues(encID, phase, opts)
 
     if testMode and scheduled == 0 then
         print("|cffff6666[Raidstrats.gg]|r No cues matched your player (check NSRT tag/group names).")
+    end
+    if keepCompactOpen and scheduled > 0 and firstPersistentCue and self.ShowRaidPlanScene then
+        self:ShowRaidPlanScene(firstPersistentCue.sceneIndex, {
+            planName = firstPersistentCue.planName,
+            planRef = firstPersistentCueRef,
+            planAlias = firstPersistentCue.planToken,
+            compact = firstPersistentCue.compact,
+            skipAutoHide = true,
+            forceShow = true,
+            dur = firstPersistentCue.dur,
+            tag = firstPersistentCue.tag,
+            tagNames = firstPersistentCue.tagNames,
+            tagSpotMap = firstPersistentCue.tagSpotMap,
+        })
     end
 end
 

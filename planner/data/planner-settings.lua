@@ -46,6 +46,7 @@ function Diar:GetPlannerSettings()
     if s.compactAssignZoom == nil then s.compactAssignZoom = 1.7 end
     if s.classSpecCircleMode == nil then s.classSpecCircleMode = false end
     if s.compactPlanLibrary == nil then s.compactPlanLibrary = true end
+    if s.nsrtCompactAlwaysOpen == nil then s.nsrtCompactAlwaysOpen = false end
     if s.hideRaidCheckNotifs == nil then s.hideRaidCheckNotifs = false end
     if s.readyCheckAssignments == nil then s.readyCheckAssignments = false end
     if s.readyCheckRaidOnlyInRaid == nil then s.readyCheckRaidOnlyInRaid = true end
@@ -272,6 +273,12 @@ function Diar:IsNsrtPopupsEnabled()
     local v = self:GetPlannerSettings().hideNsrtPlan
     if v == true or v == 1 then return false end
     return true
+end
+
+function Diar:IsNsrtCompactAlwaysOpenEnabled()
+    local v = self:GetPlannerSettings().nsrtCompactAlwaysOpen
+    if v == true or v == 1 then return true end
+    return false
 end
 
 function Diar:GetRsggShowBefore()
@@ -536,6 +543,31 @@ function Diar:ShowPlannerSettingsDialog()
             return y - 30
         end
 
+        local function AddTextRow(parent, y, labelText, key, maxLetters)
+            local lbl = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            lbl:SetPoint("TOPLEFT", parent, "TOPLEFT", 16, y)
+            lbl:SetWidth(260)
+            lbl:SetJustifyH("LEFT")
+            lbl:SetText(labelText)
+            lbl:SetTextColor(0.82, 0.84, 0.88)
+
+            local box = CreateFrame("Frame", nil, parent, "BackdropTemplate")
+            box:SetSize(170, 24)
+            box:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -16, y + 2)
+            SetBackdrop(box, { 0.03, 0.03, 0.05, 1 }, UI.BORDER, 1)
+
+            local eb = CreateFrame("EditBox", nil, box)
+            eb:SetSize(154, 18)
+            eb:SetPoint("LEFT", box, "LEFT", 8, 0)
+            eb:SetFontObject(GameFontHighlightSmall)
+            eb:SetAutoFocus(false)
+            eb:SetMaxLetters(maxLetters or 64)
+            eb:SetTextColor(0.92, 0.92, 0.92)
+
+            f[key] = eb
+            return y - 30
+        end
+
         local function AddCheckbox(parent, y, key, text)
             local chk = CreateAnimatedCheckbox and CreateAnimatedCheckbox(parent, text)
             if not chk then return y - 28 end
@@ -689,6 +721,7 @@ function Diar:ShowPlannerSettingsDialog()
         miscY = AddSectionHeader(miscPage, "NSRT timing", miscY)
         miscY = AddSecondsRow(miscPage, miscY, "Show plan before cue", "beforeEdit")
         miscY = AddSecondsRow(miscPage, miscY, "Keep plan visible after cue", "afterEdit")
+        miscY = AddCheckbox(miscPage, miscY, "nsrtCompactAlwaysOpenChk", "Keep NSRT compact view open for the whole encounter")
 
         miscY = miscY - 8
         miscY = AddSectionHeader(miscPage, "Notifications and tools", miscY)
@@ -739,6 +772,7 @@ function Diar:ShowPlannerSettingsDialog()
             s.compactZoomToAssignment = CheckboxIsChecked(f.compactZoomAssignChk)
             s.compactAssignZoom = ClampAssignZoom(f.compactAssignZoom)
             s.compactPlanLibrary = CheckboxIsChecked(f.compactLibraryChk)
+            s.nsrtCompactAlwaysOpen = CheckboxIsChecked(f.nsrtCompactAlwaysOpenChk)
             s.minimapHidden = CheckboxIsChecked(f.hideMinimapIconChk)
             s.hideNsrtPlan = CheckboxIsChecked(f.nsrtPopupChk)
             s.hideRaidCheckNotifs = CheckboxIsChecked(f.raidCheckNotifChk)
@@ -859,6 +893,9 @@ function Diar:ShowPlannerSettingsDialog()
     end
     if dlg.compactLibraryChk then
         dlg.compactLibraryChk:SetChecked(self:IsCompactPlanLibraryEnabled())
+    end
+    if dlg.nsrtCompactAlwaysOpenChk then
+        dlg.nsrtCompactAlwaysOpenChk:SetChecked(self:IsNsrtCompactAlwaysOpenEnabled())
     end
     if dlg.hideMinimapIconChk then
         dlg.hideMinimapIconChk:SetChecked(settings.minimapHidden == true or settings.minimapHidden == 1)
