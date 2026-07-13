@@ -530,8 +530,8 @@ local function ApplyPreviewIndexCornerStyle(btn)
 end
 
 local function CanShowNsrtToolbarButton()
-    if not IsInGroup() then return true end
-    return UnitIsGroupLeader("player") == true
+    -- Temporarily hidden from toolbar (easy to re-enable later by restoring old logic).
+    return false
 end
 
 function Diar:UpdatePreviewIndexButton(pf)

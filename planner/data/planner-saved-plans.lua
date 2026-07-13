@@ -1395,17 +1395,59 @@ function Diar:ImportSharedPlanGroupPayload(payloadJson, sender)
         return false
     end
     local imported = 0
+    local skippedExisting = 0
+    local failed = 0
     local importedEntryIds = {}
     local prevPlannerData = self.plannerData and CopyPlanData(self.plannerData) or nil
+    local seenIncomingIdentity = {}
     for _, plan in ipairs(parsed.plans) do
         local payload = type(plan) == "table" and plan.payload or nil
-        if type(payload) == "string" and payload ~= "" and self.ImportPlanFromPasteString then
-            local ok = self:ImportPlanFromPasteString("!raidstrats-addon-" .. payload)
-            if ok then
-                imported = imported + 1
-                local entryId = self.plannerData and tonumber(self.plannerData.savedEntryId)
-                if entryId then importedEntryIds[#importedEntryIds + 1] = entryId end
+        if type(payload) == "string" and payload ~= "" then
+            local decoded = self.DecodeAddonImportPayload and self:DecodeAddonImportPayload("!raidstrats-addon-" .. payload) or nil
+            local data = (decoded and self.NormalizeDecodedPlanPayload) and self:NormalizeDecodedPlanPayload(decoded) or nil
+            if data then
+                local importedName = type(plan) == "table" and plan.planName or nil
+                if type(importedName) == "string" and strtrim(importedName) ~= "" then
+                    data.planName = strtrim(importedName)
+                end
+
+                if type(data.instanceKey) ~= "string" or data.instanceKey == "" then
+                    local token = self.GetImportedPlanIdentityToken and self:GetImportedPlanIdentityToken(data) or nil
+                    if token then
+                        data.instanceKey = "plan:" .. token
+                    end
+                end
+                if self.EnsurePlanInstanceKey then
+                    self:EnsurePlanInstanceKey(data)
+                end
+
+                local identity = self.GetImportedPlanIdentityToken and self:GetImportedPlanIdentityToken(data, { includeInstanceKey = false }) or nil
+                if not identity then
+                    identity = "inst:" .. tostring(data.instanceKey or "")
+                end
+                if identity and seenIncomingIdentity[identity] then
+                    skippedExisting = skippedExisting + 1
+                else
+                    if identity then seenIncomingIdentity[identity] = true end
+                    local existing = self.FindSavedPlanEntryByImportIdentity and self:FindSavedPlanEntryByImportIdentity(data) or nil
+                    if existing then
+                        skippedExisting = skippedExisting + 1
+                    else
+                        self.plannerData = data
+                        local savedEntryId = self.SaveImportedPlan and self:SaveImportedPlan(data) or nil
+                        if savedEntryId then
+                            imported = imported + 1
+                            importedEntryIds[#importedEntryIds + 1] = savedEntryId
+                        else
+                            failed = failed + 1
+                        end
+                    end
+                end
+            else
+                failed = failed + 1
             end
+        else
+            failed = failed + 1
         end
     end
     if prevPlannerData then
@@ -1428,9 +1470,19 @@ function Diar:ImportSharedPlanGroupPayload(payloadJson, sender)
         if self.HideImportProgress then self:HideImportProgress() end
         print(("|cff00aaff[Raidstrats.gg]|r Imported shared group \"%s\" (%d plan%s) from %s."):format(
             tostring(parsed.groupName or "Group"), imported, (imported == 1 and "" or "s"), tostring(sender or "someone")))
+        if skippedExisting > 0 then
+            print(("|cffffff66[Raidstrats.gg]|r Skipped %d plan(s) already saved (same UUID/plan identity)."):format(skippedExisting))
+        end
+        if failed > 0 then
+            print(("|cffff6666[Raidstrats.gg]|r %d plan(s) could not be imported."):format(failed))
+        end
         return true
     end
     if self.HideImportProgress then self:HideImportProgress() end
+    if skippedExisting > 0 and failed == 0 then
+        print("|cffffff66[Raidstrats.gg]|r Shared group received, but all plans were already imported.")
+        return true
+    end
     print("|cffff6666[Raidstrats.gg]|r Shared group received, but no plans could be imported.")
     return false
 end
