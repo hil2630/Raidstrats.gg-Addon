@@ -41,6 +41,7 @@ planner\view\planner-import.lua
 planner\view\planner-create-plan.lua
 planner\view\planner-help.lua
 planner\view\planner-nsrt-view.lua
+planner\view\planner-tour.lua
 planner\anim\planner-playback.lua
 # This will come at a later point - if you're reading this, hi :)
 # encounter-overview\boss-overview-data.lua

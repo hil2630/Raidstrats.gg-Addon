@@ -47,6 +47,7 @@ function Diar:GetPlannerSettings()
     if s.classSpecCircleMode == nil then s.classSpecCircleMode = false end
     if s.compactPlanLibrary == nil then s.compactPlanLibrary = true end
     if s.nsrtCompactAlwaysOpen == nil then s.nsrtCompactAlwaysOpen = false end
+    if s.hideRaidPlansInCombat == nil then s.hideRaidPlansInCombat = false end
     if s.hideRaidCheckNotifs == nil then s.hideRaidCheckNotifs = false end
     if s.readyCheckAssignments == nil then s.readyCheckAssignments = false end
     if s.readyCheckRaidOnlyInRaid == nil then s.readyCheckRaidOnlyInRaid = true end
@@ -277,6 +278,12 @@ end
 
 function Diar:IsNsrtCompactAlwaysOpenEnabled()
     local v = self:GetPlannerSettings().nsrtCompactAlwaysOpen
+    if v == true or v == 1 then return true end
+    return false
+end
+
+function Diar:IsHideRaidPlansInCombatEnabled()
+    local v = self:GetPlannerSettings().hideRaidPlansInCombat
     if v == true or v == 1 then return true end
     return false
 end
@@ -722,6 +729,7 @@ function Diar:ShowPlannerSettingsDialog()
         miscY = AddSecondsRow(miscPage, miscY, "Show plan before cue", "beforeEdit")
         miscY = AddSecondsRow(miscPage, miscY, "Keep plan visible after cue", "afterEdit")
         miscY = AddCheckbox(miscPage, miscY, "nsrtCompactAlwaysOpenChk", "Keep NSRT compact view open for the whole encounter")
+        miscY = AddCheckbox(miscPage, miscY, "hideRaidPlansCombatChk", "Hide raidplans during combat (no NSRT compact in combat)")
 
         miscY = miscY - 8
         miscY = AddSectionHeader(miscPage, "Notifications and tools", miscY)
@@ -773,6 +781,7 @@ function Diar:ShowPlannerSettingsDialog()
             s.compactAssignZoom = ClampAssignZoom(f.compactAssignZoom)
             s.compactPlanLibrary = CheckboxIsChecked(f.compactLibraryChk)
             s.nsrtCompactAlwaysOpen = CheckboxIsChecked(f.nsrtCompactAlwaysOpenChk)
+            s.hideRaidPlansInCombat = CheckboxIsChecked(f.hideRaidPlansCombatChk)
             s.minimapHidden = CheckboxIsChecked(f.hideMinimapIconChk)
             s.hideNsrtPlan = CheckboxIsChecked(f.nsrtPopupChk)
             s.hideRaidCheckNotifs = CheckboxIsChecked(f.raidCheckNotifChk)
@@ -896,6 +905,9 @@ function Diar:ShowPlannerSettingsDialog()
     end
     if dlg.nsrtCompactAlwaysOpenChk then
         dlg.nsrtCompactAlwaysOpenChk:SetChecked(self:IsNsrtCompactAlwaysOpenEnabled())
+    end
+    if dlg.hideRaidPlansCombatChk then
+        dlg.hideRaidPlansCombatChk:SetChecked(self:IsHideRaidPlansInCombatEnabled())
     end
     if dlg.hideMinimapIconChk then
         dlg.hideMinimapIconChk:SetChecked(settings.minimapHidden == true or settings.minimapHidden == 1)

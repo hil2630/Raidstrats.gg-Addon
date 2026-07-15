@@ -1354,6 +1354,10 @@ local function ConvertWebSceneObjects(scene, canvasW, canvasH)
                             }
                             local fs = CoerceNumber(obj.fontSize)
                             if fs then item.fontSize = ValueToPercent(fs * (CoerceNumber(obj.scaleY) or 1), canvasH) end
+                            local rawAlign = strlower(tostring(obj.textAlign or ""))
+                            if rawAlign == "center" or rawAlign == "right" then item.textAlign = rawAlign end
+                            local textBg = obj.backgroundColor or obj.textBackgroundColor
+                            if type(textBg) == "string" and textBg ~= "" then item.textBg = textBg end
                         end
                     elseif objType == "group" and type(obj.objects) == "table" and #obj.objects > 0 then
                         -- Web plans can store actor circles as grouped { circle + text } objects.
@@ -3189,6 +3193,11 @@ function Raidstrats:OnInitialize()
     self:RegisterChatCommand("rsggdebug", function(msg)
         if self.HandleRsggDebugCommand then
             self:HandleRsggDebugCommand(msg)
+        end
+    end)
+    self:RegisterChatCommand("rsggtour", function()
+        if self.StartPlannerTourFromCommand then
+            self:StartPlannerTourFromCommand()
         end
     end)
 

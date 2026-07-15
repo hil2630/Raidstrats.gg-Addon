@@ -613,6 +613,7 @@ function Diar:SetSavedPlansSearchQuery(query)
             pf.savedPlansSearchBox:SetText(target)
         end
     end
+    pf.__savedPlansForceScrollTop = true
     self:RefreshSavedPlansList()
 end
 
@@ -622,12 +623,14 @@ function Diar:CycleSavedPlansRaidFilter()
     local options = pf.savedPlansRaidFilterOptions or {}
     if #options == 0 then
         pf.savedPlansRaidFilter = nil
+        pf.__savedPlansForceScrollTop = true
         self:RefreshSavedPlansList()
         return
     end
     local current = pf.savedPlansRaidFilter
     if not current then
         pf.savedPlansRaidFilter = options[1]
+        pf.__savedPlansForceScrollTop = true
         self:RefreshSavedPlansList()
         return
     end
@@ -643,6 +646,7 @@ function Diar:CycleSavedPlansRaidFilter()
     else
         pf.savedPlansRaidFilter = options[idx + 1]
     end
+    pf.__savedPlansForceScrollTop = true
     self:RefreshSavedPlansList()
 end
 
@@ -654,6 +658,7 @@ function Diar:SetSavedPlansRaidFilter(raidName)
         value = nil
     end
     pf.savedPlansRaidFilter = value
+    pf.__savedPlansForceScrollTop = true
     self:RefreshSavedPlansList()
 end
 
@@ -2300,6 +2305,14 @@ function Diar:RefreshSavedPlansList()
     local w = pf.savedPlansListW or math.max(1, child:GetWidth())
     child:SetWidth(w)
 
+    -- Preserve the current scroll position across a refresh so loading a plan
+    -- (or ticking a toggle) doesn't jump the list back to the top. A pending
+    -- explicit reset (e.g. after a search) can request the top via this flag.
+    local preservedScroll = 0
+    if pf.savedPlansScroll and not pf.__savedPlansForceScrollTop then
+        preservedScroll = pf.savedPlansScroll:GetVerticalScroll() or 0
+    end
+
     if pf.savedPlansTitle then
         pf.savedPlansTitle:SetText("Plan Library")
     end
@@ -2577,6 +2590,26 @@ function Diar:RefreshSavedPlansList()
                 if rowFrame.__dragSuppressUntil and rowFrame.__dragSuppressUntil > GetTime() then
                     return
                 end
+                if IsControlKeyDown and IsControlKeyDown() then
+                    -- Ctrl+click toggles this plan in/out of the multi-selection
+                    -- (without loading it) so several plans can be grouped at once.
+                    local clickedId = tonumber(entry.id)
+                    if clickedId then
+                        local selected = pf.savedPlansSelectedIds or {}
+                        if selected[clickedId] then
+                            selected[clickedId] = nil
+                            if tonumber(pf.savedPlansSelectionAnchorId) == clickedId then
+                                pf.savedPlansSelectionAnchorId = nil
+                            end
+                        else
+                            selected[clickedId] = true
+                            pf.savedPlansSelectionAnchorId = clickedId
+                        end
+                        pf.savedPlansSelectedIds = selected
+                    end
+                    Diar:RefreshSavedPlansList()
+                    return
+                end
                 if IsShiftKeyDown and IsShiftKeyDown() then
                     if Diar.InsertPlanShareTokenIntoActiveChat and Diar:InsertPlanShareTokenIntoActiveChat(entry and entry.data) then
                         return
@@ -2726,7 +2759,13 @@ function Diar:RefreshSavedPlansList()
     end
     child:SetHeight(totalH)
     if pf.savedPlansScroll then
-        pf.savedPlansScroll:SetVerticalScroll(0)
+        -- Clamp the restored offset to the new content range (list may have
+        -- shrunk). Only force the top when a caller explicitly asked for it.
+        local scroll = pf.savedPlansScroll
+        local maxScroll = math.max(0, totalH - (scroll:GetHeight() or 0))
+        local target = pf.__savedPlansForceScrollTop and 0 or math.min(preservedScroll or 0, maxScroll)
+        scroll:SetVerticalScroll(target)
+        pf.__savedPlansForceScrollTop = nil
     end
     if self.UpdatePushUpdateButton then self:UpdatePushUpdateButton() end
 end

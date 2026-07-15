@@ -83,6 +83,8 @@ local function PrintOutdatedAddonNotice(remoteVersion, _senderName)
         tostring(ours), tostring(remoteVersion)))
 end
 
+local VERSION_PROMPT_DEBOUNCE = 3
+
 function Raidstrats:HandleAddonVersionComm(sender, remoteVersion)
     if not sender or sender == UnitName("player") then return end
     remoteVersion = tostring(remoteVersion or ""):gsub("^%s+", ""):gsub("%s+$", "")
@@ -93,11 +95,29 @@ function Raidstrats:HandleAddonVersionComm(sender, remoteVersion)
         return
     end
 
-    self._versionPromptSeen = self._versionPromptSeen or {}
-    if self._versionPromptSeen[remoteVersion] then return end
-    self._versionPromptSeen[remoteVersion] = true
+    -- Only ever notify once per session. When several raiders broadcast newer
+    -- (and possibly differing) versions at once, collect the highest one and
+    -- print a single message after a short debounce.
+    if self._versionPromptShown then return end
 
-    PrintOutdatedAddonNotice(remoteVersion, sender)
+    if not self._pendingNewerVersion
+        or self:CompareAddonVersions(remoteVersion, self._pendingNewerVersion) > 0 then
+        self._pendingNewerVersion = remoteVersion
+    end
+
+    if self._versionPromptTimer then return end
+    self._versionPromptTimer = C_Timer.NewTimer(VERSION_PROMPT_DEBOUNCE, function()
+        Raidstrats._versionPromptTimer = nil
+        if Raidstrats._versionPromptShown then return end
+        local newest = Raidstrats._pendingNewerVersion
+        Raidstrats._pendingNewerVersion = nil
+        if not newest then return end
+        if Raidstrats:CompareAddonVersions(newest, Raidstrats:GetAddonVersion()) <= 0 then
+            return
+        end
+        Raidstrats._versionPromptShown = true
+        PrintOutdatedAddonNotice(newest)
+    end)
 end
 
 function Raidstrats:UpdatePlannerVersionLabel(pf)

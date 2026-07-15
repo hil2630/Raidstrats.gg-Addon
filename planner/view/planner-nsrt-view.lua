@@ -642,6 +642,13 @@ function Diar:ShowRaidPlanScene(sceneIndex, opts)
     if not opts.forceShow and not opts.readyCheckMode and not self:IsNsrtPopupsEnabled() then
         return false
     end
+    -- "Hide raidplans during combat": suppress the NSRT compact popup while in
+    -- combat. Ready-check assignments (shown pre-pull) are unaffected.
+    if not opts.readyCheckMode and opts.compact ~= false
+        and self.IsHideRaidPlansInCombatEnabled and self:IsHideRaidPlansInCombatEnabled()
+        and InCombatLockdown() then
+        return false
+    end
     sceneIndex = tonumber(sceneIndex) or 1
     if opts.tagSpotMap or (opts.tagNames and #opts.tagNames > 0) or (opts.tag and opts.tag ~= "") then
         if not self:IsPlayerInRsggGroup(opts.tag, opts.tagNames, opts.tagSpotMap) then

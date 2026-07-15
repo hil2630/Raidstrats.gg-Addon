@@ -980,6 +980,7 @@ function Raidstrats:InitNSRTIntegration()
     frame:RegisterEvent("ENCOUNTER_END")
     frame:RegisterEvent("READY_CHECK")
     frame:RegisterEvent("READY_CHECK_FINISHED")
+    frame:RegisterEvent("PLAYER_REGEN_DISABLED")
 
     frame:SetScript("OnEvent", function(_, event, ...)
         if event == "ADDON_LOADED" then
@@ -1004,6 +1005,15 @@ function Raidstrats:InitNSRTIntegration()
         elseif event == "READY_CHECK_FINISHED" then
             if Raidstrats.EndReadyCheckAssignmentWatch then
                 Raidstrats:EndReadyCheckAssignmentWatch()
+            end
+        elseif event == "PLAYER_REGEN_DISABLED" then
+            -- "Hide raidplans during combat": close any open NSRT compact scene
+            -- (but not ready-check assignments) as soon as combat begins.
+            if Raidstrats.IsHideRaidPlansInCombatEnabled and Raidstrats:IsHideRaidPlansInCombatEnabled() then
+                local pf = Raidstrats.plannerFrame
+                if pf and pf.nsrtSceneActive and not pf.readyCheckActive and Raidstrats.HideRaidPlanScene then
+                    Raidstrats:HideRaidPlanScene()
+                end
             end
         end
     end)

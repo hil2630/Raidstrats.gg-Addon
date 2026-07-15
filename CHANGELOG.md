@@ -1,5 +1,38 @@
 # Changelog
 
+## [Alpha 0.0.46]
+
+New:
+- Added a guided tour for first-time users (replay anytime with /rsggtour).
+- Added Ctrl+click in the Plan Library to select multiple plans, then right-click to group them.
+- Added more tips to the in-game Help window.
+- Added a setting to hide raid plans during combat (Settings -> Misc, off by default).
+- Added a Copy button for our Patreon link (join.raidstrats.gg).
+
+Fixed:
+- Only one "new version available" message now, instead of several.
+- The Plan Library no longer jumps to the top when you load a plan.
+- Imported text now keeps its alignment and background color.
+- Text background color no longer grows too large when you zoom in (it stays around the text).
+- Opening the planner now closes the readycheck assignment popup first.
+- Cones and other shapes now fill with a solid color instead of showing lines.
+
+
+
+
+## [Alpha 0.0.45]
+
+As we've changed our system to work with uuids, it's not feasable to have multiple plans with same UUID, hence why we've done some changes. Check below.
+
+- Added a way to import multiple plans using our basic !raidstrats-addon prefix, so you can copy e.g. 3 import strings in to import all at once. 
+
+- Updated the default duration of NSRT to be 8 sec instead of 30 sec, if dur:N is not set.
+
+- Fixed an issue where you could import the same plan with same uuids as 2 different ones. 
+- Fixed an issue where you could import duplicate groups.
+
+- Removed the NSRT Button for now. 
+
 ## [Alpha 0.0.44]
 
 - Added a new setting to only show ready-check assignments in raid groups. Enabled by default.

@@ -3640,7 +3640,11 @@ local function ApplyTextWidgetContent(w, item, label, vc, ch, minSize)
     if w.text.SetNonSpaceWrap then w.text:SetNonSpaceWrap(isMultiLine) end
     if w.text.SetMaxLines then w.text:SetMaxLines(0) end
     -- Use a large temporary width for measurement; width=0 can render as ellipsis on some clients.
-    local measureW = isMultiLine and math.max(32, math.ceil((w.baseWorldW or w:GetWidth() or 0))) or 4096
+    -- For multi-line text the wrap width MUST scale with zoom to match the font (which is
+    -- zoom-scaled): otherwise the font grows on zoom while the wrap width stays fixed, so the
+    -- text wraps into far more lines, the measured height explodes and the background balloons
+    -- and overlaps neighbouring objects.
+    local measureW = isMultiLine and math.max(32, math.ceil(SceneViewScale(vc, w.baseWorldW or w:GetWidth() or 0))) or 4096
     w.text:SetWidth(measureW)
     w.text:SetText(textValue)
     local measuredW = (not isMultiLine and w.text.GetUnboundedStringWidth)
@@ -3648,10 +3652,59 @@ local function ApplyTextWidgetContent(w, item, label, vc, ch, minSize)
         or w.text:GetStringWidth()
     local textW = math.max(minSize, math.ceil((measuredW or 0) + 8))
     local textH = math.max(minSize, math.ceil((w.text:GetStringHeight() or 0) + 2))
-    w:SetSize(textW, textH)
-    w.basePixelW = textW
-    w.basePixelH = textH
-    w.text:SetWidth(math.max(textW, measureW))
+    -- Horizontal alignment from the web export. Default 'left' keeps the legacy
+    -- auto-sized layout; center/right lay the text out inside the exported box width.
+    local align = strlower(tostring(item.textAlign or ""))
+    if align == "center" then
+        w.text:SetJustifyH("CENTER")
+    elseif align == "right" then
+        w.text:SetJustifyH("RIGHT")
+    else
+        align = "left"
+        w.text:SetJustifyH("LEFT")
+    end
+    if align == "left" then
+        w:SetSize(textW, textH)
+        w.basePixelW = textW
+        w.basePixelH = textH
+        w.text:SetWidth(math.max(textW, measureW))
+    else
+        local boxWpx = math.max(minSize, SceneViewScale(vc, w.baseWorldW or 0))
+        local layoutW = math.max(textW, boxWpx)
+        w:SetSize(layoutW, textH)
+        w.basePixelW = layoutW
+        w.basePixelH = textH
+        w.text:SetWidth(layoutW)
+    end
+    -- Text highlight background (Fabric backgroundColor). Sized to the actual
+    -- rendered glyphs (textW/textH follow the font, which is capped when you zoom
+    -- in) and anchored by justification, so the fill hugs the text instead of
+    -- growing with the widget box on zoom -- which used to overflow onto and
+    -- overlap neighbouring objects (e.g. in the compact zoom view).
+    if not w.textBgTex then
+        w.textBgTex = w:CreateTexture(nil, "BACKGROUND")
+    end
+    w.textBgTex:ClearAllPoints()
+    w.textBgTex:SetSize(textW, textH)
+    if align == "center" then
+        w.textBgTex:SetPoint("TOP", w, "TOP", 0, 0)
+    elseif align == "right" then
+        w.textBgTex:SetPoint("TOPRIGHT", w, "TOPRIGHT", 0, 0)
+    else
+        w.textBgTex:SetPoint("TOPLEFT", w, "TOPLEFT", 0, 0)
+    end
+    if type(item.textBg) == "string" and item.textBg ~= "" then
+        local br, bgg, bbb, ba = ParseItemColor(item.textBg, 1)
+        if ba == nil then ba = 1 end
+        if ba > 0 then
+            w.textBgTex:SetColorTexture(br, bgg, bbb, ba)
+            w.textBgTex:Show()
+        else
+            w.textBgTex:Hide()
+        end
+    else
+        w.textBgTex:Hide()
+    end
     w.text:Show()
     return tr, tg, tb
 end
@@ -3922,6 +3975,7 @@ local function ResetShapePool(pf)
     for _, f in ipairs(pf._shapePool) do
         if f._lines then for _, ln in ipairs(f._lines) do ln:Hide() end end
         if f._dots then for _, d in ipairs(f._dots) do d:Hide() end end
+        if f._fills then for _, t in ipairs(f._fills) do t:Hide() end end
         f:SetAlpha(1)
         f:Hide()
     end
@@ -3935,6 +3989,7 @@ local function AcquireShapeFrame(pf, canvas, frameLevel)
         f = CreateFrame("Frame", nil, canvas)
         f._lines = {}
         f._dots = {}
+        f._fills = {}
         pf._shapePool[pf._shapePoolUsed] = f
     end
     f:SetParent(canvas)
@@ -3944,6 +3999,7 @@ local function AcquireShapeFrame(pf, canvas, frameLevel)
     f:SetAlpha(1)
     f._lineUsed = 0
     f._dotUsed = 0
+    f._fillUsed = 0
     f:Show()
     return f
 end
@@ -3957,6 +4013,25 @@ local function ShapeLine(f)
     end
     ln:Show()
     return ln
+end
+
+-- A solid-color fill rectangle for scanline fills. Rows are tiled edge-to-edge
+-- (no overlap), so translucent fills render at a uniform alpha instead of banding
+-- into visible horizontal lines where overlapping lines would stack.
+local function ShapeFillRow(f, canvas, xLeft, xRight, yTop, yBot, r, g, b, a)
+    if (xRight - xLeft) <= 0.4 or (yBot - yTop) <= 0.05 then return end
+    f._fills = f._fills or {}
+    f._fillUsed = (f._fillUsed or 0) + 1
+    local t = f._fills[f._fillUsed]
+    if not t then
+        t = f:CreateTexture(nil, "ARTWORK")
+        f._fills[f._fillUsed] = t
+    end
+    t:SetColorTexture(r, g, b, a)
+    t:ClearAllPoints()
+    t:SetPoint("TOPLEFT", canvas, "TOPLEFT", xLeft, -yTop)
+    t:SetPoint("BOTTOMRIGHT", canvas, "TOPLEFT", xRight, -yBot)
+    t:Show()
 end
 
 -- Ellipse outline on canvas coords (negative Y = down, same as lines/frontals).
@@ -4054,9 +4129,9 @@ local function DrawLineShape(pf, canvas, item, cw, ch, frameLevel)
     return f
 end
 
--- Filled triangle/cone via horizontal scanlines (apex at top), with crisp edges on top.
--- Drawn at full color alpha inside the frame; the frame's alpha applies the real opacity
--- so overlapping fill rows don't stack into darker bands.
+-- Filled triangle/cone via vertically tiled fill rows (apex at top). Rows are laid
+-- edge-to-edge with no overlap, so a translucent fill renders as one uniform color
+-- instead of banding into darker horizontal lines where scanlines would overlap.
 local function DrawTriangleShape(pf, canvas, item, cw, ch, frameLevel)
     local f = AcquireShapeFrame(pf, canvas, frameLevel)
     local vc = pf.sceneViewContext
@@ -4066,28 +4141,23 @@ local function DrawTriangleShape(pf, canvas, item, cw, ch, frameLevel)
     local hh = SceneViewScale(vc, ch * ((tonumber(item.h) or 6) / 100))
     local cx = x + w / 2
 
+    -- Fill with vertically tiled rectangles (edge-to-edge, no overlap) so a
+    -- translucent fill shows one uniform alpha instead of banded scanlines.
     local rows = math.max(8, math.min(math.floor(hh), 160))
     local step = hh / rows
-    local rowThick = step + 1.2
     for i = 0, rows - 1 do
-        local ry = (i + 0.5) * step
-        local half = (ry / hh) * (w / 2)
-        if half > 0.4 then
-            local ln = ShapeLine(f)
-            ln:SetThickness(rowThick)
-            ln:SetColorTexture(r, g, b, a)
-            ln:SetStartPoint("TOPLEFT", canvas, cx - half, -(y + ry))
-            ln:SetEndPoint("TOPLEFT", canvas, cx + half, -(y + ry))
-        end
+        local yTop = y + i * step
+        local yBot = y + (i + 1) * step
+        local half = (((i + 0.5) * step) / hh) * (w / 2)
+        ShapeFillRow(f, canvas, cx - half, cx + half, yTop, yBot, r, g, b, a)
     end
 
     -- Stroke outline is drawn in RebuildStrokeOverlays (canvas coords, tracks animation).
     return f
 end
 
--- Smooth donut/ring built from overlapping round dots around the mid-radius.
--- Rounded dots give clean inner/outer edges (no faceting); full-alpha dots + frame
--- alpha avoid the patchy overlap darkening of translucent segments.
+-- Donut/ring filled as an annulus of vertically tiled rows. Rows are edge-to-edge
+-- (no overlap), so translucent fills render at a uniform alpha with no banding.
 local function DrawDonutShape(pf, canvas, item, cw, ch, frameLevel)
     local f = AcquireShapeFrame(pf, canvas, frameLevel)
     local vc = pf.sceneViewContext
@@ -4103,12 +4173,11 @@ local function DrawDonutShape(pf, canvas, item, cw, ch, frameLevel)
     local innerRx = outerRx * inner
     local innerRy = outerRy * inner
 
-    -- Fill donut with horizontal scanlines (annulus), so rendering is continuous and
-    -- never shows segmented seams from line joins.
     local rows = math.max(14, math.min(math.floor(hpx * 1.6), 240))
     local step = math.max(0.6, hpx / rows)
-    local rowThick = step + 0.9
     for i = 0, rows - 1 do
+        local yTop = by + i * step
+        local yBot = by + (i + 1) * step
         local y = by + (i + 0.5) * step
         local dy = y - cy
         local outerNorm = 1 - ((dy * dy) / math.max(1e-6, outerRy * outerRy))
@@ -4122,23 +4191,10 @@ local function DrawDonutShape(pf, canvas, item, cw, ch, frameLevel)
                 end
             end
             if xi > 0.3 then
-                local lnL = ShapeLine(f)
-                lnL:SetThickness(rowThick)
-                lnL:SetColorTexture(r, g, b, a)
-                lnL:SetStartPoint("TOPLEFT", canvas, cx - xo, -y)
-                lnL:SetEndPoint("TOPLEFT", canvas, cx - xi, -y)
-
-                local lnR = ShapeLine(f)
-                lnR:SetThickness(rowThick)
-                lnR:SetColorTexture(r, g, b, a)
-                lnR:SetStartPoint("TOPLEFT", canvas, cx + xi, -y)
-                lnR:SetEndPoint("TOPLEFT", canvas, cx + xo, -y)
+                ShapeFillRow(f, canvas, cx - xo, cx - xi, yTop, yBot, r, g, b, a)
+                ShapeFillRow(f, canvas, cx + xi, cx + xo, yTop, yBot, r, g, b, a)
             else
-                local ln = ShapeLine(f)
-                ln:SetThickness(rowThick)
-                ln:SetColorTexture(r, g, b, a)
-                ln:SetStartPoint("TOPLEFT", canvas, cx - xo, -y)
-                ln:SetEndPoint("TOPLEFT", canvas, cx + xo, -y)
+                ShapeFillRow(f, canvas, cx - xo, cx + xo, yTop, yBot, r, g, b, a)
             end
         end
     end
@@ -4166,8 +4222,10 @@ local function GetItemCornerPoints(item, cw, ch, vc)
     return pts
 end
 
--- Fill a convex polygon (canvas coords, y positive-down) using horizontal scanlines,
--- mirroring the triangle/cone fill approach so skewed rects render as solid parallelograms.
+-- Fill a convex polygon (canvas coords, y positive-down) using vertically tiled
+-- rows, mirroring the triangle/cone fill approach so skewed rects render as solid
+-- parallelograms. Rows are edge-to-edge (no overlap) so translucent fills stay
+-- a uniform alpha instead of banding.
 local function FillConvexPolygon(f, canvas, pts, r, g, b, a)
     local n = pts and #pts or 0
     if n < 3 then return end
@@ -4181,8 +4239,9 @@ local function FillConvexPolygon(f, canvas, pts, r, g, b, a)
     if height < 0.5 then return end
     local rows = math.max(8, math.min(math.floor(height), 200))
     local step = height / rows
-    local rowThick = step + 1.2
     for i = 0, rows - 1 do
+        local yTop = minY + i * step
+        local yBot = minY + (i + 1) * step
         local sy = minY + (i + 0.5) * step
         local xMin, xMax
         for e = 1, n do
@@ -4196,12 +4255,8 @@ local function FillConvexPolygon(f, canvas, pts, r, g, b, a)
                 if not xMax or xi > xMax then xMax = xi end
             end
         end
-        if xMin and xMax and (xMax - xMin) > 0.4 then
-            local ln = ShapeLine(f)
-            ln:SetThickness(rowThick)
-            ln:SetColorTexture(r, g, b, a)
-            ln:SetStartPoint("TOPLEFT", canvas, xMin, -sy)
-            ln:SetEndPoint("TOPLEFT", canvas, xMax, -sy)
+        if xMin and xMax then
+            ShapeFillRow(f, canvas, xMin, xMax, yTop, yBot, r, g, b, a)
         end
     end
 end
@@ -4785,6 +4840,7 @@ local function ReleasePlannerWidget(pf, widget)
     end
     if widget.label then widget.label:Hide() end
     if widget.text then widget.text:Hide() end
+    if widget.textBgTex then widget.textBgTex:Hide() end
     if widget.slotBadge then widget.slotBadge:Hide() end
     widget.baseWorldW = nil
     widget.baseWorldH = nil
@@ -6192,6 +6248,19 @@ end
 
 function Diar:ShowPlannerViewer(opts)
     opts = opts or {}
+    -- If a ready-check assignment popup is active, always close it first when
+    -- opening the normal planner viewer ("/rsgg", minimap button, etc.).
+    -- Keep the ready-check flow untouched when ShowPlannerViewer is called
+    -- internally for NSRT/ready-check scene rendering.
+    local pfOpen = self.plannerFrame
+    local readyCheckOpen = (pfOpen and pfOpen.readyCheckActive) or self.readyCheckAssignments
+    if readyCheckOpen and not opts.preparingNsrtScene and not opts.readyCheckMode then
+        if self.CloseReadyCheckAssignments then
+            self:CloseReadyCheckAssignments()
+        elseif self.HideRaidPlanScene then
+            self:HideRaidPlanScene()
+        end
+    end
     -- Clear any stale NSRT group coloring; ShowRaidPlanScene re-sets it after this runs.
     self.activeGroup = nil
     if not self.plannerData or not self.plannerData.scenes or #self.plannerData.scenes == 0 then
@@ -6609,9 +6678,17 @@ function Diar:ShowPlannerViewer(opts)
         pf.patreonPanel = patreonPanel
         pf.patreonAnchoredToolbar = true
 
+        local patreonCopyBtn = CreatePlannerIconBtn(patreonPanel, "Copy", 54, 22)
+        patreonCopyBtn:SetPoint("RIGHT", patreonPanel, "RIGHT", -10, 0)
+        patreonCopyBtn:SetScript("OnClick", function()
+            Diar:ShowPlannerPatreonPopup()
+        end)
+        pf.patreonCopyBtn = patreonCopyBtn
+
         local patreonLabel = patreonPanel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         patreonLabel:SetPoint("TOPLEFT", patreonPanel, "TOPLEFT", 10, -10)
-        patreonLabel:SetPoint("BOTTOMRIGHT", patreonPanel, "BOTTOMRIGHT", -10, 10)
+        -- Reserve room on the right for the Copy button (10 pad + 54 btn + 10 gap).
+        patreonLabel:SetPoint("BOTTOMRIGHT", patreonPanel, "BOTTOMRIGHT", -74, 10)
         patreonLabel:SetJustifyH("LEFT")
         patreonLabel:SetJustifyV("MIDDLE")
         patreonLabel:SetWordWrap(true)
@@ -6970,6 +7047,9 @@ function Diar:ShowPlannerViewer(opts)
     if opts.layoutWindows and Diar.LayoutOpenWindows then
         Diar:LayoutOpenWindows()
     end
+    if self.MaybeStartFirstTimeTour then
+        self:MaybeStartFirstTimeTour()
+    end
 end
 
 local PLANNER_WEB_ORIGIN = "https://raidstrats.gg"
@@ -7055,9 +7135,8 @@ function Diar:ShowPlannerPlanLinkPopup()
     self.planLinkPopup:Show()
 end
 
-local PLANNER_DISCORD_URL = "https://discord.gg/QtU244VZ8X"
-
 function Diar:ShowPlannerDiscordPopup()
+    local PLANNER_DISCORD_URL = "https://discord.gg/QtU244VZ8X"
     if not self.discordPopup then
         local f = CreateFrame("Frame", "RaidstratsDiscordPopup", UIParent, "BackdropTemplate")
         f:SetSize(480, 170)
@@ -7097,6 +7176,49 @@ function Diar:ShowPlannerDiscordPopup()
         self:PrepareModal(self.discordPopup, self.plannerFrame)
     end
     self.discordPopup:Show()
+end
+
+function Diar:ShowPlannerPatreonPopup()
+    local PLANNER_PATREON_URL = "https://join.raidstrats.gg"
+    if not self.patreonPopup then
+        local f = CreateFrame("Frame", "RaidstratsPatreonPopup", UIParent, "BackdropTemplate")
+        f:SetSize(480, 170)
+        f:SetPoint("CENTER")
+        f:SetMovable(true)
+        f:EnableMouse(true)
+        SetBackdrop(f)
+        tinsert(UISpecialFrames, "RaidstratsPatreonPopup")
+        f:SetScript("OnMouseDown", function(s, b) if b == "LeftButton" then s:StartMoving() end end)
+        f:SetScript("OnMouseUp", function(s) s:StopMovingOrSizing() end)
+        CreateFrame("Button", nil, f, "UIPanelCloseButton"):SetPoint("TOPRIGHT", -5, -5)
+        f.title = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+        f.title:SetPoint("TOP", 0, -18)
+        f.title:SetTextColor(0.9, 0.9, 0.9)
+        f.title:SetText("Support Raidstrats.gg")
+        f.desc = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        f.desc:SetPoint("TOP", f.title, "BOTTOM", 0, -6)
+        f.desc:SetTextColor(0.7, 0.72, 0.75)
+        f.desc:SetText("Copy the Patreon link below and open it in your browser.")
+        local bc, b = CreateInput(f, "Copy link", false)
+        bc:SetPoint("TOPLEFT", f, "TOPLEFT", 20, -78)
+        bc:SetPoint("TOPRIGHT", f, "TOPRIGHT", -20, -78)
+        bc:SetHeight(44)
+        b:SetScript("OnEscapePressed", function() f:Hide() end)
+        f.linkEdit = b
+        local btn = CreateButton(f, "CLOSE")
+        btn:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 20, 16)
+        btn:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -20, 16)
+        btn:SetScript("OnClick", function() f:Hide() end)
+        self.patreonPopup = f
+    end
+
+    self.patreonPopup.linkEdit:SetText(PLANNER_PATREON_URL)
+    self.patreonPopup.linkEdit:HighlightText()
+    self.patreonPopup.linkEdit:SetFocus()
+    if self.PrepareModal then
+        self:PrepareModal(self.patreonPopup, self.plannerFrame)
+    end
+    self.patreonPopup:Show()
 end
 
 function Diar:GetPlannerCreditsText()

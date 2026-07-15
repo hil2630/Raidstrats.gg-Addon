@@ -44,6 +44,31 @@ local HELP_SECTIONS = {
         },
     },
     {
+        title = "Plan Library (organizing)",
+        lines = {
+            "Click a plan to load it; right-click a plan for Rename, Create group, and Remove from group.",
+            "Hold Ctrl and click to select multiple plans, then right-click to group them all at once.",
+            "Shift-click selects a range of plans between two rows.",
+            "Drag plans into or out of a group, or drag to reorder them.",
+        },
+    },
+    {
+        title = "Share, Push Update & Raidcheck",
+        lines = {
+            "Share to Group: sends the current plan to your party/raid so everyone can load it with one click.",
+            "Push Update: after editing a plan you already shared, sends the newest version to everyone who has it — their copy updates in place, no re-import needed.",
+            "Raidcheck: raid leaders can see who has the plan open and push assignments on ready check, so the whole group is synced before the pull.",
+            "Tip: enable Auto-import updates on a plan (in the library) to apply pushed changes automatically.",
+        },
+    },
+    {
+        title = "Canvas tools (palette & lock)",
+        lines = {
+            "Show palette to drag shapes, raid markers, role icons and text onto the canvas.",
+            "Lock the canvas to view/pan without moving anything; unlock to edit spots and paths again.",
+        },
+    },
+    {
         title = "Move website plan into addon",
         lines = {
             "On website: Export -> Copy for addon (string starts with !raidstrats-addon-).",
