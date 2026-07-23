@@ -1392,6 +1392,58 @@ function Diar:SendSharedPlanGroupWhisper(target, linkLabel, payloadJson)
     return true
 end
 
+-- Build a multi-plan share bundle from plan data tables and cache it for GREQ.
+-- plans: { { data = planData, planName = optional }, ... }
+-- returns linkLabel, count (or nil, 0)
+function Diar:BuildAndCachePlansShareBundle(plans, groupName)
+    if type(plans) ~= "table" or #plans == 0 then
+        return nil, 0
+    end
+    local outPlans = {}
+    for _, plan in ipairs(plans) do
+        local data = plan and plan.data
+        if data and data.scenes and #data.scenes > 0 then
+            if self.EnsurePlanInstanceKey then self:EnsurePlanInstanceKey(data) end
+            local payload = self.BuildSharePayload and self:BuildSharePayload(data) or nil
+            if payload and payload ~= "" then
+                local planName = tostring(
+                    (plan.planName and plan.planName ~= "" and plan.planName)
+                        or (data.planName and data.planName ~= "" and data.planName)
+                        or plan.alias
+                        or "Plan"
+                )
+                outPlans[#outPlans + 1] = {
+                    name = planName,
+                    planName = planName,
+                    payload = payload,
+                }
+            end
+        end
+    end
+    if #outPlans == 0 then
+        return nil, 0
+    end
+    local gName = strtrim(tostring(groupName or "Note plans"))
+    if gName == "" then gName = "Note plans" end
+    local packet = {
+        groupName = gName,
+        plans = outPlans,
+    }
+    local json = EncodeJson(packet)
+    if not json or json == "" then
+        return nil, 0
+    end
+    local linkLabel = SanitizeGroupShareLabel(gName, #outPlans)
+    self._sharedPlanGroups = self._sharedPlanGroups or {}
+    self._sharedPlanGroups[linkLabel] = {
+        payload = json,
+        t = time(),
+        groupName = gName,
+        count = #outPlans,
+    }
+    return linkLabel, #outPlans
+end
+
 function Diar:ImportSharedPlanGroupPayload(payloadJson, sender)
     if type(payloadJson) ~= "string" or payloadJson == "" then return false end
     local parsed = DecodeJson(payloadJson)
@@ -1411,7 +1463,7 @@ function Diar:ImportSharedPlanGroupPayload(payloadJson, sender)
             local decoded = self.DecodeAddonImportPayload and self:DecodeAddonImportPayload("!raidstrats-addon-" .. payload) or nil
             local data = (decoded and self.NormalizeDecodedPlanPayload) and self:NormalizeDecodedPlanPayload(decoded) or nil
             if data then
-                local importedName = type(plan) == "table" and plan.planName or nil
+                local importedName = type(plan) == "table" and (plan.planName or plan.name) or nil
                 if type(importedName) == "string" and strtrim(importedName) ~= "" then
                     data.planName = strtrim(importedName)
                 end

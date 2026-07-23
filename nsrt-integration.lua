@@ -206,6 +206,8 @@ local function ParseRsggCues(noteText)
                     -- New semantics: when value matches a bind alias, resolve to that ref first.
                     planName = planToken,
                     planToken = planToken,
+                    -- dur:N = show N seconds BEFORE cue.time, hide at cue.time
+                    -- (e.g. time:100;dur:30 => visible from 70s until 100s).
                     dur = dur and tonumber(dur) or 30,
                     compact = compact ~= "false",
                     tag = tag,
@@ -365,7 +367,7 @@ function Raidstrats:EndReadyCheckAssignmentWatch()
         return
     end
     self:CancelReadyCheckCloseTimer()
-    local grace = 5
+    local grace = 10
     if self.GetReadyCheckGracePeriod then
         grace = tonumber(self:GetReadyCheckGracePeriod()) or grace
     end
@@ -660,31 +662,18 @@ function Raidstrats:ScheduleRsggCues(encID, phase, opts)
 
     local showBefore, showAfter = self:GetRsggTiming()
     local keepCompactOpen = self.IsNsrtCompactAlwaysOpenEnabled and self:IsNsrtCompactAlwaysOpenEnabled()
-    local testLeadIn = 1
     self.rsggTimers = {}
     self.rsggHideTimers = {}
     self.rsggShowGeneration = 0
     local scheduled = 0
     local timerIdx = 0
+    -- When testing all phases, run them back-to-back (absolute cue times within each phase).
     local phaseOffset = 0
-    local firstPersistentCue, firstPersistentCueRef
-    local firstPersistentShowAt = nil
 
     for _, run in ipairs(phaseRuns) do
         local runPhase = run.phase
         local cues = run.cues
-        local baseTime = nil
-        local phaseWindow = testLeadIn
-        if testMode then
-            baseTime = cues[1].time
-            for _, cue in ipairs(cues) do
-                if cue.time < baseTime then baseTime = cue.time end
-                local cueAfter = (cue.dur and cue.dur > 0) and cue.dur or showAfter
-                local rel = cue.time - baseTime
-                local maxHide = testLeadIn + rel + cueAfter
-                if maxHide > phaseWindow then phaseWindow = maxHide end
-            end
-        end
+        local phaseEnd = 0
 
         for _, cue in ipairs(cues) do
             local skip = false
@@ -699,21 +688,12 @@ function Raidstrats:ScheduleRsggCues(encID, phase, opts)
                 -- Same scene can fire for multiple groups; skip cues you're not rostered on.
             else
                 local cuePlanRef = ResolveCuePlanRef(self, cue)
-                local after = (cue.dur and cue.dur > 0) and cue.dur or showAfter
-                local showAt, hideAt
-                if testMode and baseTime then
-                    local rel = cue.time - baseTime
-                    showAt = phaseOffset + testLeadIn + math.max(0, rel - showBefore)
-                    hideAt = phaseOffset + testLeadIn + rel + after
-                else
-                    showAt = math.max(0, cue.time - showBefore)
-                    hideAt = cue.time + after
-                end
-                if keepCompactOpen and (firstPersistentShowAt == nil or showAt < firstPersistentShowAt) then
-                    firstPersistentShowAt = showAt
-                    firstPersistentCue = cue
-                    firstPersistentCueRef = cuePlanRef
-                end
+                -- dur = seconds BEFORE cue.time to show; hide at cue.time (+ optional global linger).
+                -- Example: time:10;dur:5 => showAt=5, hideAt=10.
+                local before = (cue.dur and cue.dur > 0) and cue.dur or showBefore
+                local showAt = phaseOffset + math.max(0, cue.time - before)
+                local hideAt = phaseOffset + cue.time + showAfter
+                if hideAt > phaseEnd then phaseEnd = hideAt end
                 scheduled = scheduled + 1
                 timerIdx = timerIdx + 1
                 local slot = timerIdx
@@ -735,11 +715,11 @@ function Raidstrats:ScheduleRsggCues(encID, phase, opts)
                     })
                     if ok then
                         if testMode then
-                            print(("|cff00aaff[Raidstrats.gg]|r Test: scene %d (phase %d, note cue %ds)."):format(
-                                cue.sceneIndex, runPhase, cue.time))
+                            print(("|cff00aaff[Raidstrats.gg]|r Test: scene %d (phase %d, show %ds→%ds, note cue %ds)."):format(
+                                cue.sceneIndex, runPhase, showAt, hideAt, cue.time))
                         else
-                            print(("|cff00aaff[Raidstrats.gg]|r Showing scene %d (phase %d, cue %ds, −%ds/+%ds)."):format(
-                                cue.sceneIndex, runPhase, cue.time, showBefore, showAfter))
+                            print(("|cff00aaff[Raidstrats.gg]|r Showing scene %d (phase %d, cue %ds, −%ds until cue)."):format(
+                                cue.sceneIndex, runPhase, cue.time, before))
                         end
                     else
                         print(("|cffff6666[Raidstrats.gg]|r Failed to show scene %d — import a plan first (/rsimport)."):format(
@@ -758,26 +738,12 @@ function Raidstrats:ScheduleRsggCues(encID, phase, opts)
         end
 
         if testMode and not phase then
-            phaseOffset = phaseOffset + phaseWindow + 1
+            phaseOffset = phaseEnd + 1
         end
     end
 
     if testMode and scheduled == 0 then
         print("|cffff6666[Raidstrats.gg]|r No cues matched your player (check NSRT tag/group names).")
-    end
-    if keepCompactOpen and scheduled > 0 and firstPersistentCue and self.ShowRaidPlanScene then
-        self:ShowRaidPlanScene(firstPersistentCue.sceneIndex, {
-            planName = firstPersistentCue.planName,
-            planRef = firstPersistentCueRef,
-            planAlias = firstPersistentCue.planToken,
-            compact = firstPersistentCue.compact,
-            skipAutoHide = true,
-            forceShow = true,
-            dur = firstPersistentCue.dur,
-            tag = firstPersistentCue.tag,
-            tagNames = firstPersistentCue.tagNames,
-            tagSpotMap = firstPersistentCue.tagSpotMap,
-        })
     end
 end
 
@@ -914,10 +880,10 @@ function Raidstrats:RunRsggTest(encID, opts)
     -- Local-only test: never broadcast to group.
 
     if phase then
-        print(("|cff00aaff[Raidstrats.gg]|r Test started for encounter %d phase %d — %d cue(s), compressed timing."):format(
+        print(("|cff00aaff[Raidstrats.gg]|r Test started for encounter %d phase %d — %d cue(s), real cue timing."):format(
             encID, phase, #phaseCues))
     else
-        print(("|cff00aaff[Raidstrats.gg]|r Test started for encounter %d (all phases) — %d phase(s), %d cue(s), compressed timing."):format(
+        print(("|cff00aaff[Raidstrats.gg]|r Test started for encounter %d (all phases) — %d phase(s), %d cue(s), real cue timing."):format(
             encID, phaseCues.__allPhaseCount or 0, phaseCues.__allCueCount or 0))
     end
     self.rsggTestActive = true
@@ -999,10 +965,37 @@ function Raidstrats:InitNSRTIntegration()
         elseif event == "ENCOUNTER_END" then
             Raidstrats:OnEncounterEnd()
         elseif event == "READY_CHECK" then
+            -- Assignments first so the compact viewer always gets a chance to open.
+            -- Side raidcheck is deferred slightly and isolated so it cannot block
+            -- or race the assignment note reload / planner open.
             if Raidstrats.BeginReadyCheckAssignmentWatch then
                 Raidstrats:BeginReadyCheckAssignmentWatch()
             end
+            if Raidstrats.MaybeAutoNotReadyForMissingPlans then
+                Raidstrats:MaybeAutoNotReadyForMissingPlans()
+            end
+            if Raidstrats.OpenRaidCheckForReadyCheck then
+                local function openSideRaidCheck()
+                    local ok, err = pcall(function()
+                        Raidstrats:OpenRaidCheckForReadyCheck()
+                    end)
+                    if not ok and Raidstrats.IsRsggDebug and Raidstrats:IsRsggDebug() then
+                        print("|cffff6666[Raidstrats.gg]|r Readycheck raidcheck error: " .. tostring(err))
+                    end
+                end
+                if C_Timer and C_Timer.After then
+                    C_Timer.After(0.1, openSideRaidCheck)
+                else
+                    openSideRaidCheck()
+                end
+            end
         elseif event == "READY_CHECK_FINISHED" then
+            -- Keep side raidcheck open for the grace period (default 10s), or until closed.
+            if Raidstrats.ScheduleCloseReadyCheckRaidCheckPanel then
+                Raidstrats:ScheduleCloseReadyCheckRaidCheckPanel()
+            elseif Raidstrats.CloseReadyCheckRaidCheckPanel then
+                Raidstrats:CloseReadyCheckRaidCheckPanel()
+            end
             if Raidstrats.EndReadyCheckAssignmentWatch then
                 Raidstrats:EndReadyCheckAssignmentWatch()
             end

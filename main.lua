@@ -3408,6 +3408,14 @@ function Raidstrats:OnCommReceived(p, m, d, s)
         if self.HandleRaidCheckNotifComm then self:HandleRaidCheckNotifComm(m, s) end
         return
     end
+    if m:sub(1, 4) == "RNGB" then
+        if self.HandleRaidCheckNoteBundleComm then self:HandleRaidCheckNoteBundleComm(m, s) end
+        return
+    end
+    if m:sub(1, 4) == "RCMI" then
+        if self.HandleRaidCheckMissingPlansComm then self:HandleRaidCheckMissingPlansComm(m, s) end
+        return
+    end
     if m:sub(1, 4) == "RASC" then
         if self.HandleRaidCheckAutoSwitchComm then self:HandleRaidCheckAutoSwitchComm(m, s) end
         return

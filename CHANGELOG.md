@@ -1,8 +1,29 @@
 # Changelog
 
+## [Alpha 0.0.47]
+
+New:
+
+- Added a raid-leader setting to show Raidcheck on readycheck (Settings -> Misc, on by default).
+  - Opens a side Raidcheck panel on the right of the screen (works alongside readycheck assignments).
+  - Checks only the plans bound in the loaded NSRT note (`rsgg-bind`) and shows X/Y per player.
+  - Stays open for 30 seconds after readycheck ends (or until closed).
+  - Right-click a player missing plans to Send all note plans, or use Send to all missing.
+- Added Auto Not Ready if missing note plans (Settings -> Misc, on by default).
+  - Players with the addon who are missing any plans, auto-answer Not Ready on Readychecks.
+  - When that happens, they request the note plans from the raid leader, who auto-sends one Import N plans popup for the full note set (every `rsgg-bind`, not only assigned/missing ones).
+  - On the raid leader's readycheck Raidcheck panel, those players show as Auto-sent after the plans are sent, so the RL doesn't have to send them manually.
+
+Updates:
+
+- `dur:` now shows the plan before the cue time instead of after (same pattern as other NSRT timers).
+  - Example: `time:100;dur:30` shows from 70 to 100.
+- Readycheck grace period default is now 10 seconds (was 5).
+
 ## [Alpha 0.0.46]
 
 New:
+
 - Added a guided tour for first-time users (replay anytime with /rsggtour).
 - Added Ctrl+click in the Plan Library to select multiple plans, then right-click to group them.
 - Added more tips to the in-game Help window.
@@ -10,6 +31,7 @@ New:
 - Added a Copy button for our Patreon link (join.raidstrats.gg).
 
 Fixed:
+
 - Only one "new version available" message now, instead of several.
 - The Plan Library no longer jumps to the top when you load a plan.
 - Imported text now keeps its alignment and background color.
@@ -17,21 +39,18 @@ Fixed:
 - Opening the planner now closes the readycheck assignment popup first.
 - Cones and other shapes now fill with a solid color instead of showing lines.
 
-
-
-
 ## [Alpha 0.0.45]
 
 As we've changed our system to work with uuids, it's not feasable to have multiple plans with same UUID, hence why we've done some changes. Check below.
 
-- Added a way to import multiple plans using our basic !raidstrats-addon prefix, so you can copy e.g. 3 import strings in to import all at once. 
+- Added a way to import multiple plans using our basic !raidstrats-addon prefix, so you can copy e.g. 3 import strings in to import all at once.
 
 - Updated the default duration of NSRT to be 8 sec instead of 30 sec, if dur:N is not set.
 
-- Fixed an issue where you could import the same plan with same uuids as 2 different ones. 
+- Fixed an issue where you could import the same plan with same uuids as 2 different ones.
 - Fixed an issue where you could import duplicate groups.
 
-- Removed the NSRT Button for now. 
+- Removed the NSRT Button for now.
 
 ## [Alpha 0.0.44]
 

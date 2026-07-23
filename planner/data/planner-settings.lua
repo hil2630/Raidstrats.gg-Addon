@@ -50,9 +50,11 @@ function Diar:GetPlannerSettings()
     if s.hideRaidPlansInCombat == nil then s.hideRaidPlansInCombat = false end
     if s.hideRaidCheckNotifs == nil then s.hideRaidCheckNotifs = false end
     if s.readyCheckAssignments == nil then s.readyCheckAssignments = false end
+    if s.readyCheckShowRaidCheck == nil then s.readyCheckShowRaidCheck = true end
+    if s.readyCheckAutoNotReadyMissing == nil then s.readyCheckAutoNotReadyMissing = true end
     if s.readyCheckRaidOnlyInRaid == nil then s.readyCheckRaidOnlyInRaid = true end
     if s.readyCheckPhase == nil then s.readyCheckPhase = 0 end
-    if s.readyCheckGrace == nil then s.readyCheckGrace = 5 end
+    if s.readyCheckGrace == nil then s.readyCheckGrace = 10 end
     if s.raidCheckExpanded == nil then s.raidCheckExpanded = true end
     if s.enableSpellTooltips == nil then s.enableSpellTooltips = false end
     if s.minimapHidden == nil then s.minimapHidden = false end
@@ -310,6 +312,28 @@ function Diar:IsReadyCheckAssignmentsEnabled()
     return false
 end
 
+function Diar:IsReadyCheckShowRaidCheckEnabled()
+    local v = self:GetPlannerSettings().readyCheckShowRaidCheck
+    if v == true or v == 1 then return true end
+    return false
+end
+
+function Diar:IsReadyCheckAutoNotReadyMissingEnabled()
+    local v = self:GetPlannerSettings().readyCheckAutoNotReadyMissing
+    if v == true or v == 1 then return true end
+    return false
+end
+
+function Diar:CanOpenReadyCheckRaidCheckAsLeader()
+    if not self:IsReadyCheckShowRaidCheckEnabled() then
+        return false
+    end
+    if not IsInGroup() then
+        return false
+    end
+    return UnitIsGroupLeader("player") == true
+end
+
 function Diar:IsReadyCheckRaidOnlyInRaidEnabled()
     local v = self:GetPlannerSettings().readyCheckRaidOnlyInRaid
     if v == false or v == 0 then return false end
@@ -330,7 +354,7 @@ end
 
 function Diar:GetReadyCheckGracePeriod()
     local v = tonumber(self:GetPlannerSettings().readyCheckGrace)
-    if v == nil then v = 5 end
+    if v == nil then v = 10 end
     return math.max(0, math.floor(v + 0.0001))
 end
 
@@ -737,6 +761,8 @@ function Diar:ShowPlannerSettingsDialog()
         miscY = AddCheckbox(miscPage, miscY, "nsrtPopupChk", "Hide plan popups (even if assigned)")
         miscY = AddCheckbox(miscPage, miscY, "raidCheckNotifChk", "Hide raidcheck notifications from raid leader")
         miscY = AddCheckbox(miscPage, miscY, "readyCheckAssignChk", "Show assignments on readycheck")
+        miscY = AddCheckbox(miscPage, miscY, "readyCheckShowRaidCheckChk", "Show raidcheck on readycheck (raid leaders)")
+        miscY = AddCheckbox(miscPage, miscY, "readyCheckAutoNotReadyChk", "Auto Not Ready if missing note plans")
         miscY = AddCheckbox(miscPage, miscY, "readyCheckRaidOnlyChk", "Show only readycheck in raid group")
         miscY = AddSecondsRow(miscPage, miscY, "Readycheck grace period (after finished)", "readyCheckGraceEdit")
         miscY = AddNumberRow(miscPage, miscY, "Ready check phase filter (0 = all phases)", "readyCheckPhaseEdit")
@@ -786,6 +812,8 @@ function Diar:ShowPlannerSettingsDialog()
             s.hideNsrtPlan = CheckboxIsChecked(f.nsrtPopupChk)
             s.hideRaidCheckNotifs = CheckboxIsChecked(f.raidCheckNotifChk)
             s.readyCheckAssignments = CheckboxIsChecked(f.readyCheckAssignChk)
+            s.readyCheckShowRaidCheck = CheckboxIsChecked(f.readyCheckShowRaidCheckChk)
+            s.readyCheckAutoNotReadyMissing = CheckboxIsChecked(f.readyCheckAutoNotReadyChk)
             s.readyCheckRaidOnlyInRaid = CheckboxIsChecked(f.readyCheckRaidOnlyChk)
             s.raidCheckExpanded = CheckboxIsChecked(f.raidCheckExpandedChk)
             local rcPhase = ParseSettingsSeconds(f.readyCheckPhaseEdit:GetText())
@@ -824,7 +852,7 @@ function Diar:ShowPlannerSettingsDialog()
                 f.readyCheckPhaseEdit:SetText(tostring(s.readyCheckPhase or 0))
             end
             if f.readyCheckGraceEdit then
-                f.readyCheckGraceEdit:SetText(tostring(s.readyCheckGrace or 5))
+                f.readyCheckGraceEdit:SetText(tostring(s.readyCheckGrace or 10))
             end
             local pf = Diar.plannerFrame
             if pf and pf.compactMode and Diar.SetPlannerCompactMode then
@@ -919,6 +947,12 @@ function Diar:ShowPlannerSettingsDialog()
     if dlg.readyCheckAssignChk then
         dlg.readyCheckAssignChk:SetChecked(self:IsReadyCheckAssignmentsEnabled())
     end
+    if dlg.readyCheckShowRaidCheckChk then
+        dlg.readyCheckShowRaidCheckChk:SetChecked(self:IsReadyCheckShowRaidCheckEnabled())
+    end
+    if dlg.readyCheckAutoNotReadyChk then
+        dlg.readyCheckAutoNotReadyChk:SetChecked(self:IsReadyCheckAutoNotReadyMissingEnabled())
+    end
     if dlg.readyCheckRaidOnlyChk then
         dlg.readyCheckRaidOnlyChk:SetChecked(self:IsReadyCheckRaidOnlyInRaidEnabled())
     end
@@ -929,7 +963,7 @@ function Diar:ShowPlannerSettingsDialog()
         dlg.readyCheckPhaseEdit:SetText(tostring(settings.readyCheckPhase ~= nil and settings.readyCheckPhase or 0))
     end
     if dlg.readyCheckGraceEdit then
-        dlg.readyCheckGraceEdit:SetText(tostring(settings.readyCheckGrace ~= nil and settings.readyCheckGrace or 5))
+        dlg.readyCheckGraceEdit:SetText(tostring(settings.readyCheckGrace ~= nil and settings.readyCheckGrace or 10))
     end
     if dlg.encounterOverviewTabChk then
         dlg.encounterOverviewTabChk:SetChecked(settings.showEncounterOverviewTab == true or settings.showEncounterOverviewTab == 1)

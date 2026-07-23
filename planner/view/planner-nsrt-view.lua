@@ -725,6 +725,9 @@ function Diar:ShowRaidPlanScene(sceneIndex, opts)
     if pf.readyCheckActive and self.UpdateReadyCheckAssignmentArrows then
         self:UpdateReadyCheckAssignmentArrows(pf)
     end
+    if self._readyCheckRaidCheckActive and self.LayoutReadyCheckRaidCheckPanel then
+        self:LayoutReadyCheckRaidCheckPanel()
+    end
     return true
 end
 
