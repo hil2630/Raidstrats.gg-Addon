@@ -9,12 +9,6 @@ if not Addon then return end
 
 local Diar = Addon
 local SetBackdrop = Diar.SetBackdrop
-local RSGG_TITLE_TEXTURE = "Interface\\AddOns\\" .. tostring(addonName) .. "\\title.tga"
-local RSGG_TITLE_W = 523
-local RSGG_TITLE_H = 52
-local RSGG_TITLE_SCALE = 0.36 -- Match size used in CreateMainWindow logo.
-local RSGG_BTN_W = math.floor(RSGG_TITLE_H * RSGG_TITLE_SCALE + 0.5) -- rotated vertical
-local RSGG_BTN_H = math.floor(RSGG_TITLE_W * RSGG_TITLE_SCALE + 0.5)
 
 local function AddEditModeDebugLine(msg)
     Diar._editModeDebugLog = Diar._editModeDebugLog or {}
@@ -92,12 +86,35 @@ function Diar:TryRegisterPlannerWithBlizzardEditMode()
     return false
 end
 
+local function CloseCompactPreviewOnEditModeExit(reason)
+    local pf = Diar and Diar.plannerFrame
+    if not pf or not pf.compactPreviewActive then return end
+    if not Diar.EndCompactPositionPreview then return end
+    AddEditModeDebugLine((reason or "EditMode exit") .. ": closing active compact preview.")
+    Diar:EndCompactPositionPreview(false)
+end
+
+-- Never run Edit Mode UI work inline from Blizzard hooks: hooksecurefunc/HookScript
+-- continuations taint the rest of EnterEditMode (party frames, health color, etc.).
+local function DeferEditModeWork(fn)
+    if type(fn) ~= "function" then return end
+    if C_Timer and C_Timer.After then
+        C_Timer.After(0, fn)
+    else
+        fn()
+    end
+end
+
 function Diar:UpdatePlannerEditModeState()
     local pf = self.plannerFrame
+    local editModeActive = IsPlannerEditModeActive()
     if pf then
+        if not editModeActive and pf.compactPreviewActive then
+            CloseCompactPreviewOnEditModeExit("UpdatePlannerEditModeState")
+        end
         local overlay = pf.editModeCompactOverlay
         if overlay then
-            if IsPlannerEditModeActive() and pf.compactMode then
+            if editModeActive and pf.compactMode then
                 overlay:Show()
                 overlay:SetFrameLevel((pf:GetFrameLevel() or 1) + 50)
                 if pf.resizeGrip then
@@ -108,65 +125,212 @@ function Diar:UpdatePlannerEditModeState()
             end
         end
     end
-    if self.EnsureEditModeManagerShortcutButton then
-        self:EnsureEditModeManagerShortcutButton()
+    DeferEditModeWork(function()
+        if Diar and Diar.EnsureEditModeManagerShortcutButton then
+            Diar:EnsureEditModeManagerShortcutButton()
+        end
+    end)
+end
+
+local function GetEditModeBasicOptionsContainer()
+    local em = EditModeManagerFrame
+    local account = em and em.AccountSettings
+    local scrollChild = account and account.SettingsContainer and account.SettingsContainer.ScrollChild
+    return scrollChild and scrollChild.BasicOptionsContainer or nil
+end
+
+local function GetEditModeMiscOptionsContainer()
+    local em = EditModeManagerFrame
+    local account = em and em.AccountSettings
+    local scrollChild = account and account.SettingsContainer and account.SettingsContainer.ScrollChild
+    local advanced = scrollChild and scrollChild.AdvancedOptionsContainer
+    return advanced and advanced.MiscContainer or nil
+end
+
+local function IsCompactPreviewActive()
+    local pf = Diar and Diar.plannerFrame
+    return pf and pf.compactPreviewActive == true
+end
+
+local function SyncEditModeRaidstratsCheck(chk)
+    if not chk then return end
+    local checked = IsCompactPreviewActive()
+    Diar._editModeCheckSyncing = true
+    if type(chk.SetControlChecked) == "function" then
+        pcall(chk.SetControlChecked, chk, checked)
+    elseif chk.Button and type(chk.Button.SetChecked) == "function" then
+        chk.Button:SetChecked(checked)
+    elseif type(chk.SetChecked) == "function" then
+        chk:SetChecked(checked)
     end
+    Diar._editModeCheckSyncing = nil
+end
+
+local function OnEditModeRaidstratsChecked(isChecked, isUserInput)
+    if Diar._editModeCheckSyncing then return end
+    if isUserInput == false then return end
+    AddEditModeDebugLine(("EditMode Raidstrats checkbox -> %s"):format(tostring(isChecked)))
+    local pf = Diar and Diar.plannerFrame
+    if isChecked then
+        if Diar.StartCompactPositionPreview then
+            Diar:StartCompactPositionPreview({ fromEditModeShortcut = true })
+        end
+    else
+        if pf and pf.compactPreviewActive and Diar.EndCompactPositionPreview then
+            Diar:EndCompactPositionPreview(false)
+        end
+    end
+    SyncEditModeRaidstratsCheck(Diar._editModeRaidstratsCheck)
+end
+
+--- Open Blizzard Edit Mode and start the Raidstrats compact position preview.
+function Diar:OpenWowEditModeForCompactPreview()
+    if C_AddOns and type(C_AddOns.LoadAddOn) == "function" then
+        pcall(C_AddOns.LoadAddOn, "Blizzard_EditMode")
+    elseif UIParentLoadAddOn then
+        pcall(UIParentLoadAddOn, "Blizzard_EditMode")
+    end
+
+    local em = EditModeManagerFrame
+    if not em then
+        print("|cffff6666[Raidstrats.gg]|r Edit Mode is not available.")
+        return false
+    end
+
+    if self.EnsureGlobalEditModeManagerHooks then
+        self:EnsureGlobalEditModeManagerHooks()
+    end
+
+    AddEditModeDebugLine("Opening Blizzard Edit Mode for compact preview.")
+    if type(ShowUIPanel) == "function" then
+        ShowUIPanel(em)
+    elseif type(em.Show) == "function" then
+        em:Show()
+    end
+
+    -- EnterEditMode must finish untainted first; start our preview next frame.
+    DeferEditModeWork(function()
+        if not Diar then return end
+        if Diar.EnsureEditModeManagerShortcutButton then
+            Diar:EnsureEditModeManagerShortcutButton()
+        end
+        local pf = Diar.plannerFrame
+        if not (pf and pf.compactPreviewActive) and Diar.StartCompactPositionPreview then
+            Diar:StartCompactPositionPreview({ fromEditModeShortcut = true })
+        end
+        SyncEditModeRaidstratsCheck(Diar._editModeRaidstratsCheck)
+    end)
+    return true
+end
+
+function Diar:LayoutEditModeRaidstratsCheck()
+    local chk = self._editModeRaidstratsCheck
+    if not chk then return end
+    local em = EditModeManagerFrame
+    if not em then return end
+
+    -- Only touch our checkbox + its option container. Never call EditModeManagerFrame:Layout
+    -- (that re-enters Blizzard setup and is a common CompactUnitFrame taint source).
+    local showAdvanced = type(em.AreAdvancedOptionsEnabled) == "function" and em:AreAdvancedOptionsEnabled()
+    local basic = GetEditModeBasicOptionsContainer()
+    local misc = GetEditModeMiscOptionsContainer()
+    local parent = (showAdvanced and misc) or basic
+    if not parent then return end
+
+    chk:SetParent(parent)
+    chk.layoutIndex = showAdvanced and (chk.advancedLayoutIndex or 50) or (chk.basicLayoutIndex or 50)
+    chk:Show()
+    if type(parent.Layout) == "function" then
+        pcall(parent.Layout, parent)
+    end
+    SyncEditModeRaidstratsCheck(chk)
 end
 
 function Diar:EnsureEditModeManagerShortcutButton()
     local em = EditModeManagerFrame
-    if not em then return end
-    if not self._editModeCompactShortcutBtn then
-        local btn = CreateFrame("Button", nil, em, "BackdropTemplate")
-        btn:SetSize(RSGG_BTN_W, RSGG_BTN_H)
-        btn:SetPoint("RIGHT", em, "LEFT", -6, 0)
-        btn:SetFrameStrata("TOOLTIP")
-        btn:SetFrameLevel((em:GetFrameLevel() or 1) + 120)
-        local icon = btn:CreateTexture(nil, "ARTWORK")
-        icon:SetAllPoints(btn)
-        icon:SetTexture(RSGG_TITLE_TEXTURE)
-        -- Rotate via texcoords to avoid SetRotation squish/distortion.
-        -- 180deg from previous orientation.
-        icon:SetTexCoord(1, 0, 0, 0, 1, 1, 0, 1)
-        icon:SetVertexColor(1, 1, 1, 1)
-        btn.icon = icon
-        btn:SetScript("OnClick", function()
-            AddEditModeDebugLine("EditMode manager shortcut button clicked.")
-            local pf = Diar and Diar.plannerFrame
-            if pf and pf.compactPreviewActive and Diar.EndCompactPositionPreview then
-                Diar:EndCompactPositionPreview(false)
-                return
-            end
-            if Diar.StartCompactPositionPreview then
-                Diar:StartCompactPositionPreview({ fromEditModeShortcut = true })
-            end
-        end)
-        btn:SetScript("OnEnter", function(s)
-            if s.icon then
-                s.icon:SetVertexColor(0.88, 0.96, 1.00, 1)
-            end
-            GameTooltip:SetOwner(s, "ANCHOR_RIGHT")
-            GameTooltip:SetText("Raidstrats compact positioning", 1, 1, 1)
-            GameTooltip:AddLine("Click to toggle compact position mode.", 0.80, 0.88, 1.00, true)
-            GameTooltip:Show()
-        end)
-        btn:SetScript("OnLeave", function(s)
-            if s.icon then
-                s.icon:SetVertexColor(1, 1, 1, 1)
-            end
-            GameTooltip:Hide()
-        end)
-        self._editModeCompactShortcutBtn = btn
-        AddEditModeDebugLine("Created EditMode manager shortcut button.")
-    else
-        local btn = self._editModeCompactShortcutBtn
-        btn:SetSize(RSGG_BTN_W, RSGG_BTN_H)
-        btn:ClearAllPoints()
-        btn:SetPoint("RIGHT", em, "LEFT", -6, 0)
-        btn:SetFrameStrata("TOOLTIP")
-        btn:SetFrameLevel((em:GetFrameLevel() or 1) + 120)
+    if not em or not em.AccountSettings or not em.AccountSettings.SettingsContainer then
+        return
     end
-    self._editModeCompactShortcutBtn:SetShown(IsPlannerEditModeActive())
+
+    -- Retire the old side logo button if it still exists from a prior load.
+    if self._editModeCompactShortcutBtn then
+        self._editModeCompactShortcutBtn:Hide()
+        self._editModeCompactShortcutBtn:SetParent(nil)
+        self._editModeCompactShortcutBtn = nil
+        AddEditModeDebugLine("Removed legacy EditMode logo shortcut button.")
+    end
+
+    if not self._editModeRaidstratsCheck then
+        -- Parent under SettingsContainer initially; we reparent into Basic/Misc ourselves.
+        -- Do NOT inject into account.settingsCheckButtons — writing that table taints
+        -- Blizzard's LayoutSettings iteration during EnterEditMode.
+        local parent = em.AccountSettings.SettingsContainer
+        local chk
+        local created = pcall(function()
+            chk = CreateFrame("Frame", "RaidstratsEditModeCompactCheck", parent, "EditModeManagerSettingCheckButtonTemplate")
+        end)
+        if not created or not chk then
+            created = pcall(function()
+                chk = CreateFrame("Frame", "RaidstratsEditModeCompactCheck", parent, "EditModeCheckButtonTemplate")
+            end)
+        end
+        if not created or not chk then
+            AddEditModeDebugLine("Could not create EditMode checkbox template.")
+            return
+        end
+
+        -- Brand label: RAIDSTRATS + blue .GG (#60a5fa, same as overview tab).
+        local label = "RAIDSTRATS|cff60a5fa.GG|r"
+        chk.labelText = label
+        chk.isBasicOption = true
+        chk.basicLayoutIndex = 50
+        chk.advancedLayoutIndex = 50
+        if EditModeManagerOptionsCategory and EditModeManagerOptionsCategory.Misc then
+            chk.category = EditModeManagerOptionsCategory.Misc
+        end
+        if chk.Label and chk.Label.SetText then
+            chk.Label:SetText(label)
+        end
+        if type(chk.OnLoad) == "function" then
+            pcall(chk.OnLoad, chk)
+        end
+        if chk.Label and chk.Label.SetText then
+            chk.Label:SetText(label)
+        end
+
+        if type(chk.SetCallback) == "function" then
+            chk:SetCallback(OnEditModeRaidstratsChecked)
+        elseif chk.Button then
+            chk.Button:SetScript("OnClick", function(btn)
+                OnEditModeRaidstratsChecked(btn:GetChecked() and true or false, true)
+            end)
+        end
+        if type(chk.SetMouseOverCallback) == "function" then
+            chk:SetMouseOverCallback(function() end)
+        end
+
+        self._editModeRaidstratsCheck = chk
+        AddEditModeDebugLine("Created EditMode Raidstrats checkbox (manual layout, no Blizzard table inject).")
+
+        local account = em.AccountSettings
+        if not self._editModeLayoutSettingsHooked and type(account.LayoutSettings) == "function" then
+            self._editModeLayoutSettingsHooked = true
+            hooksecurefunc(account, "LayoutSettings", function()
+                -- Deferred: running layout inline here taints the rest of EnterEditMode.
+                DeferEditModeWork(function()
+                    if Diar and Diar.LayoutEditModeRaidstratsCheck then
+                        Diar:LayoutEditModeRaidstratsCheck()
+                    end
+                end)
+            end)
+        end
+    end
+
+    if IsPlannerEditModeActive() then
+        self:LayoutEditModeRaidstratsCheck()
+    elseif self._editModeRaidstratsCheck then
+        SyncEditModeRaidstratsCheck(self._editModeRaidstratsCheck)
+    end
 end
 
 function Diar:EnsureGlobalEditModeManagerHooks()
@@ -178,40 +342,25 @@ function Diar:EnsureGlobalEditModeManagerHooks()
 
     if type(em.EnterEditMode) == "function" then
         hooksecurefunc(em, "EnterEditMode", function()
-            if Diar and Diar.EnsureEditModeManagerShortcutButton then
-                Diar:EnsureEditModeManagerShortcutButton()
-            end
+            DeferEditModeWork(function()
+                if Diar and Diar.EnsureEditModeManagerShortcutButton then
+                    Diar:EnsureEditModeManagerShortcutButton()
+                end
+            end)
         end)
     end
     if type(em.ExitEditMode) == "function" then
         hooksecurefunc(em, "ExitEditMode", function()
-            local pf = Diar and Diar.plannerFrame
-            if pf and pf.compactPreviewActive and pf.__previewFromEditModeShortcut and Diar.EndCompactPositionPreview then
-                AddEditModeDebugLine("ExitEditMode: closing active compact preview.")
-                Diar:EndCompactPositionPreview(false)
-            end
-            if Diar and Diar.EnsureEditModeManagerShortcutButton then
-                Diar:EnsureEditModeManagerShortcutButton()
-            end
+            DeferEditModeWork(function()
+                CloseCompactPreviewOnEditModeExit("ExitEditMode")
+                if Diar and Diar.EnsureEditModeManagerShortcutButton then
+                    Diar:EnsureEditModeManagerShortcutButton()
+                end
+            end)
         end)
     end
-    if type(em.HookScript) == "function" then
-        em:HookScript("OnShow", function()
-            if Diar and Diar.EnsureEditModeManagerShortcutButton then
-                Diar:EnsureEditModeManagerShortcutButton()
-            end
-        end)
-        em:HookScript("OnHide", function()
-            local pf = Diar and Diar.plannerFrame
-            if pf and pf.compactPreviewActive and pf.__previewFromEditModeShortcut and Diar.EndCompactPositionPreview then
-                AddEditModeDebugLine("EditMode frame hidden: closing active compact preview.")
-                Diar:EndCompactPositionPreview(false)
-            end
-            if Diar and Diar.EnsureEditModeManagerShortcutButton then
-                Diar:EnsureEditModeManagerShortcutButton()
-            end
-        end)
-    end
+    -- Intentionally no HookScript OnShow/OnHide on EditModeManagerFrame — those can
+    -- taint Blizzard's show/enter path. EnterEditMode/ExitEditMode hooks are enough.
 end
 
 function Diar:EnsurePlannerEditModeIntegration()
@@ -244,26 +393,32 @@ function Diar:EnsurePlannerEditModeIntegration()
         AddEditModeDebugLine("Installed EditMode enter/exit hooks.")
         if type(EditModeManagerFrame.EnterEditMode) == "function" then
             hooksecurefunc(EditModeManagerFrame, "EnterEditMode", function()
-                if Diar and Diar.UpdatePlannerEditModeState then
-                    Diar:UpdatePlannerEditModeState()
-                end
+                DeferEditModeWork(function()
+                    if Diar and Diar.UpdatePlannerEditModeState then
+                        Diar:UpdatePlannerEditModeState()
+                    end
+                end)
             end)
         end
         if type(EditModeManagerFrame.ExitEditMode) == "function" then
             hooksecurefunc(EditModeManagerFrame, "ExitEditMode", function()
-                if Diar and Diar.UpdatePlannerEditModeState then
-                    Diar:UpdatePlannerEditModeState()
-                end
+                DeferEditModeWork(function()
+                    if Diar and Diar.UpdatePlannerEditModeState then
+                        Diar:UpdatePlannerEditModeState()
+                    end
+                end)
             end)
         end
     end
 
-    if self.EnsureEditModeManagerShortcutButton then
-        self:EnsureEditModeManagerShortcutButton()
-    end
     if self.EnsureGlobalEditModeManagerHooks then
         self:EnsureGlobalEditModeManagerHooks()
     end
+    DeferEditModeWork(function()
+        if Diar and Diar.EnsureEditModeManagerShortcutButton then
+            Diar:EnsureEditModeManagerShortcutButton()
+        end
+    end)
 
     -- Optional native integration when EditModeExpanded library is installed.
     if not pf._editModeExpandedRegistered and LibStub and type(LibStub.GetLibrary) == "function" then
@@ -298,9 +453,11 @@ do
             if Diar and Diar.EnsureGlobalEditModeManagerHooks then
                 Diar:EnsureGlobalEditModeManagerHooks()
             end
-            if Diar and Diar.EnsureEditModeManagerShortcutButton then
-                Diar:EnsureEditModeManagerShortcutButton()
-            end
+            DeferEditModeWork(function()
+                if Diar and Diar.EnsureEditModeManagerShortcutButton then
+                    Diar:EnsureEditModeManagerShortcutButton()
+                end
+            end)
         end
     end)
 end

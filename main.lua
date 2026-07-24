@@ -405,6 +405,12 @@ function Raidstrats:PersistCurrentPlanToSaved()
     entry.data = CopyPlanData(data)
     entry.data.savedEntryId = entry.id
     if self.SanitizePlanData then self:SanitizePlanData(entry.data) end
+    -- Debounced sync-version commit so Version: X updates live after edits settle.
+    if self.SchedulePlanSyncVersionCommit then
+        self:SchedulePlanSyncVersionCommit()
+    elseif self.UpdatePlanSyncVersionLabel then
+        self:UpdatePlanSyncVersionLabel(self.plannerFrame)
+    end
     return true
 end
 
@@ -1882,8 +1888,9 @@ function Raidstrats:BuildSharePayload(data, opts)
     if not data then return nil end
     -- Stamp the sync version so importers are immediately ready for delta push updates.
     -- Push updates manage their own version, so they opt out via skipSyncVersionStamp.
+    -- Stamp bumps only when content differs from the last sync baseline.
     if self.StampShareSyncVersion and not (opts and opts.skipSyncVersionStamp) then
-        self:StampShareSyncVersion(data)
+        self:StampShareSyncVersion(data, opts)
     end
     local json = EncodeJSON(data)
     if not json or json == "" then return nil end

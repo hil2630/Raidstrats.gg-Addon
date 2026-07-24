@@ -1347,6 +1347,50 @@ function Diar:GetPlanSyncVersion(planKey)
     return rec and tonumber(rec.version) or nil
 end
 
+function Diar:EnsurePlanSyncVersionLabel(pf)
+    pf = pf or self.plannerFrame
+    if not pf or not pf.canvas then return nil end
+    if pf.planSyncVersionLabel then return pf.planSyncVersionLabel end
+    local label = pf.canvas:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    label:SetPoint("BOTTOMRIGHT", pf.canvas, "BOTTOMRIGHT", -56, 6)
+    label:SetJustifyH("RIGHT")
+    label:SetTextColor(1, 1, 1, 0.9)
+    label:SetText("")
+    pf.planSyncVersionLabel = label
+    return label
+end
+
+function Diar:UpdatePlanSyncVersionLabel(pf)
+    pf = pf or self.plannerFrame
+    local label = self:EnsurePlanSyncVersionLabel(pf)
+    if not label then return end
+    -- Keep style/position in sync for frames created before this tweak.
+    label:ClearAllPoints()
+    label:SetPoint("BOTTOMRIGHT", pf.canvas, "BOTTOMRIGHT", -56, 6)
+    label:SetTextColor(1, 1, 1, 0.9)
+    local data = self.plannerData
+    if not data or type(data.scenes) ~= "table" or #data.scenes == 0 then
+        label:SetText("")
+        label:Hide()
+        return
+    end
+    local planKey = self.GetPlanIdentityKey and self:GetPlanIdentityKey(data) or nil
+    local ver = (planKey and self:GetPlanSyncVersion(planKey)) or nil
+    local inst = tostring(data.instanceKey or "")
+    if inst ~= "" then
+        -- Short stable peek of the unique key body (strip "inst:" / "plan:" prefixes).
+        inst = inst:gsub("^inst:", ""):gsub("^plan:", "")
+        if #inst > 6 then inst = inst:sub(1, 6) end
+    end
+    local verText = ver and tostring(ver) or "—"
+    if inst ~= "" then
+        label:SetText(("Version: %s-%s"):format(verText, inst))
+    else
+        label:SetText(("Version: %s"):format(verText))
+    end
+    label:Show()
+end
+
 function Diar:GetPlanPushBaseline(planKey)
     if not planKey or planKey == "" then return nil end
     local rec = self:GetPlanSyncStore()[planKey]
@@ -1376,12 +1420,70 @@ function Diar:SetPlanSyncVersion(planKey, version)
     rec.version = tonumber(version)
     rec.t = time()
     store[planKey] = rec
+    if self.UpdatePlanSyncVersionLabel then
+        self:UpdatePlanSyncVersionLabel(self.plannerFrame)
+    end
+end
+
+-- After edits persist, wait briefly then commit a sync version if content changed.
+-- Debounced so dragging/moving doesn't bump every mouse-up — only once editing settles.
+local PLAN_SYNC_VERSION_COMMIT_DELAY = 0.75
+function Diar:SchedulePlanSyncVersionCommit()
+    if self._planSyncVersionCommitTimer then
+        self._planSyncVersionCommitTimer:Cancel()
+        self._planSyncVersionCommitTimer = nil
+    end
+    local function commit()
+        Diar._planSyncVersionCommitTimer = nil
+        if Diar.plannerData and Diar.EnsurePlanSyncVersionMatchesContent then
+            Diar:EnsurePlanSyncVersionMatchesContent(Diar.plannerData)
+        elseif Diar.UpdatePlanSyncVersionLabel then
+            Diar:UpdatePlanSyncVersionLabel(Diar.plannerFrame)
+        end
+    end
+    if C_Timer and C_Timer.NewTimer then
+        self._planSyncVersionCommitTimer = C_Timer.NewTimer(PLAN_SYNC_VERSION_COMMIT_DELAY, commit)
+    else
+        commit()
+    end
+end
+
+-- If the current plan content differs from the last stamped sync baseline, bump the
+-- sync version once and refresh the baseline. Called from readycheck/share/push and
+-- (debounced) after plan edits persist so the canvas Version label stays live.
+-- Returns the current sync version for the plan, or nil.
+function Diar:EnsurePlanSyncVersionMatchesContent(data)
+    if type(data) ~= "table" then return nil end
+    if self.EnsurePlanInstanceKey then self:EnsurePlanInstanceKey(data) end
+    if type(data.instanceKey) ~= "string" or data.instanceKey == "" then
+        return nil
+    end
+    local planKey = "inst:" .. data.instanceKey
+    local shareData = self.PreparePlanDataForShare and self:PreparePlanDataForShare(data) or nil
+    if type(shareData) ~= "table" then
+        return self:GetPlanSyncVersion(planKey)
+    end
+    shareData.syncVersion = nil
+
+    local existing = self:GetPlanSyncVersion(planKey)
+    local baseline = self:GetPlanPushBaseline(planKey)
+    if existing and baseline and TableDeepEqual(baseline, shareData) then
+        return existing
+    end
+
+    local version = (tonumber(existing) or 0) + 1
+    self:SetPlanPushBaseline(planKey, shareData, version)
+    if self.UpdatePlanSyncVersionLabel then
+        self:UpdatePlanSyncVersionLabel(self.plannerFrame)
+    end
+    return version
 end
 
 -- Called when building a share payload. Ensures the plan has a sync version + baseline and
 -- stamps `syncVersion` on the (already sanitized) share copy so importers start in sync,
 -- letting the very first push apply as a delta instead of a full reimport.
-function Diar:StampShareSyncVersion(shareData)
+-- Bumps only when content differs from the last baseline (same rule as Ensure above).
+function Diar:StampShareSyncVersion(shareData, opts)
     if type(shareData) ~= "table" then return end
     if type(shareData.instanceKey) ~= "string" or shareData.instanceKey == "" then
         return
@@ -1390,7 +1492,18 @@ function Diar:StampShareSyncVersion(shareData)
     local existing = self:GetPlanSyncVersion(planKey)
     local baseline = self:GetPlanPushBaseline(planKey)
     local version
-    if existing and baseline and TableDeepEqual(baseline, shareData) then
+    if opts and opts.reuseSyncVersion then
+        -- Force reuse (no content check). Prefer EnsurePlanSyncVersionMatchesContent first.
+        if existing then
+            version = existing
+            if not baseline then
+                self:SetPlanPushBaseline(planKey, shareData, version)
+            end
+        else
+            version = 1
+            self:SetPlanPushBaseline(planKey, shareData, version)
+        end
+    elseif existing and baseline and TableDeepEqual(baseline, shareData) then
         -- Already in sync with what we last pushed/shared; reuse the version.
         version = existing
     else
@@ -1399,6 +1512,9 @@ function Diar:StampShareSyncVersion(shareData)
         self:SetPlanPushBaseline(planKey, shareData, version)
     end
     shareData.syncVersion = version
+    if self.UpdatePlanSyncVersionLabel then
+        self:UpdatePlanSyncVersionLabel(self.plannerFrame)
+    end
 end
 
 -- Called on import: seed our local version from a shared payload so we're ready for delta pushes.

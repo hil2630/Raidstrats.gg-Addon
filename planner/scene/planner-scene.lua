@@ -337,16 +337,25 @@ function Diar:ShowCompactPreviewChrome(pf, show)
         lbl:SetText("Drag + resize to set compact preview position.")
         lbl:SetTextColor(0.85, 0.88, 0.92)
         bar.label = lbl
+        local autoSaved = bar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        autoSaved:SetPoint("RIGHT", bar, "RIGHT", -12, 0)
+        autoSaved:SetJustifyH("RIGHT")
+        autoSaved:SetText("Saved automatically")
+        autoSaved:SetTextColor(0.55, 0.82, 0.62)
+        autoSaved:Hide()
+        bar.autoSavedLabel = autoSaved
         local saveBtn = CreatePlannerIconBtn(bar, "Save", 84, 28)
         saveBtn:SetPoint("RIGHT", bar, "RIGHT", -96, 0)
         saveBtn:SetScript("OnClick", function()
             Diar:EndCompactPositionPreview(true)
         end)
+        bar.saveBtn = saveBtn
         local cancelBtn = CreatePlannerIconBtn(bar, "Cancel", 84, 28)
         cancelBtn:SetPoint("RIGHT", bar, "RIGHT", -6, 0)
         cancelBtn:SetScript("OnClick", function()
             Diar:EndCompactPositionPreview(false)
         end)
+        bar.cancelBtn = cancelBtn
         pf.compactPreviewBar = bar
     end
     if not pf.compactPreviewNote then
@@ -366,10 +375,27 @@ function Diar:ShowCompactPreviewChrome(pf, show)
     local bar = pf.compactPreviewBar
     local note = pf.compactPreviewNote
     if show then
+        local fromEditMode = pf.__previewFromEditModeShortcut == true
         bar:ClearAllPoints()
         bar:SetPoint("BOTTOMLEFT", pf, "BOTTOMLEFT", 0, 0)
         bar:SetPoint("BOTTOMRIGHT", pf, "BOTTOMRIGHT", 0, 0)
         bar:SetFrameLevel(pf:GetFrameLevel() + 40)
+        if bar.label then
+            if fromEditMode then
+                bar.label:SetText("Drag + resize to set compact position.")
+            else
+                bar.label:SetText("Drag + resize to set compact preview position.")
+            end
+        end
+        if bar.saveBtn then
+            if fromEditMode then bar.saveBtn:Hide() else bar.saveBtn:Show() end
+        end
+        if bar.cancelBtn then
+            if fromEditMode then bar.cancelBtn:Hide() else bar.cancelBtn:Show() end
+        end
+        if bar.autoSavedLabel then
+            if fromEditMode then bar.autoSavedLabel:Show() else bar.autoSavedLabel:Hide() end
+        end
         bar:Show()
         if note then
             note:ClearAllPoints()
@@ -383,6 +409,16 @@ function Diar:ShowCompactPreviewChrome(pf, show)
     else
         bar:Hide()
         if note then note:Hide() end
+    end
+end
+
+-- Method (not a file-scope local): planner-scene.lua is at Lua's 200-local limit.
+function Diar.SaveCompactPreviewIfEditMode(pf)
+    if not pf or not pf.compactPreviewActive or not pf.__previewFromEditModeShortcut then
+        return
+    end
+    if Diar.SavePlannerNsrtCompactLayoutState then
+        Diar:SavePlannerNsrtCompactLayoutState(pf)
     end
 end
 
@@ -429,26 +465,38 @@ function Diar:StartCompactPositionPreview(opts)
     self:ShowCompactPreviewChrome(pf, true)
     if self.UpdatePlannerModeToggleBtn then self.UpdatePlannerModeToggleBtn(pf) end
     pf:Show()
+    if self.EnsureEditModeManagerShortcutButton then
+        self:EnsureEditModeManagerShortcutButton()
+    end
 end
 
 function Diar:EndCompactPositionPreview(save)
     local pf = self.plannerFrame
     if not pf or not pf.compactPreviewActive then return end
-    pf.compactPreviewActive = nil
-    self:ShowCompactPreviewChrome(pf, false)
-    if self.UpdatePlannerModeToggleBtn then self.UpdatePlannerModeToggleBtn(pf) end
 
     local wasExpanded = pf.__previewWasExpanded
     local wasShown = pf.__previewWasShown
     local fromEditModeShortcut = pf.__previewFromEditModeShortcut == true
     local restorePos = pf.__previewRestorePos
+
+    -- Edit Mode preview always keeps the last placed position (no Cancel).
+    if fromEditModeShortcut then
+        self:SavePlannerNsrtCompactLayoutState(pf)
+    end
+
+    pf.compactPreviewActive = nil
+    self:ShowCompactPreviewChrome(pf, false)
+    if self.UpdatePlannerModeToggleBtn then self.UpdatePlannerModeToggleBtn(pf) end
+
     pf.__previewWasShown = nil
     pf.__previewFromEditModeShortcut = nil
     pf.__previewWasExpanded = nil
     pf.__previewRestorePos = nil
 
     if save then
-        self:SavePlannerNsrtCompactLayoutState(pf)
+        if not fromEditModeShortcut then
+            self:SavePlannerNsrtCompactLayoutState(pf)
+        end
         if pf.compactMode and self.SetPlannerCompactMode then
             pf.nsrtSceneActive = nil
             pf.__skipCompactSaveOnce = true
@@ -484,6 +532,9 @@ function Diar:EndCompactPositionPreview(save)
     end
     if save and not wasShown and pf.Hide then
         pf:Hide()
+    end
+    if self.EnsureEditModeManagerShortcutButton then
+        self:EnsureEditModeManagerShortcutButton()
     end
 end
 
@@ -5689,7 +5740,9 @@ FinishPlannerFrameMove = function(pf)
             end)
         end
     end
-    if not pf.compactPreviewActive and Diar.SavePlannerFramePosition then
+    if pf.compactPreviewActive then
+        Diar.SaveCompactPreviewIfEditMode(pf)
+    elseif Diar.SavePlannerFramePosition then
         Diar:SavePlannerFramePosition(pf)
     end
 end
@@ -6061,7 +6114,9 @@ local function BeginCompactProportionalResize(pf, grip)
             self:SetScript("OnUpdate", nil)
             pf.__plannerSizing = nil
             pf.__compactResize = nil
-            if not pf.compactPreviewActive and Diar.SavePlannerCompactLayoutState then
+            if pf.compactPreviewActive then
+                Diar.SaveCompactPreviewIfEditMode(pf)
+            elseif Diar.SavePlannerCompactLayoutState then
                 Diar:SavePlannerCompactLayoutState(pf)
             end
             return
@@ -6094,7 +6149,9 @@ local function AttachPlannerResizeGrip(pf, grip)
             self:SetScript("OnUpdate", nil)
             pf.__plannerSizing = nil
             pf.__compactResize = nil
-            if not pf.compactPreviewActive and Diar.SavePlannerCompactLayoutState then
+            if pf.compactPreviewActive then
+                Diar.SaveCompactPreviewIfEditMode(pf)
+            elseif Diar.SavePlannerCompactLayoutState then
                 Diar:SavePlannerCompactLayoutState(pf)
             end
         else
@@ -6515,6 +6572,17 @@ function Diar:ShowPlannerViewer(opts)
         ApplyPreviewIndexCornerStyle(previewIndexBtn)
         pf.previewIndexBtn = previewIndexBtn
         Diar:UpdatePreviewIndexButton(pf)
+
+        -- Subtle plan sync version (bottom-right of canvas, left of preview eye).
+        local planSyncVersionLabel = canvas:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        planSyncVersionLabel:SetPoint("BOTTOMRIGHT", canvas, "BOTTOMRIGHT", -56, 6)
+        planSyncVersionLabel:SetJustifyH("RIGHT")
+        planSyncVersionLabel:SetTextColor(1, 1, 1, 0.9)
+        planSyncVersionLabel:SetText("")
+        pf.planSyncVersionLabel = planSyncVersionLabel
+        if Diar.UpdatePlanSyncVersionLabel then
+            Diar:UpdatePlanSyncVersionLabel(pf)
+        end
 
         local nsrtExportBtn = CreatePlannerIconBtn(controls, "NSRT", 72, CONTROLS_H)
         nsrtExportBtn:SetPoint("RIGHT", settingsBtn, "LEFT", -6, 0)
@@ -7031,6 +7099,7 @@ function Diar:ShowPlannerViewer(opts)
     end
     self:RefreshSavedPlansList()
     if self.UpdatePushUpdateButton then self:UpdatePushUpdateButton() end
+    if self.UpdatePlanSyncVersionLabel then self:UpdatePlanSyncVersionLabel(pf) end
     if self.ApplyRaidLeadViewLayout then self:ApplyRaidLeadViewLayout(pf) end
     if self.OnPlannerPlanChanged then self:OnPlannerPlanChanged() end
     self:ResetPlannerCanvasLock()
@@ -7507,9 +7576,13 @@ function Diar:RefreshPlannerScene()
     end
 end
 
+-- Animation helpers live on Diar.__plannerAnim (not file-scope locals).
+-- Lua hard-caps a chunk at 200 locals; this file must stay under that.
+Diar.__plannerAnim = Diar.__plannerAnim or {}
+
 -- Normalize path to list of {x,y} in 0..100. Handles nested [[x,y],...] or flat [x,y,x,y,...] from JSON.
 -- If values look like 0..1 (all <= 1.5), scale by 100.
-local function NormalizePath(path)
+function Diar.__plannerAnim.NormalizePath(path)
     if not path or type(path) ~= "table" or #path < 2 then return nil end
     local out = {}
     local first = path[1]
@@ -7535,7 +7608,7 @@ local function NormalizePath(path)
 end
 
 -- Precompute segment lengths and total for arc-length parameterization (constant speed along path).
-local function BuildPathLengths(points)
+function Diar.__plannerAnim.BuildPathLengths(points)
     if not points or #points < 2 then return nil end
     local lengths = {}
     local total = 0
@@ -7552,7 +7625,7 @@ local function BuildPathLengths(points)
 end
 
 -- Get x,y (0..100) at progress 0..1 along path using arc-length; lengths from BuildPathLengths.
-local function GetPathPositionAtProgress(points, lengths, progress)
+function Diar.__plannerAnim.GetPathPositionAtProgress(points, lengths, progress)
     if not points or #points < 2 then
         local p = points and points[1]
         return p and (p[1] or 0) or 0, p and (p[2] or 0) or 0
@@ -7587,13 +7660,13 @@ local function GetPathPositionAtProgress(points, lengths, progress)
     return last[1] or 0, last[2] or 0
 end
 
-local function Clamp(v, lo, hi)
+function Diar.__plannerAnim.Clamp(v, lo, hi)
     if v < lo then return lo end
     if v > hi then return hi end
     return v
 end
 
-local function GetAnimTimeState(t, startT, dur, loop)
+function Diar.__plannerAnim.GetAnimTimeState(t, startT, dur, loop)
     dur = (dur and dur > 0) and dur or 0.001
     if t < startT then
         return false, 0, false
@@ -7606,10 +7679,10 @@ local function GetAnimTimeState(t, startT, dur, loop)
     if ended then
         return false, 1, true
     end
-    return true, Clamp((t - startT) / dur, 0, 1), false
+    return true, Diar.__plannerAnim.Clamp((t - startT) / dur, 0, 1), false
 end
 
-local function ResolveAnimItemIndex(anim, scene, path)
+function Diar.__plannerAnim.ResolveAnimItemIndex(anim, scene, path)
     local itemIndex = tonumber(anim and anim.itemIndex)
     if itemIndex and itemIndex >= 0 then
         return math.floor(itemIndex + 0.0001) + 1
@@ -7646,7 +7719,7 @@ local function ResolveAnimItemIndex(anim, scene, path)
     return 1
 end
 
-local function SetItemPositionPercent(item, canvas, cw, ch, xp, yp, vc)
+function Diar.__plannerAnim.SetItemPositionPercent(item, canvas, cw, ch, xp, yp, vc)
     if not item or not item.widget then return end
     if vc == nil and Diar.plannerFrame then vc = Diar.plannerFrame.sceneViewContext end
     item.currentX = xp
@@ -7656,10 +7729,11 @@ local function SetItemPositionPercent(item, canvas, cw, ch, xp, yp, vc)
     item.widget:SetPoint("TOPLEFT", canvas, "TOPLEFT", px, -py)
 end
 
-local function ApplyAnimPosition(pf, scene, canvas, cw, ch, t)
+function Diar.ApplyAnimPosition(pf, scene, canvas, cw, ch, t)
     if not pf.sceneAnimations then return end
     local root = canvas
     local vc = pf.sceneViewContext
+    local A = Diar.__plannerAnim
 
     -- Reset all widgets to base state every frame (use widget.baseX/baseY so shapes are correct).
     if pf.frontalBeamWidgets then
@@ -7686,7 +7760,7 @@ local function ApplyAnimPosition(pf, scene, canvas, cw, ch, t)
             else
                 local bx = (item.widget and item.widget.baseX) or ((type(item.x) == "number" and item.x or 0) / 100)
                 local by = (item.widget and item.widget.baseY) or ((type(item.y) == "number" and item.y or 0) / 100)
-                SetItemPositionPercent(item, root, cw, ch, bx, by, vc)
+                A.SetItemPositionPercent(item, root, cw, ch, bx, by, vc)
                 w:SetScale(1)
                 if w.basePixelW and w.basePixelH and w.basePixelW > 0 and w.basePixelH > 0 then
                     w:SetSize(w.basePixelW, w.basePixelH)
@@ -7705,15 +7779,7 @@ local function ApplyAnimPosition(pf, scene, canvas, cw, ch, t)
 
     -- Reuse helpers table to avoid allocating every frame (memory leak)
     if not pf.animHelpers then
-        pf.animHelpers = {
-            NormalizePath = NormalizePath,
-            BuildPathLengths = BuildPathLengths,
-            GetPathPositionAtProgress = GetPathPositionAtProgress,
-            GetAnimTimeState = GetAnimTimeState,
-            ResolveAnimItemIndex = ResolveAnimItemIndex,
-            SetItemPositionPercent = SetItemPositionPercent,
-            Clamp = Clamp,
-        }
+        pf.animHelpers = A
     end
 
     if Diar.PlannerPath and Diar.PlannerPath.Apply then Diar.PlannerPath.Apply(pf, scene, root, cw, ch, t, pf.animHelpers) end
@@ -7727,7 +7793,6 @@ end
 Diar.GetSceneDuration = GetSceneDuration
 Diar.GetPlannerRenderCanvasSize = GetPlannerRenderCanvasSize
 Diar.GetPlannerItemRoot = GetPlannerItemRoot
-Diar.ApplyAnimPosition = ApplyAnimPosition
 Diar.ApplyPlannerChromeTransparent = ApplyPlannerChromeTransparent
 Diar.NormalizeAssignName = NormalizeAssignName
 
@@ -7772,7 +7837,9 @@ function Diar:RefreshPlannerViewportDisplay(panOnly)
 
     if pf.animPlaying and pf.animStart then
         local t = pf.animPaused and (pf.pausedTime or 0) or (GetTime() - pf.animStart)
-        ApplyAnimPosition(pf, scene, root, cw, ch, t)
+        if Diar.ApplyAnimPosition then
+            Diar.ApplyAnimPosition(pf, scene, root, cw, ch, t)
+        end
     end
     UpdatePlannerZoomLabel(pf)
 end

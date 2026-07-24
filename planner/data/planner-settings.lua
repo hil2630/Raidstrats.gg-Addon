@@ -51,6 +51,7 @@ function Diar:GetPlannerSettings()
     if s.hideRaidCheckNotifs == nil then s.hideRaidCheckNotifs = false end
     if s.readyCheckAssignments == nil then s.readyCheckAssignments = false end
     if s.readyCheckShowRaidCheck == nil then s.readyCheckShowRaidCheck = true end
+    if s.readyCheckCheckPlanVersions == nil then s.readyCheckCheckPlanVersions = true end
     if s.readyCheckAutoNotReadyMissing == nil then s.readyCheckAutoNotReadyMissing = true end
     if s.readyCheckRaidOnlyInRaid == nil then s.readyCheckRaidOnlyInRaid = true end
     if s.readyCheckPhase == nil then s.readyCheckPhase = 0 end
@@ -324,6 +325,12 @@ function Diar:IsReadyCheckAutoNotReadyMissingEnabled()
     return false
 end
 
+function Diar:IsReadyCheckCheckPlanVersionsEnabled()
+    local v = self:GetPlannerSettings().readyCheckCheckPlanVersions
+    if v == false or v == 0 then return false end
+    return true
+end
+
 function Diar:CanOpenReadyCheckRaidCheckAsLeader()
     if not self:IsReadyCheckShowRaidCheckEnabled() then
         return false
@@ -375,15 +382,15 @@ end
 function Diar:ShowPlannerSettingsDialog()
     local settings = self:GetPlannerSettings()
 
-    if self.plannerSettingsDialog and not self.plannerSettingsDialog.__settingsV11 then
+    if self.plannerSettingsDialog and not self.plannerSettingsDialog.__settingsV14 then
         self.plannerSettingsDialog:Hide()
         self.plannerSettingsDialog = nil
     end
 
     if not self.plannerSettingsDialog then
         local f = CreateFrame("Frame", "RaidstratsPlannerSettingsDialog", UIParent, "BackdropTemplate")
-        f.__settingsV11 = true
-        f:SetSize(504, 668)
+        f.__settingsV14 = true
+        f:SetSize(600, 668)
         f:SetFrameStrata("FULLSCREEN_DIALOG")
         f:SetFrameLevel(500)
         f:SetPoint("CENTER")
@@ -424,7 +431,7 @@ function Diar:ShowPlannerSettingsDialog()
 
         local subtitle = header:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         subtitle:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -2)
-        subtitle:SetText("Compact, display, and misc options")
+        subtitle:SetText("Compact, display, raider, raid lead, and misc options")
         subtitle:SetTextColor(0.82, 0.86, 0.93)
 
         local tabBar = CreateFrame("Frame", nil, body)
@@ -461,11 +468,11 @@ function Diar:ShowPlannerSettingsDialog()
             f.activeSettingsTab = key
         end
 
-        local function CreateTabButton(anchor, labelText, key)
-            local btn = CreatePlannerIconBtn(tabBar, labelText, 108, 26)
+        local function CreateTabButton(anchor, labelText, key, width)
+            local btn = CreatePlannerIconBtn(tabBar, labelText, width or 100, 26)
             if not btn then return nil end
             if anchor then
-                btn:SetPoint("LEFT", anchor, "RIGHT", 8, 0)
+                btn:SetPoint("LEFT", anchor, "RIGHT", 6, 0)
             else
                 btn:SetPoint("LEFT", tabBar, "LEFT", 0, 0)
             end
@@ -475,11 +482,15 @@ function Diar:ShowPlannerSettingsDialog()
             return btn
         end
 
-        local compactTabBtn = CreateTabButton(nil, "Compact", "compact")
-        local displayTabBtn = CreateTabButton(compactTabBtn, "Display", "display")
-        local miscTabBtn = CreateTabButton(displayTabBtn, "Misc", "misc")
+        local compactTabBtn = CreateTabButton(nil, "Compact", "compact", 90)
+        local displayTabBtn = CreateTabButton(compactTabBtn, "Display", "display", 90)
+        local raiderTabBtn = CreateTabButton(displayTabBtn, "Raider", "raider", 90)
+        local raidLeadTabBtn = CreateTabButton(raiderTabBtn, "Raid Lead", "raidlead", 96)
+        local miscTabBtn = CreateTabButton(raidLeadTabBtn, "Misc", "misc", 90)
         f.compactTabBtn = compactTabBtn
         f.displayTabBtn = displayTabBtn
+        f.raiderTabBtn = raiderTabBtn
+        f.raidLeadTabBtn = raidLeadTabBtn
         f.miscTabBtn = miscTabBtn
         f.SetActiveTab = SetActiveTab
 
@@ -502,6 +513,8 @@ function Diar:ShowPlannerSettingsDialog()
 
         local compactPage = CreateTabPage("compact")
         local displayPage = CreateTabPage("display")
+        local raiderPage = CreateTabPage("raider")
+        local raidLeadPage = CreateTabPage("raidlead")
         local miscPage = CreateTabPage("misc")
 
         local function AddSectionHeader(parent, text, y)
@@ -719,7 +732,7 @@ function Diar:ShowPlannerSettingsDialog()
         compactStatus:SetTextColor(0.67, 0.70, 0.75)
         f.compactPosStatus = compactStatus
 
-        local previewBtn = CreatePlannerIconBtn(compactPage, "Preview & Set", 148, 30)
+        local previewBtn = CreatePlannerIconBtn(compactPage, "Open Edit Mode", 148, 30)
         previewBtn:SetPoint("TOPRIGHT", compactPage, "TOPRIGHT", -16, compactY - 2)
         SetPrimaryButtonStyle(previewBtn)
         previewBtn:SetScript("OnClick", function()
@@ -731,7 +744,9 @@ function Diar:ShowPlannerSettingsDialog()
             s.compactZoomToAssignment = CheckboxIsChecked(f.compactZoomAssignChk)
             s.compactAssignZoom = ClampAssignZoom(f.compactAssignZoom)
             f:Hide()
-            if Diar.StartCompactPositionPreview then
+            if Diar.OpenWowEditModeForCompactPreview then
+                Diar:OpenWowEditModeForCompactPreview()
+            elseif Diar.StartCompactPositionPreview then
                 Diar:StartCompactPositionPreview()
             end
         end)
@@ -741,12 +756,32 @@ function Diar:ShowPlannerSettingsDialog()
         displayY = AddSectionHeader(displayPage, "Plan display", displayY)
         displayY = AddCheckbox(displayPage, displayY, "highlightChk", "Highlight my name on the plan")
         displayY = AddCheckbox(displayPage, displayY, "classSpecCircleChk", "Render class/spec icons as circles")
-        displayY = AddCheckbox(displayPage, displayY, "raidCheckExpandedChk", "Raidcheck expanded (show right-side box)")
 
         displayY = displayY - 8
         displayY = AddSectionHeader(displayPage, "Assignment colors", displayY)
         displayY = AddAssignmentColorRow(displayPage, displayY, "My assignment spot", "assignMineColorBtn", DEFAULT_ASSIGN_MINE_FILL)
         displayY = AddAssignmentColorRow(displayPage, displayY, "Other assignment spots", "assignOtherColorBtn", DEFAULT_ASSIGN_OTHER_FILL)
+
+        local raiderY = -18
+        raiderY = AddSectionHeader(raiderPage, "Readycheck", raiderY)
+        raiderY = AddCheckbox(raiderPage, raiderY, "readyCheckAssignChk", "Show assignments on readycheck")
+        raiderY = AddCheckbox(raiderPage, raiderY, "readyCheckAutoNotReadyChk", "Auto Not Ready if missing note plans")
+        raiderY = AddCheckbox(raiderPage, raiderY, "readyCheckRaidOnlyChk", "Show only readycheck in raid group")
+        raiderY = AddSecondsRow(raiderPage, raiderY, "Readycheck grace period (after finished)", "readyCheckGraceEdit")
+        raiderY = AddNumberRow(raiderPage, raiderY, "Ready check phase filter (0 = all phases)", "readyCheckPhaseEdit")
+
+        raiderY = raiderY - 8
+        raiderY = AddSectionHeader(raiderPage, "Notifications", raiderY)
+        raiderY = AddCheckbox(raiderPage, raiderY, "raidCheckNotifChk", "Hide raidcheck notifications from raid leader")
+
+        local raidLeadY = -18
+        raidLeadY = AddSectionHeader(raidLeadPage, "Readycheck raidcheck", raidLeadY)
+        raidLeadY = AddCheckbox(raidLeadPage, raidLeadY, "readyCheckShowRaidCheckChk", "Show raidcheck on readycheck (raid leaders)")
+        raidLeadY = AddCheckbox(raidLeadPage, raidLeadY, "readyCheckCheckPlanVersionsChk", "Check plan versions on readycheck (raid leaders)")
+
+        raidLeadY = raidLeadY - 8
+        raidLeadY = AddSectionHeader(raidLeadPage, "Raidcheck panel", raidLeadY)
+        raidLeadY = AddCheckbox(raidLeadPage, raidLeadY, "raidCheckExpandedChk", "Raidcheck expanded (show right-side box)")
 
         local miscY = -18
         miscY = AddSectionHeader(miscPage, "NSRT timing", miscY)
@@ -759,13 +794,6 @@ function Diar:ShowPlannerSettingsDialog()
         miscY = AddSectionHeader(miscPage, "Notifications and tools", miscY)
         miscY = AddCheckbox(miscPage, miscY, "hideMinimapIconChk", "Hide minimap icon")
         miscY = AddCheckbox(miscPage, miscY, "nsrtPopupChk", "Hide plan popups (even if assigned)")
-        miscY = AddCheckbox(miscPage, miscY, "raidCheckNotifChk", "Hide raidcheck notifications from raid leader")
-        miscY = AddCheckbox(miscPage, miscY, "readyCheckAssignChk", "Show assignments on readycheck")
-        miscY = AddCheckbox(miscPage, miscY, "readyCheckShowRaidCheckChk", "Show raidcheck on readycheck (raid leaders)")
-        miscY = AddCheckbox(miscPage, miscY, "readyCheckAutoNotReadyChk", "Auto Not Ready if missing note plans")
-        miscY = AddCheckbox(miscPage, miscY, "readyCheckRaidOnlyChk", "Show only readycheck in raid group")
-        miscY = AddSecondsRow(miscPage, miscY, "Readycheck grace period (after finished)", "readyCheckGraceEdit")
-        miscY = AddNumberRow(miscPage, miscY, "Ready check phase filter (0 = all phases)", "readyCheckPhaseEdit")
         miscY = AddCheckbox(miscPage, miscY, "encounterOverviewTabChk", "Show Encounter Journal boss overview tab (WIP)")
         miscY = AddCheckbox(miscPage, miscY, "plannerDebugChk", "Show planner debug panel")
 
@@ -813,6 +841,7 @@ function Diar:ShowPlannerSettingsDialog()
             s.hideRaidCheckNotifs = CheckboxIsChecked(f.raidCheckNotifChk)
             s.readyCheckAssignments = CheckboxIsChecked(f.readyCheckAssignChk)
             s.readyCheckShowRaidCheck = CheckboxIsChecked(f.readyCheckShowRaidCheckChk)
+            s.readyCheckCheckPlanVersions = CheckboxIsChecked(f.readyCheckCheckPlanVersionsChk)
             s.readyCheckAutoNotReadyMissing = CheckboxIsChecked(f.readyCheckAutoNotReadyChk)
             s.readyCheckRaidOnlyInRaid = CheckboxIsChecked(f.readyCheckRaidOnlyChk)
             s.raidCheckExpanded = CheckboxIsChecked(f.raidCheckExpandedChk)
@@ -949,6 +978,9 @@ function Diar:ShowPlannerSettingsDialog()
     end
     if dlg.readyCheckShowRaidCheckChk then
         dlg.readyCheckShowRaidCheckChk:SetChecked(self:IsReadyCheckShowRaidCheckEnabled())
+    end
+    if dlg.readyCheckCheckPlanVersionsChk then
+        dlg.readyCheckCheckPlanVersionsChk:SetChecked(self:IsReadyCheckCheckPlanVersionsEnabled())
     end
     if dlg.readyCheckAutoNotReadyChk then
         dlg.readyCheckAutoNotReadyChk:SetChecked(self:IsReadyCheckAutoNotReadyMissingEnabled())

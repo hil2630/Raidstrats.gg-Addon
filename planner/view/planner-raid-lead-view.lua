@@ -37,6 +37,7 @@ local UI = {
     LINK    = {0.45, 0.58, 0.78},
     LINK_HOV = {0.62, 0.76, 0.98},
     MISSING = {0.98, 0.62, 0.18},
+    WRONGVER = {0.95, 0.72, 0.28},
     NOADDON = {0.92, 0.28, 0.28},
 }
 
@@ -267,6 +268,11 @@ function Diar:CollectReadyCheckRequiredPlans(opts)
                 local planName = nil
                 if data then
                     if self.EnsurePlanInstanceKey then self:EnsurePlanInstanceKey(data) end
+                    -- Commit a new sync version only if content changed since last stamp.
+                    -- Readycheck then compares raiders against this version (edits alone don't bump).
+                    if self.EnsurePlanSyncVersionMatchesContent then
+                        self:EnsurePlanSyncVersionMatchesContent(data)
+                    end
                     planKey = (self.GetPlanIdentityKey and self:GetPlanIdentityKey(data)) or ""
                     planName = data.planName
                 end
@@ -798,29 +804,64 @@ function Diar:PlayerHasPlanKey(planKey, planId)
     return false
 end
 
+-- Local sync version for a polled target plan (by identity key and/or plan id).
+function Diar:GetLocalPlanSyncVersionForTarget(planKey, planId)
+    if not self.GetPlanSyncVersion then return nil end
+    planKey = planKey and tostring(planKey) or ""
+    planId = planId and tostring(planId) or ""
+    if planKey ~= "" then
+        local v = self:GetPlanSyncVersion(planKey)
+        if v then return tonumber(v) end
+    end
+    if planId ~= "" then
+        local data = FindSavedPlanDataByPlanId(planId)
+        if data then
+            if self.EnsurePlanInstanceKey then self:EnsurePlanInstanceKey(data) end
+            local key = (self.GetPlanIdentityKey and self:GetPlanIdentityKey(data)) or ""
+            if key ~= "" then
+                return tonumber(self:GetPlanSyncVersion(key))
+            end
+        end
+    end
+    return nil
+end
+
 function Diar:GetCurrentPlanId()
     local data = self.plannerData
     if not data or not data.planId then return "" end
     return tostring(data.planId)
 end
 
-function Diar:SetPlanViewPresence(sender, open, activePlanKey, hasPlan, targetPlanKey, activeSceneIndex, targetPlanId)
+function Diar:SetPlanViewPresence(sender, open, activePlanKey, hasPlan, targetPlanKey, activeSceneIndex, targetPlanId, planVersion)
     local key = PlayerNameKey(sender and (Ambiguate and Ambiguate(sender, "short") or sender) or sender)
     if not key then return end
     self._planViewPresence = self._planViewPresence or {}
     local existing = self._planViewPresence[key] or {}
     existing.open = open and true or false
     existing.activePlanKey = activePlanKey or ""
+    local versionNum = tonumber(planVersion)
     if hasPlan ~= nil then
         existing.hasPlan = hasPlan and true or false
         existing.hasPlanByKey = existing.hasPlanByKey or {}
         existing.hasPlanById = existing.hasPlanById or {}
+        existing.planVersionByKey = existing.planVersionByKey or {}
+        existing.planVersionById = existing.planVersionById or {}
         if targetPlanKey and targetPlanKey ~= "" then
             existing.hasPlanByKey[targetPlanKey] = hasPlan and true or false
+            if hasPlan then
+                existing.planVersionByKey[targetPlanKey] = versionNum
+            else
+                existing.planVersionByKey[targetPlanKey] = nil
+            end
         end
         targetPlanId = targetPlanId and tostring(targetPlanId) or ""
         if targetPlanId ~= "" then
             existing.hasPlanById[targetPlanId] = hasPlan and true or false
+            if hasPlan then
+                existing.planVersionById[targetPlanId] = versionNum
+            else
+                existing.planVersionById[targetPlanId] = nil
+            end
         end
     end
     if targetPlanKey and targetPlanKey ~= "" then
@@ -863,6 +904,11 @@ function Diar:BuildPlanViewMsg(open, targetPlanKey, planId)
         sceneIndex = tostring(math.max(1, math.floor(tonumber(pf.selectedSceneIndex) or 1)))
     end
     local hasPlan = self:PlayerHasPlanKey(targetPlanKey, planId)
+    local syncVer = ""
+    if hasPlan then
+        local v = self:GetLocalPlanSyncVersionForTarget(targetPlanKey, planId)
+        if v then syncVer = tostring(v) end
+    end
     return table.concat({
         "VIEW",
         open and "1" or "0",
@@ -871,6 +917,7 @@ function Diar:BuildPlanViewMsg(open, targetPlanKey, planId)
         SanitizeCommField(targetPlanKey),
         SanitizeCommField(sceneIndex),
         SanitizeCommField(planId),
+        SanitizeCommField(syncVer),
     }, SEP)
 end
 
@@ -902,10 +949,11 @@ function Diar:HandlePlanViewComm(msg, sender)
     local open = parts[2] == "1"
     local sceneIdx = #parts >= 6 and tonumber(parts[6]) or nil
     local targetPlanId = #parts >= 7 and parts[7] or ""
+    local planVersion = #parts >= 8 and parts[8] or nil
     if #parts >= 5 then
-        self:SetPlanViewPresence(sender, open, parts[3] or "", parts[4] == "1", parts[5] or "", sceneIdx, targetPlanId)
+        self:SetPlanViewPresence(sender, open, parts[3] or "", parts[4] == "1", parts[5] or "", sceneIdx, targetPlanId, planVersion)
     else
-        self:SetPlanViewPresence(sender, open, parts[3] or "", nil, "", sceneIdx, targetPlanId)
+        self:SetPlanViewPresence(sender, open, parts[3] or "", nil, "", sceneIdx, targetPlanId, planVersion)
     end
     local pf = self.plannerFrame
     if pf and pf:IsShown() and self.UpdateSceneTabHighlight then
@@ -1206,6 +1254,7 @@ end
 local DEBUG_RAIDCHECK_STATUSES = {
     { "viewing", "Viewing" },
     { "other", "Other plan" },
+    { "wrongversion", "Wrong version" },
     { "missing", "Missing plan" },
     { "noaddon", "Missing addon" },
     { "idle", "—" },
@@ -1235,15 +1284,70 @@ local function PresenceAnswerForPlan(entry, plan)
     return nil
 end
 
+local function PresenceVersionForPlan(entry, plan)
+    if not entry or not plan then return nil end
+    local planKey = plan.planKey or ""
+    local planId = plan.planId and tostring(plan.planId) or ""
+    if planKey ~= "" and entry.planVersionByKey and entry.planVersionByKey[planKey] ~= nil then
+        return tonumber(entry.planVersionByKey[planKey])
+    end
+    if planId ~= "" and entry.planVersionById and entry.planVersionById[planId] ~= nil then
+        return tonumber(entry.planVersionById[planId])
+    end
+    return nil
+end
+
+local function ExpectedVersionForPlan(plan)
+    if not plan then return nil end
+    -- Always read live — do not cache at readycheck open (sends can update sync state).
+    local planKey = plan.planKey or ""
+    if planKey ~= "" and Diar.GetPlanSyncVersion then
+        local v = tonumber(Diar:GetPlanSyncVersion(planKey))
+        if v then return v end
+    end
+    local planId = plan.planId and tostring(plan.planId) or ""
+    if planId ~= "" and Diar.GetLocalPlanSyncVersionForTarget then
+        return tonumber(Diar:GetLocalPlanSyncVersionForTarget(planKey, planId))
+    end
+    return nil
+end
+
+local function BuildReadyCheckStatusTooltip(missing, wrong)
+    local lines = {}
+    if wrong and #wrong > 0 then
+        lines[#lines + 1] = (#wrong == 1) and "Wrong version" or "Wrong versions"
+        for _, item in ipairs(wrong) do
+            local name = item.planName or item.alias or item.planId or "Plan"
+            local theirs = item.theirsVersion ~= nil and tostring(item.theirsVersion) or "?"
+            local correct = item.expectedVersion ~= nil and tostring(item.expectedVersion) or "?"
+            lines[#lines + 1] = ("%s — theirs: %s · correct: %s"):format(name, theirs, correct)
+        end
+    end
+    if missing and #missing > 0 then
+        if #lines > 0 then
+            lines[#lines + 1] = " "
+        end
+        lines[#lines + 1] = (#missing == 1) and "Missing plan" or "Missing plans"
+        for _, plan in ipairs(missing) do
+            lines[#lines + 1] = plan.planName or plan.alias or plan.planId or "Plan"
+        end
+    end
+    return lines
+end
+
 function Diar:GetReadyCheckMemberPlanStatus(memberName, presence)
     local plans = self:GetReadyCheckRequiredPlans()
     local total = #plans
     local missing = {}
+    local wrong = {}
     if total == 0 then
         return {
             have = 0,
             total = 0,
             missing = missing,
+            wrong = wrong,
+            sendPlans = {},
+            tooltipLines = {},
             status = "idle",
             label = "—",
         }
@@ -1260,14 +1364,37 @@ function Diar:GetReadyCheckMemberPlanStatus(memberName, presence)
 
     for _, plan in ipairs(plans) do
         local answer
+        local theirsVersion
         if isMe then
             answer = self:PlayerHasPlanKey(plan.planKey, plan.planId) and true or false
+            if answer then
+                theirsVersion = self:GetLocalPlanSyncVersionForTarget(plan.planKey, plan.planId)
+            end
         else
             answer = PresenceAnswerForPlan(entry, plan)
+            if answer == true then
+                theirsVersion = PresenceVersionForPlan(entry, plan)
+            end
         end
         if answer == true then
-            have = have + 1
             answered = answered + 1
+            local expected = ExpectedVersionForPlan(plan)
+            local checkVersions = Diar.IsReadyCheckCheckPlanVersionsEnabled
+                and Diar:IsReadyCheckCheckPlanVersionsEnabled()
+            -- Only flag when enabled and both sides report a version and they differ.
+            if checkVersions and expected and theirsVersion and theirsVersion ~= expected then
+                wrong[#wrong + 1] = {
+                    planId = plan.planId,
+                    planKey = plan.planKey,
+                    planName = plan.planName,
+                    alias = plan.alias,
+                    data = plan.data,
+                    expectedVersion = expected,
+                    theirsVersion = theirsVersion,
+                }
+            else
+                have = have + 1
+            end
         elseif answer == false then
             answered = answered + 1
             missing[#missing + 1] = plan
@@ -1283,6 +1410,7 @@ function Diar:GetReadyCheckMemberPlanStatus(memberName, presence)
         if closed then
             status, label = "noaddon", "Missing addon"
             missing = {}
+            wrong = {}
             for _, plan in ipairs(plans) do
                 missing[#missing + 1] = plan
             end
@@ -1293,6 +1421,8 @@ function Diar:GetReadyCheckMemberPlanStatus(memberName, presence)
         label = ("%d/%d"):format(have, total)
         if #missing > 0 then
             status = "missing"
+        elseif #wrong > 0 then
+            status, label = "wrongversion", "Wrong version"
         elseif pending then
             status = "idle"
         else
@@ -1300,15 +1430,27 @@ function Diar:GetReadyCheckMemberPlanStatus(memberName, presence)
         end
     end
 
-    -- After we auto-sent missing plans, show that until they finish importing (or go complete).
-    if not isMe and status == "missing" and self:WasReadyCheckAutoSent(memberName) then
+    -- After we auto-sent missing/outdated plans, show that until they finish importing.
+    if not isMe and (status == "missing" or status == "wrongversion")
+        and self:WasReadyCheckAutoSent(memberName) then
         status, label = "autosent", "Auto-sent"
+    end
+
+    local sendPlans = {}
+    for _, plan in ipairs(missing) do
+        sendPlans[#sendPlans + 1] = plan
+    end
+    for _, plan in ipairs(wrong) do
+        sendPlans[#sendPlans + 1] = plan
     end
 
     return {
         have = have,
         total = total,
         missing = missing,
+        wrong = wrong,
+        sendPlans = sendPlans,
+        tooltipLines = BuildReadyCheckStatusTooltip(missing, wrong),
         status = status,
         label = label,
     }
@@ -1350,19 +1492,47 @@ function Diar:RefreshReadyCheckRaidCheckPanel()
         local info
         if debugMode and not isMe then
             local status, label = DebugMemberViewStatus(member.name, i)
-            local have = (status == "viewing") and planTotal or (status == "missing" and 0 or math.floor(planTotal / 2))
-            local missing = {}
-            if have < planTotal then
+            local have = (status == "viewing") and planTotal
+                or ((status == "missing" or status == "wrongversion" or status == "noaddon") and 0
+                    or math.floor(planTotal / 2))
+            local missing, wrong = {}, {}
+            if status == "wrongversion" and planTotal > 0 then
+                local plan = plans[1]
+                wrong[1] = {
+                    planId = plan.planId,
+                    planKey = plan.planKey,
+                    planName = plan.planName,
+                    alias = plan.alias,
+                    expectedVersion = 5,
+                    theirsVersion = 3,
+                }
+                for pi = 2, planTotal do
+                    missing[#missing + 1] = plans[pi]
+                end
+                status, label = "wrongversion", "Wrong version"
+            elseif have < planTotal then
                 for pi = have + 1, planTotal do
                     missing[#missing + 1] = plans[pi]
                 end
+                if status ~= "noaddon" then
+                    status = (have >= planTotal and planTotal > 0) and "viewing" or "missing"
+                    label = ("%d/%d"):format(have, planTotal)
+                end
+            else
+                status, label = "viewing", ("%d/%d"):format(have, planTotal)
+            end
+            if status == "noaddon" then
+                label = "Missing addon"
             end
             info = {
-                status = (have >= planTotal and planTotal > 0) and "viewing" or (status == "noaddon" and "noaddon" or "missing"),
-                label = (status == "noaddon") and "Missing addon" or ("%d/%d"):format(have, planTotal),
+                status = status,
+                label = label,
                 have = have,
                 total = planTotal,
                 missing = missing,
+                wrong = wrong,
+                sendPlans = missing,
+                tooltipLines = BuildReadyCheckStatusTooltip(missing, wrong),
             }
         else
             info = self:GetReadyCheckMemberPlanStatus(member.name, presence)
@@ -1374,12 +1544,15 @@ function Diar:RefreshReadyCheckRaidCheckPanel()
             have = info.have,
             total = info.total,
             missing = info.missing,
+            wrong = info.wrong,
+            sendPlans = info.sendPlans or info.missing,
+            tooltipLines = info.tooltipLines,
         }
     end
 
     table.sort(sorted, function(a, b)
-        local rank = { viewing = 0, autosent = 1, other = 2, missing = 3, noaddon = 4, idle = 5 }
-        local ra, rb = rank[a.status] or 5, rank[b.status] or 5
+        local rank = { viewing = 0, autosent = 1, other = 2, wrongversion = 3, missing = 4, noaddon = 5, idle = 6 }
+        local ra, rb = rank[a.status] or 6, rank[b.status] or 6
         if ra ~= rb then return ra < rb end
         local ha, hb = a.have or 0, b.have or 0
         if ha ~= hb then return ha > hb end
@@ -1411,6 +1584,23 @@ function Diar:RefreshReadyCheckRaidCheckPanel()
                     Diar:ShowReadyCheckRaidCheckMemberMenu(s, s.memberName, s.missingPlans)
                 end
             end)
+            row:SetScript("OnEnter", function(s)
+                local lines = s.tooltipLines
+                if type(lines) ~= "table" or #lines == 0 then return end
+                GameTooltip:SetOwner(s, "ANCHOR_LEFT")
+                GameTooltip:ClearLines()
+                for li, line in ipairs(lines) do
+                    if li == 1 then
+                        GameTooltip:SetText(line, 1, 1, 1, 1, true)
+                    else
+                        GameTooltip:AddLine(line, 0.85, 0.85, 0.85, true)
+                    end
+                end
+                GameTooltip:Show()
+            end)
+            row:SetScript("OnLeave", function()
+                GameTooltip:Hide()
+            end)
             f.rows[i] = row
         end
         row:Show()
@@ -1421,7 +1611,8 @@ function Diar:RefreshReadyCheckRaidCheckPanel()
         local _, classFile = unit and UnitClass(unit) or nil
         local cr, cg, cb = GetClassColor(classFile)
         row.memberName = member.name
-        row.missingPlans = member.missing
+        row.missingPlans = member.sendPlans or member.missing
+        row.tooltipLines = member.tooltipLines
         row.nameText:SetText(member.name)
         row.nameText:SetTextColor(cr, cg, cb)
 
@@ -1436,6 +1627,10 @@ function Diar:RefreshReadyCheckRaidCheckPanel()
         elseif status == "other" then
             row.dot:SetColorTexture(unpack(UI.OTHER))
             row.statusText:SetTextColor(unpack(UI.OTHER))
+        elseif status == "wrongversion" then
+            missingPeople = missingPeople + 1
+            row.dot:SetColorTexture(unpack(UI.WRONGVER))
+            row.statusText:SetTextColor(unpack(UI.WRONGVER))
         elseif status == "missing" then
             missingPeople = missingPeople + 1
             row.dot:SetColorTexture(unpack(UI.MISSING))
@@ -1976,6 +2171,7 @@ function Diar:SendRaidCheckNotif()
     if self.EnsurePlanInstanceKey then self:EnsurePlanInstanceKey(data) end
     if self.PersistCurrentPlanToSaved then self:PersistCurrentPlanToSaved() end
 
+    -- Smart stamp: bump only if content differs from last sync baseline.
     local payload = self.BuildSharePayload and self:BuildSharePayload(data)
     if not payload or payload == "" then
         print("|cffff6666[Raidstrats.gg]|r Couldn't pack that plan up to send.")
@@ -2049,6 +2245,7 @@ function Diar:SendRaidCheckPlanToMember(memberName, plan)
     end
     if self.EnsurePlanInstanceKey then self:EnsurePlanInstanceKey(data) end
 
+    -- Smart stamp: bump only if content differs from last sync baseline.
     local payload = self.BuildSharePayload and self:BuildSharePayload(data)
     if not payload or payload == "" then
         print("|cffff6666[Raidstrats.gg]|r Couldn't pack that plan up to send.")
@@ -2149,13 +2346,15 @@ function Diar:SendReadyCheckMissingPlansToAll()
     for _, member in ipairs(members) do
         if not (myKey and PlayerNameKey(member.name) == myKey) then
             local info = self:GetReadyCheckMemberPlanStatus(member.name, presence)
-            if info and info.status == "missing" and info.missing and #info.missing > 0 then
-                queue[#queue + 1] = { name = member.name, missing = info.missing }
+            local sendPlans = info and (info.sendPlans or info.missing) or nil
+            if info and (info.status == "missing" or info.status == "wrongversion")
+                and sendPlans and #sendPlans > 0 then
+                queue[#queue + 1] = { name = member.name, missing = sendPlans }
             end
         end
     end
     if #queue == 0 then
-        print("|cffff9900[Raidstrats.gg]|r Everyone already has the note plans.")
+        print("|cffff9900[Raidstrats.gg]|r Everyone already has the correct note plans.")
         return false
     end
 
@@ -2194,7 +2393,7 @@ function Diar:ShowReadyCheckRaidCheckMemberMenu(anchor, memberName, missingPlans
     if #missingPlans == 0 then
         local presence = self:GetPlanViewPresenceSnapshot()
         local info = self:GetReadyCheckMemberPlanStatus(memberName, presence)
-        missingPlans = info and info.missing or {}
+        missingPlans = info and (info.sendPlans or info.missing) or {}
     end
     if #missingPlans == 0 then
         return

@@ -1,5 +1,25 @@
 # Changelog
 
+## [Alpha 0.0.48]
+
+New:
+
+- Readycheck Raidcheck now checks plan sync version, not only whether someone has the plan.
+  - If they have the plan but a different version, status shows Wrong version. Hover to see theirs vs correct.
+  - Setting: Check plan versions on readycheck (raid leaders) — Settings -> Raid Lead, on by default.
+  - Right-click / Send to all missing also covers wrong-version players.
+  - Version bumps only when readycheck/share sees real content changes vs the last stamped baseline (not on every drag/edit, and not on every identical re-send).
+- Planner canvas shows a subtle `Version: X-key` in the bottom-right when a plan is open (updates live after edits settle).
+- Settings: new Raider and Raid Lead tabs (readycheck options split out of Misc).
+  - Raider: assignments, auto not ready, grace/phase, hide raidcheck notifications.
+  - Raid Lead: side raidcheck on readycheck, plan version check, expanded raidcheck panel.
+- Edit Mode: Raidstrats is now a checkbox in Account Settings (Basic options) instead of the side logo button.
+  - Settings Compact now Opens Edit mode and starts the compact position preview (auto-saves when moved).
+
+Fixed:
+
+- Readycheck / note-plan bundle import now overrides existing plans (same UUID/identity) instead of skipping them.
+
 ## [Alpha 0.0.47]
 
 New:
