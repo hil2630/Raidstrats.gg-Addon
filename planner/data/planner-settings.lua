@@ -30,6 +30,7 @@ function Diar:GetPlannerSettings()
     if s.rsggShowAfter == nil then s.rsggShowAfter = 0 end
     if s.highlightMyName == nil then s.highlightMyName = true end
     if s.compactShowBackground == nil then s.compactShowBackground = true end
+    if s.compactBackgroundOpacity == nil then s.compactBackgroundOpacity = 1.0 end
     if s.compactObjectsOnly == nil then s.compactObjectsOnly = false end
     if s.compactNsrtClickThrough == nil then s.compactNsrtClickThrough = true end
     if s.hideNsrtPlan == nil then
@@ -216,6 +217,14 @@ function Diar:IsCompactBackgroundEnabled()
     local v = self:GetPlannerSettings().compactShowBackground
     if v == false or v == 0 then return false end
     return true
+end
+
+function Diar:GetCompactBackgroundOpacity()
+    local v = tonumber(self:GetPlannerSettings().compactBackgroundOpacity)
+    if not v then v = 1.0 end
+    if v < 0.10 then v = 0.10 end
+    if v > 1.0 then v = 1.0 end
+    return v
 end
 
 function Diar:IsCompactObjectsOnlyEnabled()
@@ -658,9 +667,117 @@ function Diar:ShowPlannerSettingsDialog()
             return v
         end
 
+        local function ClampBgOpacity(v)
+            v = tonumber(v) or 1.0
+            if v < 0.10 then v = 0.10 end
+            if v > 1.0 then v = 1.0 end
+            return v
+        end
+
         local compactY = -18
         compactY = AddSectionHeader(compactPage, "Compact view", compactY)
-        compactY = AddCheckbox(compactPage, compactY, "compactBgChk", "Show background in compact view")
+        do
+            local rowY = compactY
+            local chk = CreateAnimatedCheckbox and CreateAnimatedCheckbox(compactPage, "Show background in compact view")
+            if chk then
+                chk:SetPoint("TOPLEFT", compactPage, "TOPLEFT", 16, rowY)
+                if chk.label then
+                    chk.label:SetFontObject("GameFontHighlightSmall")
+                    chk.label:SetTextColor(0.82, 0.84, 0.88)
+                end
+                f.compactBgChk = chk
+            end
+
+            local previewBgBtn = CreatePlannerIconBtn(compactPage, "Preview", 90, 24)
+            previewBgBtn:SetPoint("TOPRIGHT", compactPage, "TOPRIGHT", -16, rowY + 2)
+            previewBgBtn:SetScript("OnClick", function()
+                if Diar._compactBgPreviewActive and Diar._compactZoomPreviewState
+                    and Diar.EndCompactAssignmentZoomPreviewFromSettings then
+                    Diar._compactBgPreviewActive = nil
+                    Diar:EndCompactAssignmentZoomPreviewFromSettings()
+                elseif Diar.PreviewCompactBackgroundFromSettings then
+                    Diar._compactBgPreviewActive = true
+                    Diar:PreviewCompactBackgroundFromSettings(f)
+                end
+            end)
+            f.compactBgPreviewBtn = previewBgBtn
+            compactY = compactY - 28
+        end
+        do
+            local rowY = compactY
+            local opacityLabel = compactPage:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            opacityLabel:SetPoint("TOPLEFT", compactPage, "TOPLEFT", 36, rowY)
+            opacityLabel:SetWidth(180)
+            opacityLabel:SetJustifyH("LEFT")
+            opacityLabel:SetText("Background opacity")
+            opacityLabel:SetTextColor(0.72, 0.75, 0.80)
+            f.compactBgOpacityLabel = opacityLabel
+
+            local plusBtn = CreatePlannerIconBtn(compactPage, "+", 24, 24)
+            plusBtn:SetPoint("TOPRIGHT", compactPage, "TOPRIGHT", -16, rowY + 2)
+            local opacityValue = compactPage:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            opacityValue:SetPoint("RIGHT", plusBtn, "LEFT", -10, 0)
+            opacityValue:SetWidth(48)
+            opacityValue:SetJustifyH("CENTER")
+            opacityValue:SetTextColor(0.92, 0.92, 0.96)
+            local minusBtn = CreatePlannerIconBtn(compactPage, "-", 24, 24)
+            minusBtn:SetPoint("RIGHT", opacityValue, "LEFT", -10, 0)
+            f.compactBgOpacityValue = opacityValue
+            f.compactBgOpacityMinusBtn = minusBtn
+            f.compactBgOpacityPlusBtn = plusBtn
+
+            local function RefreshBgOpacityValue()
+                f.compactBackgroundOpacity = ClampBgOpacity(f.compactBackgroundOpacity)
+                opacityValue:SetText(("%d%%"):format(math.floor(f.compactBackgroundOpacity * 100 + 0.5)))
+            end
+            local function RefreshBgOpacityEnabled()
+                local on = f.compactBgChk and CheckboxIsChecked(f.compactBgChk)
+                local alpha = on and 1 or 0.35
+                if opacityLabel.SetAlpha then opacityLabel:SetAlpha(alpha) end
+                if opacityValue.SetAlpha then opacityValue:SetAlpha(alpha) end
+                if minusBtn.EnableMouse then minusBtn:EnableMouse(on and true or false) end
+                if plusBtn.EnableMouse then plusBtn:EnableMouse(on and true or false) end
+                if minusBtn.SetAlpha then minusBtn:SetAlpha(alpha) end
+                if plusBtn.SetAlpha then plusBtn:SetAlpha(alpha) end
+            end
+            f.RefreshBgOpacityValue = RefreshBgOpacityValue
+            f.RefreshBgOpacityEnabled = RefreshBgOpacityEnabled
+
+            local function ApplyBgOpacityLive()
+                local s = Diar:GetPlannerSettings()
+                s.compactBackgroundOpacity = ClampBgOpacity(f.compactBackgroundOpacity)
+                if Diar._compactBgPreviewActive or Diar._compactZoomPreviewState then
+                    if Diar.PreviewCompactBackgroundFromSettings then
+                        Diar:PreviewCompactBackgroundFromSettings(f)
+                    end
+                elseif Diar.plannerFrame and Diar.plannerFrame.compactMode and Diar.RefreshPlannerScene then
+                    Diar:RefreshPlannerScene()
+                end
+            end
+            minusBtn:SetScript("OnClick", function()
+                if f.compactBgChk and not CheckboxIsChecked(f.compactBgChk) then return end
+                f.compactBackgroundOpacity = ClampBgOpacity((f.compactBackgroundOpacity or 1.0) - 0.10)
+                RefreshBgOpacityValue()
+                ApplyBgOpacityLive()
+            end)
+            plusBtn:SetScript("OnClick", function()
+                if f.compactBgChk and not CheckboxIsChecked(f.compactBgChk) then return end
+                f.compactBackgroundOpacity = ClampBgOpacity((f.compactBackgroundOpacity or 1.0) + 0.10)
+                RefreshBgOpacityValue()
+                ApplyBgOpacityLive()
+            end)
+            if f.compactBgChk then
+                f.compactBgChk:SetScript("OnClick", function(s)
+                    s.isChecked = not s.isChecked
+                    if s.UpdateVisuals then s:UpdateVisuals() end
+                    RefreshBgOpacityEnabled()
+                    if Diar._compactBgPreviewActive and Diar.PreviewCompactBackgroundFromSettings then
+                        Diar:PreviewCompactBackgroundFromSettings(f)
+                    end
+                end)
+            end
+            compactY = compactY - 30
+        end
         compactY = AddCheckbox(compactPage, compactY, "compactObjectsOnlyChk", "Objects only (hide compact opacity background)")
         compactY = AddCheckbox(compactPage, compactY, "compactNsrtClickThroughChk", "Lock NSRT compact (click-through, no move/resize)")
         compactY = AddCheckbox(compactPage, compactY, "compactSceneArrowsChk", "Show scene arrows in compact view")
@@ -678,6 +795,7 @@ function Diar:ShowPlannerSettingsDialog()
             local previewZoomBtn = CreatePlannerIconBtn(compactPage, "Preview zoom", 118, 24)
             previewZoomBtn:SetPoint("TOPRIGHT", compactPage, "TOPRIGHT", -16, rowY + 2)
             previewZoomBtn:SetScript("OnClick", function()
+                Diar._compactBgPreviewActive = nil
                 if Diar._compactZoomPreviewState and Diar.EndCompactAssignmentZoomPreviewFromSettings then
                     Diar:EndCompactAssignmentZoomPreviewFromSettings()
                 elseif Diar.PreviewCompactAssignmentZoomFromSettings then
@@ -738,6 +856,7 @@ function Diar:ShowPlannerSettingsDialog()
         previewBtn:SetScript("OnClick", function()
             local s = Diar:GetPlannerSettings()
             s.compactShowBackground = CheckboxIsChecked(f.compactBgChk)
+            s.compactBackgroundOpacity = ClampBgOpacity(f.compactBackgroundOpacity)
             s.compactObjectsOnly = CheckboxIsChecked(f.compactObjectsOnlyChk)
             s.compactNsrtClickThrough = CheckboxIsChecked(f.compactNsrtClickThroughChk)
             s.compactSceneArrows = CheckboxIsChecked(f.compactSceneArrowsChk)
@@ -827,6 +946,7 @@ function Diar:ShowPlannerSettingsDialog()
             s.rsggShowAfter = after
             s.highlightMyName = CheckboxIsChecked(f.highlightChk)
             s.compactShowBackground = CheckboxIsChecked(f.compactBgChk)
+            s.compactBackgroundOpacity = ClampBgOpacity(f.compactBackgroundOpacity)
             s.compactObjectsOnly = CheckboxIsChecked(f.compactObjectsOnlyChk)
             s.compactNsrtClickThrough = CheckboxIsChecked(f.compactNsrtClickThroughChk)
             s.classSpecCircleMode = CheckboxIsChecked(f.classSpecCircleChk)
@@ -920,6 +1040,7 @@ function Diar:ShowPlannerSettingsDialog()
 
         if f.HookScript then
             f:HookScript("OnHide", function()
+                Diar._compactBgPreviewActive = nil
                 if Diar.EndCompactAssignmentZoomPreviewFromSettings then
                     Diar:EndCompactAssignmentZoomPreviewFromSettings()
                 end
@@ -936,6 +1057,15 @@ function Diar:ShowPlannerSettingsDialog()
     dlg.afterEdit:SetText(tostring(settings.rsggShowAfter ~= nil and settings.rsggShowAfter or 0))
     dlg.highlightChk:SetChecked(self:IsHighlightMyNameEnabled())
     dlg.compactBgChk:SetChecked(self:IsCompactBackgroundEnabled())
+    if dlg.compactBgOpacityValue then
+        dlg.compactBackgroundOpacity = self:GetCompactBackgroundOpacity()
+        if dlg.RefreshBgOpacityValue then
+            dlg:RefreshBgOpacityValue()
+        end
+        if dlg.RefreshBgOpacityEnabled then
+            dlg:RefreshBgOpacityEnabled()
+        end
+    end
     if dlg.compactObjectsOnlyChk then
         dlg.compactObjectsOnlyChk:SetChecked(self:IsCompactObjectsOnlyEnabled())
     end

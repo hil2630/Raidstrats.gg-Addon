@@ -3579,6 +3579,7 @@ function Diar:EndCompactAssignmentZoomPreviewFromSettings()
     local state = self._compactZoomPreviewState
     if not state then return end
     self._compactZoomPreviewState = nil
+    self._compactBgPreviewActive = nil
     local pf = self.plannerFrame
     if not pf then return end
     pf.__suspendPositionSave = nil
@@ -3603,6 +3604,79 @@ function Diar:EndCompactAssignmentZoomPreviewFromSettings()
     if self.RefreshPlannerScene then
         self:RefreshPlannerScene()
     end
+end
+
+function Diar:PreviewCompactBackgroundFromSettings(settingsDialog)
+    if not self.plannerData or not self.plannerData.scenes or #self.plannerData.scenes == 0 then
+        print("|cffff6666[Raidstrats.gg]|r Load a plan first, then preview the compact background.")
+        return
+    end
+    if settingsDialog then
+        local s = self.GetPlannerSettings and self:GetPlannerSettings()
+        if s then
+            if settingsDialog.compactBgChk and settingsDialog.compactBgChk.GetChecked then
+                s.compactShowBackground = settingsDialog.compactBgChk:GetChecked() and true or false
+            end
+            if settingsDialog.compactBackgroundOpacity ~= nil then
+                local o = tonumber(settingsDialog.compactBackgroundOpacity)
+                if o then
+                    if o < 0.10 then o = 0.10 end
+                    if o > 1.0 then o = 1.0 end
+                    s.compactBackgroundOpacity = o
+                end
+            end
+        end
+    end
+    self:ShowPlannerViewer({ reloadOnly = self.plannerFrame and self.plannerFrame:IsShown() })
+    local pf = self.plannerFrame
+    if not pf then return end
+    pf.__compactZoomPreviewFakeAssignment = nil
+
+    if not self._compactZoomPreviewState then
+        local point, _, relPoint, x, y = pf:GetPoint(1)
+        self._compactZoomPreviewState = {
+            compactMode = pf.compactMode == true,
+            nsrtSceneActive = pf.nsrtSceneActive,
+            compactCanvasScale = pf.compactCanvasScale,
+            viewerViewport = pf.viewerViewport and {
+                zoom = pf.viewerViewport.zoom,
+                panX = pf.viewerViewport.panX,
+                panY = pf.viewerViewport.panY,
+            } or nil,
+            pos = point and {
+                point = point,
+                relPoint = relPoint or point,
+                x = x or 0,
+                y = y or 0,
+            } or nil,
+        }
+    end
+    pf.__suspendPositionSave = true
+
+    if not pf.compactMode and self.SetPlannerCompactMode then
+        self:SetPlannerCompactMode(true)
+    end
+    -- Background preview should show the full scene, not assignment zoom.
+    pf.viewerViewport = nil
+    pf.__viewerViewportSceneIdx = nil
+    if self.RefreshPlannerScene then
+        self:RefreshPlannerScene()
+    end
+    if settingsDialog and settingsDialog.IsShown and settingsDialog:IsShown() then
+        local uiScale = UIParent and UIParent.GetEffectiveScale and UIParent:GetEffectiveScale() or 1
+        local dlgScale = settingsDialog.GetEffectiveScale and settingsDialog:GetEffectiveScale() or uiScale
+        local right = settingsDialog.GetRight and settingsDialog:GetRight()
+        local centerY = settingsDialog.GetCenter and select(2, settingsDialog:GetCenter())
+        pf:ClearAllPoints()
+        if right and centerY then
+            local x = (right * dlgScale / uiScale) + 14
+            local y = (centerY * dlgScale / uiScale) + ((pf:GetHeight() or 0) * 0.5)
+            pf:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", x, y)
+        else
+            pf:SetPoint("CENTER", UIParent, "CENTER", 340, 0)
+        end
+    end
+    pf:Show()
 end
 
 local function ResolveItemLayerIndex(item, fallbackIndex)
@@ -4580,12 +4654,34 @@ local function ApplyPlannerChromeTransparent(pf)
     end
 end
 
+local function ApplyCompactBackgroundAlpha(pf, alpha)
+    if not pf or not pf.canvasBg then return end
+    alpha = tonumber(alpha)
+    if not alpha then alpha = 1 end
+    if alpha < 0 then alpha = 0 end
+    if alpha > 1 then alpha = 1 end
+    -- Vertex color alpha is the reliable fade for file textures; SetAlpha alone is often a no-op
+    -- once SetVertexColor(1,1,1,1) has been applied (and OnShow resets it to full).
+    pf.canvasBg:SetAlpha(1)
+    if pf.canvasBg.SetVertexColor then
+        pf.canvasBg:SetVertexColor(1, 1, 1, alpha)
+    end
+end
+
 local function ApplySceneBackground(pf, scene, vc, cw, ch)
     if not pf or not pf.canvasBg then return end
     local canvas = pf.canvas
     if canvas then canvas:SetAlpha(1) end
     local nsrtOverlay = pf.nsrtSceneActive and pf.compactMode
-    if nsrtOverlay then
+    local compactMode = pf.compactMode == true
+    local compactBgEnabled = compactMode and Diar:IsCompactBackgroundEnabled()
+    local compactBgAlpha = 1
+    if compactMode and Diar.GetCompactBackgroundOpacity then
+        compactBgAlpha = Diar:GetCompactBackgroundOpacity()
+    end
+    -- Compact backgrounds must sit on a transparent frame, or lowering opacity only
+    -- reveals the opaque panel behind the map (looks like opacity "does nothing").
+    if nsrtOverlay or compactBgEnabled or (compactMode and Diar.IsCompactObjectsOnlyEnabled and Diar:IsCompactObjectsOnlyEnabled()) then
         ApplyPlannerChromeTransparent(pf)
     end
     cw = cw or (pf.plannerCanvasW or PLANNER_CANVAS_W)
@@ -4598,6 +4694,9 @@ local function ApplySceneBackground(pf, scene, vc, cw, ch)
         pf.canvasBg:SetTexture(nil)
         pf.canvasBg:SetColorTexture(0, 0, 0, 0)
         pf.canvasBg:SetAlpha(0)
+        if pf.canvasBg.SetVertexColor then
+            pf.canvasBg:SetVertexColor(1, 1, 1, 0)
+        end
         if canvas then
             canvas:SetBackdropColor(0, 0, 0, 0)
             if canvas.SetBackdropBorderColor then canvas:SetBackdropBorderColor(0, 0, 0, 0) end
@@ -4626,8 +4725,8 @@ local function ApplySceneBackground(pf, scene, vc, cw, ch)
         if a == nil then a = 1 end
         pf.canvasBg:Show()
         pf.canvasBg:SetTexture(nil)
-        pf.canvasBg:SetColorTexture(r, g, b, a)
-        pf.canvasBg:SetAlpha(1)
+        pf.canvasBg:SetColorTexture(r, g, b, a * compactBgAlpha)
+        ApplyCompactBackgroundAlpha(pf, 1)
         if canvas then
             canvas:SetBackdropColor(0, 0, 0, 0)
             if canvas.SetBackdropBorderColor then canvas:SetBackdropBorderColor(0, 0, 0, 0) end
@@ -4636,7 +4735,7 @@ local function ApplySceneBackground(pf, scene, vc, cw, ch)
         return true
     end
 
-    if pf.compactMode and not Diar:IsCompactBackgroundEnabled() then
+    if compactMode and not compactBgEnabled then
         if Diar.IsCompactObjectsOnlyEnabled and Diar:IsCompactObjectsOnlyEnabled() then
             -- "Objects only" is an additive override for compact background-off mode.
             -- If compact background is enabled, always show the scene background.
@@ -4674,9 +4773,8 @@ local function ApplySceneBackground(pf, scene, vc, cw, ch)
         local ok = pf.canvasBg:SetTexture(path)
         if ok then
             pf.canvasBg:Show()
-            pf.canvasBg:SetAlpha(1)
             pf.canvasBg:SetTexCoord(u0, u1, v0, v1)
-            pf.canvasBg:SetVertexColor(1, 1, 1, 1)
+            ApplyCompactBackgroundAlpha(pf, compactBgAlpha)
             -- Don't darken the image: make canvas backdrop and shadow invisible so the map shows at full brightness.
             if canvas then
                 canvas:SetBackdropColor(0, 0, 0, 0)
@@ -4684,10 +4782,14 @@ local function ApplySceneBackground(pf, scene, vc, cw, ch)
             end
             if C_Timer and C_Timer.After then
                 C_Timer.After(0, function()
-                    if pf and pf.canvasBg then pf.canvasBg:SetVertexColor(1, 1, 1, 1) end
+                    if pf and pf.canvasBg and pf.compactMode then
+                        ApplyCompactBackgroundAlpha(pf, Diar.GetCompactBackgroundOpacity and Diar:GetCompactBackgroundOpacity() or compactBgAlpha)
+                    end
                 end)
                 C_Timer.After(0.15, function()
-                    if pf and pf.canvasBg then pf.canvasBg:SetVertexColor(1, 1, 1, 1) end
+                    if pf and pf.canvasBg and pf.compactMode then
+                        ApplyCompactBackgroundAlpha(pf, Diar.GetCompactBackgroundOpacity and Diar:GetCompactBackgroundOpacity() or compactBgAlpha)
+                    end
                 end)
             end
             return
@@ -4708,11 +4810,16 @@ local function ApplySceneBackground(pf, scene, vc, cw, ch)
     end
     pf.canvasBg:Show()
     pf.canvasBg:SetTexture(nil)
-    pf.canvasBg:SetColorTexture(0.12, 0.14, 0.18, 1)
-    pf.canvasBg:SetAlpha(1)
+    pf.canvasBg:SetColorTexture(0.12, 0.14, 0.18, compactBgAlpha)
+    ApplyCompactBackgroundAlpha(pf, 1)
     if canvas then
-        canvas:SetBackdropColor(0.08, 0.08, 0.12, 0.98)
-        if canvas.shadow then canvas.shadow:Show() end
+        if compactMode then
+            canvas:SetBackdropColor(0, 0, 0, 0)
+            if canvas.shadow then canvas.shadow:Hide() end
+        else
+            canvas:SetBackdropColor(0.08, 0.08, 0.12, 0.98)
+            if canvas.shadow then canvas.shadow:Show() end
+        end
     end
 end
 
@@ -6086,9 +6193,8 @@ local function ApplyPlannerCompactLayout(pf, keepFrameSize, snapFrame)
         pf.closeBtn:SetFrameLevel(btnAnchor:GetFrameLevel() + 2)
         pf.modeToggleBtn:SetFrameLevel(btnAnchor:GetFrameLevel() + 2)
     end
-    if nsrtOverlay then
-        ApplyPlannerChromeTransparent(pf)
-    end
+    -- Always clear opaque panel chrome in compact so background opacity can show the world.
+    ApplyPlannerChromeTransparent(pf)
     Diar:ApplyCompactInteractionState(pf)
     ApplyPlannerResizeBounds(pf)
     UpdatePlannerModeToggleBtn(pf)
@@ -6382,8 +6488,12 @@ function Diar:ShowPlannerViewer(opts)
         end)
         pf:SetScript("OnShow", function(s)
             if s.canvas then s.canvas:SetAlpha(1) end
-            if s.nsrtSceneActive and s.compactMode then
+            if s.compactMode then
                 ApplyPlannerChromeTransparent(s)
+                if s.canvasBg and Diar.IsCompactBackgroundEnabled and Diar:IsCompactBackgroundEnabled() then
+                    local a = Diar.GetCompactBackgroundOpacity and Diar:GetCompactBackgroundOpacity() or 1
+                    ApplyCompactBackgroundAlpha(s, a)
+                end
             elseif s.canvasBg then
                 s.canvasBg:SetVertexColor(1, 1, 1, 1)
             end
