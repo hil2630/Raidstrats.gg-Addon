@@ -1172,9 +1172,16 @@ function Diar:ShareSavedPlanGroupToGroup(groupId)
         groupName = groupName,
         count = #plans,
     }
+    -- Preload once to the group so many simultaneous clicks don't each whisper-download.
+    local broadcasted = self.SendSharedPlanGroupBroadcast and self:SendSharedPlanGroupBroadcast(linkLabel, json)
     SendChatMessage(("[Raidstrats: %s]"):format(linkLabel), chan)
-    print(("|cff00aaff[Raidstrats.gg]|r Shared \"%s\" to %s. Others click the link to import."):format(
-        linkLabel, tostring(chan):lower()))
+    if broadcasted then
+        print(("|cff00aaff[Raidstrats.gg]|r Shared \"%s\" to %s (preloaded to group). Others click the link to import."):format(
+            linkLabel, tostring(chan):lower()))
+    else
+        print(("|cff00aaff[Raidstrats.gg]|r Shared \"%s\" to %s. Others click the link to import."):format(
+            linkLabel, tostring(chan):lower()))
+    end
     return true
 end
 
@@ -1388,6 +1395,26 @@ function Diar:SendSharedPlanGroupWhisper(target, linkLabel, payloadJson)
         local start = (j - 1) * GROUP_SHARE_BATCH + 1
         local chunk = payloadJson:sub(start, start + GROUP_SHARE_BATCH - 1)
         self:SendCommMessage(prefix, table.concat({ "GDAT", linkLabel, tostring(j), tostring(total), chunk }, SEP), "WHISPER", target, "BULK")
+    end
+    return true
+end
+
+-- Push a multi-plan bundle once to party/raid/instance (cache on receive; import on click).
+function Diar:SendSharedPlanGroupBroadcast(linkLabel, payloadJson)
+    local chan = self.GetPlanShareCommChannel and self:GetPlanShareCommChannel() or nil
+    if not chan or not linkLabel or not payloadJson or payloadJson == "" then return false end
+    local total = math.ceil(#payloadJson / GROUP_SHARE_BATCH)
+    local prefix = self.COMM_PLAN_PREFIX or "RAIDSTRATS_PLAN"
+    for j = 1, total do
+        local start = (j - 1) * GROUP_SHARE_BATCH + 1
+        local chunk = payloadJson:sub(start, start + GROUP_SHARE_BATCH - 1)
+        self:SendCommMessage(
+            prefix,
+            table.concat({ "GBDT", linkLabel, tostring(j), tostring(total), chunk }, SEP),
+            chan,
+            nil,
+            "BULK"
+        )
     end
     return true
 end
@@ -1624,6 +1651,33 @@ function Diar:HandleSharedPlanGroupComm(msg, sender)
             self:UpdateImportProgress(count, entry.total)
         end
         self:TryCompleteSharedPlanGroupImport(transferId, sender)
+        return true
+    elseif tag == "GBDT" then
+        -- Group preload broadcast: cache only (do not auto-import).
+        local linkLabel = parts[2]
+        local i = tonumber(parts[3])
+        local n = tonumber(parts[4])
+        local chunk = parts[5]
+        if not linkLabel or not i or not n or type(chunk) ~= "string" then return true end
+        self._sharedPlanGroupsBroadcastIncoming = self._sharedPlanGroupsBroadcastIncoming or {}
+        local key = (self.MakeReceivedShareKey and self:MakeReceivedShareKey(sender, linkLabel))
+            or (tostring(sender or "") .. "\0" .. tostring(linkLabel))
+        local entry = self._sharedPlanGroupsBroadcastIncoming[key]
+        if not entry then
+            entry = { chunks = {}, total = n, sender = sender, t = GetTime(), planName = linkLabel }
+            self._sharedPlanGroupsBroadcastIncoming[key] = entry
+        end
+        entry.total = n
+        entry.chunks[i] = chunk
+        entry.t = GetTime()
+        for idx = 1, entry.total do
+            if not entry.chunks[idx] then return true end
+        end
+        local payload = table.concat(entry.chunks, "")
+        self._sharedPlanGroupsBroadcastIncoming[key] = nil
+        if self.CacheReceivedSharedPlanGroup then
+            self:CacheReceivedSharedPlanGroup(sender, linkLabel, payload)
+        end
         return true
     end
     return false

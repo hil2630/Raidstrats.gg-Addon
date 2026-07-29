@@ -1,4 +1,12 @@
 # Changelog
+## [Alpha 0.0.49]
+
+New:
+
+- Share to Group now preloads the plan (or plan group) once over party/raid/instance AceComm.
+  - Clickers import from the local cache instead of each whispering a full download from the sharer.
+  - Whisper request remains as fallback for late joiners / missed broadcasts.
+  - With `/rsggdebug` on, receiving a share cache logs plan/group name, sender, and payload size.
 
 ## [Alpha 0.0.48]
 
