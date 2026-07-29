@@ -1174,7 +1174,14 @@ function Diar:ShareSavedPlanGroupToGroup(groupId)
     }
     -- Preload once to the group so many simultaneous clicks don't each whisper-download.
     local broadcasted = self.SendSharedPlanGroupBroadcast and self:SendSharedPlanGroupBroadcast(linkLabel, json)
-    SendChatMessage(("[Raidstrats: %s]"):format(linkLabel), chan)
+    local function postChatToken()
+        SendChatMessage(("[Raidstrats: %s]"):format(linkLabel), chan)
+    end
+    if broadcasted and C_Timer and C_Timer.After then
+        C_Timer.After(0.4, postChatToken)
+    else
+        postChatToken()
+    end
     if broadcasted then
         print(("|cff00aaff[Raidstrats.gg]|r Shared \"%s\" to %s (preloaded to group). Others click the link to import."):format(
             linkLabel, tostring(chan):lower()))
@@ -1389,12 +1396,15 @@ end
 
 function Diar:SendSharedPlanGroupWhisper(target, linkLabel, payloadJson)
     if not target or not linkLabel or not payloadJson or payloadJson == "" then return false end
-    local total = math.ceil(#payloadJson / GROUP_SHARE_BATCH)
+    if self.ResolveWhisperTarget then
+        target = self:ResolveWhisperTarget(target) or target
+    end
     local prefix = self.COMM_PLAN_PREFIX or "RAIDSTRATS_PLAN"
-    for j = 1, total do
-        local start = (j - 1) * GROUP_SHARE_BATCH + 1
-        local chunk = payloadJson:sub(start, start + GROUP_SHARE_BATCH - 1)
-        self:SendCommMessage(prefix, table.concat({ "GDAT", linkLabel, tostring(j), tostring(total), chunk }, SEP), "WHISPER", target, "BULK")
+    -- One AceComm message (auto multipart) instead of hundreds of tiny GDAT chunks.
+    self:SendCommMessage(prefix, table.concat({ "GALL", linkLabel, payloadJson }, SEP), "WHISPER", target, "NORMAL")
+    if self.ShareDebug then
+        self:ShareDebug(("Whisper group send: to=%s group=\"%s\" bytes=%d"):format(
+            tostring(target), tostring(linkLabel), #payloadJson))
     end
     return true
 end
@@ -1403,18 +1413,17 @@ end
 function Diar:SendSharedPlanGroupBroadcast(linkLabel, payloadJson)
     local chan = self.GetPlanShareCommChannel and self:GetPlanShareCommChannel() or nil
     if not chan or not linkLabel or not payloadJson or payloadJson == "" then return false end
-    local total = math.ceil(#payloadJson / GROUP_SHARE_BATCH)
     local prefix = self.COMM_PLAN_PREFIX or "RAIDSTRATS_PLAN"
-    for j = 1, total do
-        local start = (j - 1) * GROUP_SHARE_BATCH + 1
-        local chunk = payloadJson:sub(start, start + GROUP_SHARE_BATCH - 1)
-        self:SendCommMessage(
-            prefix,
-            table.concat({ "GBDT", linkLabel, tostring(j), tostring(total), chunk }, SEP),
-            chan,
-            nil,
-            "BULK"
-        )
+    self:SendCommMessage(
+        prefix,
+        table.concat({ "GBPL", linkLabel, payloadJson }, SEP),
+        chan,
+        nil,
+        "NORMAL"
+    )
+    if self.ShareDebug then
+        self:ShareDebug(("Broadcast group send: chan=%s group=\"%s\" bytes=%d"):format(
+            tostring(chan), tostring(linkLabel), #payloadJson))
     end
     return true
 end
@@ -1628,6 +1637,30 @@ function Diar:HandleSharedPlanGroupComm(msg, sender)
         end
         self:SendSharedPlanGroupWhisper(sender, linkLabel, shared.payload)
         return true
+    elseif tag == "GALL" then
+        -- Fast full-group whisper (single AceComm message).
+        local linkLabel = parts[2]
+        local payload = parts[3]
+        if not linkLabel or type(payload) ~= "string" or payload == "" then return true end
+        if self.CacheReceivedSharedPlanGroup then
+            self:CacheReceivedSharedPlanGroup(sender, linkLabel, payload)
+        end
+        local waiting = self._sharedPlanGroupsIncoming and self._sharedPlanGroupsIncoming[linkLabel]
+        if waiting then
+            self._sharedPlanGroupsIncoming[linkLabel] = nil
+            if self.CancelShareRequestTimeout then self:CancelShareRequestTimeout() end
+            self:ImportSharedPlanGroupPayload(payload, sender)
+        end
+        return true
+    elseif tag == "GBPL" then
+        -- Fast group preload broadcast: cache only (do not auto-import).
+        local linkLabel = parts[2]
+        local payload = parts[3]
+        if not linkLabel or type(payload) ~= "string" or payload == "" then return true end
+        if self.CacheReceivedSharedPlanGroup then
+            self:CacheReceivedSharedPlanGroup(sender, linkLabel, payload)
+        end
+        return true
     elseif tag == "GDAT" then
         local transferId = parts[2]
         local i = tonumber(parts[3])
@@ -1650,10 +1683,12 @@ function Diar:HandleSharedPlanGroupComm(msg, sender)
         if self.UpdateImportProgress then
             self:UpdateImportProgress(count, entry.total)
         end
-        self:TryCompleteSharedPlanGroupImport(transferId, sender)
+        if self:TryCompleteSharedPlanGroupImport(transferId, sender) then
+            if self.CancelShareRequestTimeout then self:CancelShareRequestTimeout() end
+        end
         return true
     elseif tag == "GBDT" then
-        -- Group preload broadcast: cache only (do not auto-import).
+        -- Legacy chunked group preload broadcast: cache only (do not auto-import).
         local linkLabel = parts[2]
         local i = tonumber(parts[3])
         local n = tonumber(parts[4])

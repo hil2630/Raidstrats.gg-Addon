@@ -8,6 +8,15 @@ New:
   - Whisper request remains as fallback for late joiners / missed broadcasts.
   - With `/rsggdebug` on, receiving a share cache logs plan/group name, sender, and payload size.
 
+Fixed:
+
+- Plan/group share transfers no longer spam hundreds of tiny BULK packets (was taking 1–2+ minutes or hanging on "Requesting plan...").
+  - Sends one AceComm message (library multipart) at NORMAL priority instead.
+  - Chat link is posted slightly after the preload so receivers can cache first.
+  - Request timeouts after 45s with a clear error instead of spinning forever.
+  - `/rsggdebug` logs cache hit/miss, REQ handling, and send sizes.
+  - Raidcheck send-notif / missing-plan whispers use the same faster NORMAL transfer path.
+
 ## [Alpha 0.0.48]
 
 New:

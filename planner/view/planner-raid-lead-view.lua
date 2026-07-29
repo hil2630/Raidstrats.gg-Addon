@@ -2267,7 +2267,7 @@ function Diar:SendRaidCheckPlanToMember(memberName, plan)
         "RNOT", SanitizeCommField(planName), planKey, planId,
         SanitizeCommField(transferId), SanitizeCommField(owner),
     }, SEP)
-    self:SendCommMessage(prefix, msg, "WHISPER", target, "BULK")
+    self:SendCommMessage(prefix, msg, "WHISPER", target, "NORMAL")
     print(("|cff00aaff[Raidstrats.gg]|r Sent \"%s\" to %s."):format(
         planName, Ambiguate and Ambiguate(target, "short") or target))
     return true
@@ -2307,7 +2307,7 @@ function Diar:SendReadyCheckNotePlansBundleToMember(memberName, sendable)
         tostring(count),
         SanitizeCommField(owner),
     }, SEP)
-    self:SendCommMessage(prefix, msg, "WHISPER", target, "BULK")
+    self:SendCommMessage(prefix, msg, "WHISPER", target, "NORMAL")
     return true
 end
 
@@ -2547,9 +2547,13 @@ function Diar:ImportPlanFromRaidCheckNotif(sender, transferId, owner, planName)
         sender = sender,
     }
 
-    -- Same fast path as chat hyperlinks: whisper request + 180-byte bulk chunks.
+    -- Same fast path as chat share: REQ, then one AceComm PLAN: whisper (NORMAL).
     local prefix = self.COMM_PLAN_PREFIX or "RAIDSTRATS_PLAN"
-    self:SendCommMessage(prefix, "REQ:" .. transferId, "WHISPER", sender, "BULK")
+    local whisperTo = (self.ResolveWhisperTarget and self:ResolveWhisperTarget(sender)) or sender
+    if self.ArmShareRequestTimeout then
+        self:ArmShareRequestTimeout(sender, transferId, "requesting plan")
+    end
+    self:SendCommMessage(prefix, "REQ:" .. transferId, "WHISPER", whisperTo, "NORMAL")
 
     local displayName = (planName and planName ~= "") and planName or "Raid plan"
     self.plannerData = {

@@ -1889,16 +1889,23 @@ function Raidstrats:GetReceivedSharedPlan(sender, planName)
     local map = self._receivedSharedPlans
     if not map or not planName or planName == "" then return nil end
     local now = time()
-    local key = self:MakeReceivedShareKey(sender, planName)
-    local entry = map[key]
-    if entry and entry.payload and entry.payload ~= "" and (now - (entry.t or 0)) <= SHARED_PLAN_TTL then
-        return entry
+    local function valid(entry)
+        return entry and entry.payload and entry.payload ~= "" and (now - (entry.t or 0)) <= SHARED_PLAN_TTL
+    end
+    -- Chat sender and AceComm sender can differ (realm suffix / Ambiguate forms).
+    local forms = { sender }
+    if Ambiguate then
+        forms[#forms + 1] = Ambiguate(sender, "short")
+        forms[#forms + 1] = Ambiguate(sender, "none")
+    end
+    for i = 1, #forms do
+        local entry = map[self:MakeReceivedShareKey(forms[i], planName)]
+        if valid(entry) then return entry end
     end
     -- Fallback: unique match on plan name (same raid usually only has one active share).
     local found = nil
     for _, e in pairs(map) do
-        if e and e.planName == planName and e.payload and e.payload ~= ""
-            and (now - (e.t or 0)) <= SHARED_PLAN_TTL then
+        if e and e.planName == planName and valid(e) then
             if found then return nil end
             found = e
         end
@@ -1931,20 +1938,45 @@ function Raidstrats:GetReceivedSharedPlanGroup(sender, linkLabel)
     local map = self._receivedSharedPlanGroups
     if not map or not linkLabel or linkLabel == "" then return nil end
     local now = time()
-    local key = self:MakeReceivedShareKey(sender, linkLabel)
-    local entry = map[key]
-    if entry and entry.payload and entry.payload ~= "" and (now - (entry.t or 0)) <= SHARED_PLAN_TTL then
-        return entry
+    local function valid(entry)
+        return entry and entry.payload and entry.payload ~= "" and (now - (entry.t or 0)) <= SHARED_PLAN_TTL
+    end
+    local forms = { sender }
+    if Ambiguate then
+        forms[#forms + 1] = Ambiguate(sender, "short")
+        forms[#forms + 1] = Ambiguate(sender, "none")
+    end
+    for i = 1, #forms do
+        local entry = map[self:MakeReceivedShareKey(forms[i], linkLabel)]
+        if valid(entry) then return entry end
     end
     local found = nil
     for _, e in pairs(map) do
-        if e and e.planName == linkLabel and e.payload and e.payload ~= ""
-            and (now - (e.t or 0)) <= SHARED_PLAN_TTL then
+        if e and e.planName == linkLabel and valid(e) then
             if found then return nil end
             found = e
         end
     end
     return found
+end
+
+function Raidstrats:ResolveWhisperTarget(name)
+    if type(name) ~= "string" or name == "" then return nil end
+    if name:find("-", 1, true) then return name end
+    if Ambiguate then
+        local full = Ambiguate(name, "none")
+        if type(full) == "string" and full:find("-", 1, true) then return full end
+    end
+    return name
+end
+
+function Raidstrats:ShareDebug(msg)
+    if not (self.IsRsggDebug and self:IsRsggDebug()) then return end
+    local text = tostring(msg or "")
+    if self.AppendPlannerDebugLine then
+        self:AppendPlannerDebugLine(text)
+    end
+    print("|cff66ccff[Raidstrats.gg Debug]|r " .. text)
 end
 
 local function EnsureShareToGuildPopup()
@@ -2056,22 +2088,20 @@ function Raidstrats:InsertPlanShareTokenIntoActiveChat(data)
     return self:InsertShareTokenIntoActiveChat(token)
 end
 
+-- Legacy tiny-chunk path (kept for receiving old clients only). New sends use one
+-- AceComm message so ChatThrottle isn't flooded with hundreds of BULK packets.
 local SHARE_PLAN_BATCH = 180
+local SHARE_COMM_PRIO = "NORMAL"
+local SHARE_REQUEST_TIMEOUT = 45
 
 function Raidstrats:SendSharedPlanWhisper(target, planName, payload)
-    if not target or not planName or not payload or payload == "" then return false end
-    local totalChunks = math.ceil(#payload / SHARE_PLAN_BATCH)
-    for j = 1, totalChunks do
-        local start = (j - 1) * SHARE_PLAN_BATCH + 1
-        local chunk = payload:sub(start, start + SHARE_PLAN_BATCH - 1)
-        self:SendCommMessage(
-            COMM_PLAN_PREFIX,
-            ("DATA:%s:%d:%d:%s"):format(planName, j, totalChunks, chunk),
-            "WHISPER",
-            target,
-            "BULK"
-        )
-    end
+    if not target or not payload or payload == "" then return false end
+    target = self:ResolveWhisperTarget(target) or target
+    -- Single message: AceComm multipart-splits it. Much faster/more reliable than
+    -- hundreds of manual DATA: chunks on BULK (those were taking 1–2+ minutes).
+    self:SendCommMessage(COMM_PLAN_PREFIX, "PLAN:" .. payload, "WHISPER", target, SHARE_COMM_PRIO)
+    self:ShareDebug(("Whisper plan send: to=%s plan=\"%s\" bytes=%d"):format(
+        tostring(target), tostring(planName or "?"), #payload))
     return true
 end
 
@@ -2080,18 +2110,15 @@ end
 function Raidstrats:SendSharedPlanBroadcast(planName, payload)
     local chan = self.GetPlanShareCommChannel and self:GetPlanShareCommChannel() or nil
     if not chan or not planName or not payload or payload == "" then return false end
-    local totalChunks = math.ceil(#payload / SHARE_PLAN_BATCH)
-    for j = 1, totalChunks do
-        local start = (j - 1) * SHARE_PLAN_BATCH + 1
-        local chunk = payload:sub(start, start + SHARE_PLAN_BATCH - 1)
-        self:SendCommMessage(
-            COMM_PLAN_PREFIX,
-            ("BDAT:%s:%d:%d:%s"):format(planName, j, totalChunks, chunk),
-            chan,
-            nil,
-            "BULK"
-        )
-    end
+    self:SendCommMessage(
+        COMM_PLAN_PREFIX,
+        ("BPLN:%s:%s"):format(planName, payload),
+        chan,
+        nil,
+        SHARE_COMM_PRIO
+    )
+    self:ShareDebug(("Broadcast plan send: chan=%s plan=\"%s\" bytes=%d"):format(
+        tostring(chan), tostring(planName), #payload))
     return true
 end
 
@@ -2113,6 +2140,33 @@ function Raidstrats:HandleSharedPlanBroadcastChunk(sender, planName, index, tota
     local payload = table.concat(entry.chunks, "")
     self._broadcastPlanIncoming[key] = nil
     self:CacheReceivedSharedPlan(sender, planName, payload)
+end
+
+function Raidstrats:CancelShareRequestTimeout()
+    self._shareRequestSerial = (self._shareRequestSerial or 0) + 1
+end
+
+function Raidstrats:ArmShareRequestTimeout(sender, planName, kind)
+    local serial = (self._shareRequestSerial or 0) + 1
+    self._shareRequestSerial = serial
+    if not (C_Timer and C_Timer.After) then return end
+    C_Timer.After(SHARE_REQUEST_TIMEOUT, function()
+        if self._shareRequestSerial ~= serial then return end
+        local incoming = self._incomingPlan
+        local waiting = incoming and incoming.id == planName
+        local groupWaiting = self._sharedPlanGroupsIncoming and self._sharedPlanGroupsIncoming[planName]
+        if not waiting and not groupWaiting then return end
+        self._incomingPlan = nil
+        if self._sharedPlanGroupsIncoming then
+            self._sharedPlanGroupsIncoming[planName] = nil
+        end
+        if self.HideImportProgress then self:HideImportProgress() end
+        local short = Ambiguate and Ambiguate(sender, "short") or sender
+        print(("|cffff6666[Raidstrats.gg]|r Timed out %s \"%s\" from %s. Ask them to share again (both on latest addon)."):format(
+            kind or "requesting", tostring(planName), tostring(short)))
+        self:ShareDebug(("Share request timeout: kind=%s plan=\"%s\" from=%s"):format(
+            tostring(kind), tostring(planName), tostring(short)))
+    end)
 end
 
 -- Share the current plan to chat, WeakAuras-style: post a plain-text token that each
@@ -2158,8 +2212,15 @@ function Raidstrats:SharePlanToGroup(data, opts)
     -- Preload once to the group; clickers import from this cache when available.
     local broadcasted = self:SendSharedPlanBroadcast(planName, payload)
 
-    -- Post the plain-text token; clients with the addon turn it into a clickable link.
-    SendChatMessage(("[Raidstrats: %s]"):format(planName), chan)
+    local function postChatToken()
+        SendChatMessage(("[Raidstrats: %s]"):format(planName), chan)
+    end
+    -- Slight delay so the AceComm preload can land before people click the link.
+    if broadcasted and C_Timer and C_Timer.After then
+        C_Timer.After(0.4, postChatToken)
+    else
+        postChatToken()
+    end
 
     if broadcasted then
         print(("|cff00aaff[Raidstrats.gg]|r Shared \"%s\" to %s (preloaded to group). Others click the link to import."):format(planName, ChannelLabel(chan)))
@@ -2217,14 +2278,19 @@ function Raidstrats:RequestSharedPlan(sender, planName)
     if isGroupShareToken then
         local receivedGroup = self.GetReceivedSharedPlanGroup and self:GetReceivedSharedPlanGroup(sender, planName)
         if receivedGroup and receivedGroup.payload and self.ImportSharedPlanGroupPayload then
+            self:ShareDebug(("Share click cache HIT (group): plan=\"%s\" from=%s"):format(planName, tostring(sender)))
+            self:CancelShareRequestTimeout()
             self:OpenPlannerAfterShareImport()
             if self.ShowImportProgress then self:ShowImportProgress(true, 0, nil, "Importing shared group...") end
             self:ImportSharedPlanGroupPayload(receivedGroup.payload, receivedGroup.sender or sender)
             return
         end
+        self:ShareDebug(("Share click cache MISS (group): plan=\"%s\" from=%s — whispering REQ"):format(planName, tostring(sender)))
     else
         local received = self.GetReceivedSharedPlan and self:GetReceivedSharedPlan(sender, planName)
         if received and received.payload then
+            self:ShareDebug(("Share click cache HIT: plan=\"%s\" from=%s"):format(planName, tostring(sender)))
+            self:CancelShareRequestTimeout()
             if self.ShowImportProgress then self:ShowImportProgress(true, 0, nil, "Importing shared plan...") end
             local ok = self:ImportPlanFromPasteString(PREFIX_PLANNER .. received.payload)
             if self.HideImportProgress then self:HideImportProgress() end
@@ -2238,22 +2304,26 @@ function Raidstrats:RequestSharedPlan(sender, planName)
             end
             return
         end
+        self:ShareDebug(("Share click cache MISS: plan=\"%s\" from=%s — whispering REQ"):format(planName, tostring(sender)))
     end
 
+    local whisperTo = self:ResolveWhisperTarget(sender) or sender
     if isGroupShareToken and self.HandleSharedPlanGroupComm then
         self._sharedPlanGroupsIncoming = self._sharedPlanGroupsIncoming or {}
         self._sharedPlanGroupsIncoming[planName] = { id = planName, chunks = {}, total = nil, t = GetTime(), sender = sender }
         self:OpenPlannerAfterShareImport()
         if self.ShowImportProgress then self:ShowImportProgress(true, 0, nil, "Requesting group...") end
-        self:SendCommMessage(COMM_PLAN_PREFIX, "GREQ" .. string.char(31) .. planName, "WHISPER", sender, "BULK")
+        self:ArmShareRequestTimeout(sender, planName, "requesting group")
+        self:SendCommMessage(COMM_PLAN_PREFIX, "GREQ" .. string.char(31) .. planName, "WHISPER", whisperTo, SHARE_COMM_PRIO)
         print(("|cff00aaff[Raidstrats.gg]|r Requesting \"%s\" from %s..."):format(planName, Ambiguate and Ambiguate(sender, "short") or sender))
         return
     end
     self._incomingPlan = { owner = sender, id = planName, chunks = {}, total = nil, t = GetTime() }
     self:OpenPlannerAfterShareImport()
     if self.ShowImportProgress then self:ShowImportProgress(true, 0, nil, "Requesting plan...") end
+    self:ArmShareRequestTimeout(sender, planName, "requesting plan")
     print(("|cff00aaff[Raidstrats.gg]|r Requesting \"%s\" from %s..."):format(planName, Ambiguate and Ambiguate(sender, "short") or sender))
-    self:SendCommMessage(COMM_PLAN_PREFIX, "REQ:" .. planName, "WHISPER", sender, "BULK")
+    self:SendCommMessage(COMM_PLAN_PREFIX, "REQ:" .. planName, "WHISPER", whisperTo, SHARE_COMM_PRIO)
 end
 
 function Raidstrats:SetupSharedPlanLinks()
@@ -3440,16 +3510,31 @@ function Raidstrats:OnCommReceived(p, m, d, s)
         local planName = m:sub(5)
         if not planName or planName == "" then return end
         local entry = self._sharedPlans and self._sharedPlans[planName]
-        if not entry or not entry.payload or entry.payload == "" then return end
-        if (time() - (entry.t or 0)) > SHARED_PLAN_TTL then
-            self._sharedPlans[planName] = nil
+        if not entry or not entry.payload or entry.payload == "" then
+            self:ShareDebug(("REQ miss: no cached share for plan=\"%s\" from=%s"):format(tostring(planName), tostring(s)))
             return
         end
+        if (time() - (entry.t or 0)) > SHARED_PLAN_TTL then
+            self._sharedPlans[planName] = nil
+            self:ShareDebug(("REQ miss: expired share for plan=\"%s\" from=%s"):format(tostring(planName), tostring(s)))
+            return
+        end
+        self:ShareDebug(("REQ hit: sending plan=\"%s\" to=%s bytes=%d"):format(
+            tostring(planName), tostring(s), #(entry.payload or "")))
         self:SendSharedPlanWhisper(s, planName, entry.payload)
         return
     end
 
-    -- Group preload broadcast (cache only — import happens when they click the chat link).
+    -- Fast preload (single AceComm message). Cache only — import on chat-link click.
+    if m:sub(1, 5) == "BPLN:" then
+        local planName, payload = m:sub(6):match("^([^:]+):(.*)$")
+        if planName and payload and payload ~= "" then
+            self:CacheReceivedSharedPlan(s, planName, payload)
+        end
+        return
+    end
+
+    -- Legacy chunked preload (older addon versions).
     if m:sub(1, 5) == "BDAT:" then
         local rest = m:sub(6)
         local planName, iStr, nStr, chunk = rest:match("^([^:]+):(%d+):(%d+):(.*)$")
@@ -3460,10 +3545,12 @@ function Raidstrats:OnCommReceived(p, m, d, s)
         return
     end
 
-    -- Legacy single-message transfer (older addon versions).
+    -- Full plan whisper transfer (also used by the fast path after REQ).
     if m:sub(1, 5) == "PLAN:" then
         local payload = m:sub(6)
         if not payload or payload == "" then return end
+        self:CancelShareRequestTimeout()
+        self._incomingPlan = nil
         if self.ShowImportProgress then self:ShowImportProgress(true, 0, nil, "Importing shared plan...") end
         local ok = self:ImportPlanFromPasteString(PREFIX_PLANNER .. payload)
         if self.HideImportProgress then self:HideImportProgress() end
@@ -3523,6 +3610,7 @@ function Raidstrats:OnCommReceived(p, m, d, s)
         end
         local b64 = table.concat(incoming.chunks, "")
         self._incomingPlan = nil
+        self:CancelShareRequestTimeout()
         if self.HideImportProgress then self:HideImportProgress() end
         local ok = self:ImportPlanFromPasteString(PREFIX_PLANNER .. b64)
         if ok == true then
@@ -3537,7 +3625,8 @@ function Raidstrats:OnCommReceived(p, m, d, s)
     end
 
     -- Shared plan group bundle (multiple plans in one transfer / group preload).
-    if m:sub(1, 4) == "GSHR" or m:sub(1, 4) == "GDAT" or m:sub(1, 4) == "GREQ" or m:sub(1, 4) == "GBDT" then
+    if m:sub(1, 4) == "GSHR" or m:sub(1, 4) == "GDAT" or m:sub(1, 4) == "GREQ"
+        or m:sub(1, 4) == "GBDT" or m:sub(1, 4) == "GBPL" or m:sub(1, 4) == "GALL" then
         if self.HandleSharedPlanGroupComm then
             self:HandleSharedPlanGroupComm(m, s)
         end
