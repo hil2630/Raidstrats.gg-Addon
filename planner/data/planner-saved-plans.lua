@@ -7,6 +7,7 @@ local Addon =
     AceAddon:GetAddon("raidstratsgg", true)
 if not Addon then return end
 local Diar = Addon
+local function L(key) return RSGG_L(key) end
 local SetBackdrop = Diar.SetBackdrop
 local CreateAnimatedCheckbox = Diar.CreateAnimatedCheckbox
 local PUI = Diar.PlannerUI
@@ -16,7 +17,7 @@ local SkinPlannerScroll = PUI.SkinPlannerScroll
 -- Delete-plan confirmation popup
 if not StaticPopupDialogs["RAIDSTRATSGG_DELETE_PLAN"] then
     StaticPopupDialogs["RAIDSTRATSGG_DELETE_PLAN"] = {
-        text = "Delete plan \"%s\"?",
+        text = L("Delete plan \"%s\"?"),
         button1 = _G.YES or "Yes",
         button2 = _G.CANCEL or "Cancel",
         OnAccept = function(self)
@@ -31,7 +32,7 @@ end
 
 if not StaticPopupDialogs["RAIDSTRATSGG_PLAN_SEARCH"] then
     StaticPopupDialogs["RAIDSTRATSGG_PLAN_SEARCH"] = {
-        text = "Search plans (name / raid / boss):",
+        text = L("Search plans (name / raid / boss):"),
         button1 = _G.OKAY or "OK",
         button2 = _G.CANCEL or "Cancel",
         hasEditBox = true,
@@ -59,7 +60,7 @@ end
 
 if not StaticPopupDialogs["RAIDSTRATSGG_CREATE_PLAN_GROUP"] then
     StaticPopupDialogs["RAIDSTRATSGG_CREATE_PLAN_GROUP"] = {
-        text = "Create group:",
+        text = L("Create group:"),
         button1 = _G.OKAY or "OK",
         button2 = _G.CANCEL or "Cancel",
         hasEditBox = true,
@@ -86,7 +87,7 @@ end
 
 if not StaticPopupDialogs["RAIDSTRATSGG_DELETE_PLAN_GROUP"] then
     StaticPopupDialogs["RAIDSTRATSGG_DELETE_PLAN_GROUP"] = {
-        text = "Delete group \"%s\"?\nPlans will be moved to Ungrouped.",
+        text = L("Delete group \"%s\"?\nPlans will be moved to Ungrouped."),
         button1 = _G.YES or "Yes",
         button2 = _G.CANCEL or "Cancel",
         OnAccept = function(self)
@@ -104,7 +105,7 @@ end
 
 if not StaticPopupDialogs["RAIDSTRATSGG_DELETE_PLAN_GROUP_AND_PLANS"] then
     StaticPopupDialogs["RAIDSTRATSGG_DELETE_PLAN_GROUP_AND_PLANS"] = {
-        text = "Delete group \"%s\" and all plans in it?",
+        text = L("Delete group \"%s\" and all plans in it?"),
         button1 = _G.YES or "Yes",
         button2 = _G.CANCEL or "Cancel",
         OnAccept = function(self)
@@ -149,14 +150,14 @@ function Diar:EnsureStyledCreatePlanGroupDialog()
     local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     title:SetPoint("TOPLEFT", 14, -14)
     title:SetTextColor(0.92, 0.92, 0.96)
-    title:SetText("Create Group")
+    title:SetText(L("Create Group"))
 
     local subtitle = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     subtitle:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -6)
     subtitle:SetPoint("TOPRIGHT", f, "TOPRIGHT", -14, -6)
     subtitle:SetJustifyH("LEFT")
     subtitle:SetTextColor(0.70, 0.74, 0.82)
-    subtitle:SetText("Choose a group name for the selected plans.")
+    subtitle:SetText(L("Choose a group name for the selected plans."))
 
     local inputWrap = CreateFrame("Frame", nil, f, "BackdropTemplate")
     inputWrap:SetPoint("TOPLEFT", subtitle, "BOTTOMLEFT", 0, -10)
@@ -184,7 +185,7 @@ function Diar:EnsureStyledCreatePlanGroupDialog()
     end)
     f.editBox = edit
 
-    local createBtn = CreatePlannerIconBtn(f, "Create", 100, 28)
+    local createBtn = CreatePlannerIconBtn(f, L("Create"), 100, 28)
     createBtn:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 14, 14)
     createBtn:SetScript("OnClick", function()
         local text = strtrim(edit:GetText() or "")
@@ -194,7 +195,7 @@ function Diar:EnsureStyledCreatePlanGroupDialog()
         end
     end)
 
-    local cancelBtn = CreatePlannerIconBtn(f, "Cancel", 100, 28)
+    local cancelBtn = CreatePlannerIconBtn(f, L("Cancel"), 100, 28)
     cancelBtn:SetPoint("LEFT", createBtn, "RIGHT", 8, 0)
     cancelBtn:SetScript("OnClick", function()
         f:Hide()
@@ -256,14 +257,14 @@ function Diar:EnsureStyledRenamePlanDialog()
     local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     title:SetPoint("TOPLEFT", 14, -14)
     title:SetTextColor(0.92, 0.92, 0.96)
-    title:SetText("Rename Plan")
+    title:SetText(L("Rename Plan"))
 
     local subtitle = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     subtitle:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -6)
     subtitle:SetPoint("TOPRIGHT", f, "TOPRIGHT", -14, -6)
     subtitle:SetJustifyH("LEFT")
     subtitle:SetTextColor(0.70, 0.74, 0.82)
-    subtitle:SetText("Enter a new name for this plan.")
+    subtitle:SetText(L("Enter a new name for this plan."))
 
     local inputWrap = CreateFrame("Frame", nil, f, "BackdropTemplate")
     inputWrap:SetPoint("TOPLEFT", subtitle, "BOTTOMLEFT", 0, -10)
@@ -291,7 +292,7 @@ function Diar:EnsureStyledRenamePlanDialog()
     end)
     f.editBox = edit
 
-    local renameBtn = CreatePlannerIconBtn(f, "Rename", 100, 28)
+    local renameBtn = CreatePlannerIconBtn(f, L("Rename"), 100, 28)
     renameBtn:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 14, 14)
     renameBtn:SetScript("OnClick", function()
         local text = strtrim(edit:GetText() or "")
@@ -301,7 +302,7 @@ function Diar:EnsureStyledRenamePlanDialog()
         end
     end)
 
-    local cancelBtn = CreatePlannerIconBtn(f, "Cancel", 100, 28)
+    local cancelBtn = CreatePlannerIconBtn(f, L("Cancel"), 100, 28)
     cancelBtn:SetPoint("LEFT", renameBtn, "RIGHT", 8, 0)
     cancelBtn:SetScript("OnClick", function()
         f:Hide()
@@ -366,7 +367,7 @@ function Diar:EnsureStyledDeletePlanGroupDialog()
     local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     title:SetPoint("TOPLEFT", 14, -14)
     title:SetTextColor(0.96, 0.88, 0.88)
-    title:SetText("Delete Group")
+    title:SetText(L("Delete Group"))
     f.title = title
 
     local body = f:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
@@ -379,9 +380,9 @@ function Diar:EnsureStyledDeletePlanGroupDialog()
     body:SetTextColor(0.84, 0.86, 0.91)
     f.body = body
 
-    local confirmBtn = CreatePlannerIconBtn(f, "Delete", 100, 28)
+    local confirmBtn = CreatePlannerIconBtn(f, L("Delete"), 100, 28)
     confirmBtn:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 14, 14)
-    local cancelBtn = CreatePlannerIconBtn(f, "Cancel", 100, 28)
+    local cancelBtn = CreatePlannerIconBtn(f, L("Cancel"), 100, 28)
     cancelBtn:SetPoint("LEFT", confirmBtn, "RIGHT", 8, 0)
 
     confirmBtn:SetScript("OnClick", function()
@@ -406,14 +407,14 @@ function Diar:ShowStyledDeletePlanGroupDialog(groupId, groupName, deletePlans)
     if not groupId then return end
     local dlg = self:EnsureStyledDeletePlanGroupDialog()
     if not dlg then return end
-    local name = tostring(groupName or "Group")
+    local name = tostring(groupName or L("Group"))
     dlg.groupId = groupId
     dlg.groupName = name
     dlg.deletePlans = deletePlans == true
     if dlg.deletePlans then
-        dlg.body:SetText(("Delete group \"%s\" and all plans in it?"):format(name))
+        dlg.body:SetText(L("Delete group \"%s\" and all plans in it?"):format(name))
     else
-        dlg.body:SetText(("Delete group \"%s\"?\nPlans will be moved to Ungrouped."):format(name))
+        dlg.body:SetText(L("Delete group \"%s\"?\nPlans will be moved to Ungrouped."):format(name))
     end
     dlg:ClearAllPoints()
     dlg:SetPoint("CENTER")
@@ -439,7 +440,7 @@ local function BuildPlanMetaLine(entry)
     if entry.boss and entry.boss ~= "" and entry.boss ~= "Unknown" then
         parts[#parts + 1] = entry.boss
     end
-    if #parts == 0 then return "Saved plan" end
+    if #parts == 0 then return L("Saved plan") end
     return table.concat(parts, " · ")
 end
 
@@ -735,7 +736,7 @@ function Diar:ShowSavedPlansRaidFilterMenu(anchorBtn, options)
         row:ClearAllPoints()
         row:SetPoint("TOPLEFT", menu, "TOPLEFT", 4, -4 - ((i - 1) * RAID_FILTER_MENU_ROW_H))
         row:SetPoint("TOPRIGHT", menu, "TOPRIGHT", -4, -4 - ((i - 1) * RAID_FILTER_MENU_ROW_H))
-        row.label:SetText(value == "__all__" and "All raids" or value)
+        row.label:SetText(value == "__all__" and L("All raids") or (value == "Other" and L("Other") or value))
         row:Show()
     end
     for i = #values + 1, #menu.rows do
@@ -902,7 +903,7 @@ function Diar:RenameSavedPlan(entryId, newName)
     if not id then return false end
     local name = strtrim(tostring(newName or ""))
     if name == "" then
-        print("|cffff6666[Raidstrats.gg]|r Plan name cannot be empty.")
+        print(L("|cffff6666[Raidstrats.gg]|r Plan name cannot be empty."))
         return false
     end
     local store = EnsureSavedPlansStorage()
@@ -927,14 +928,14 @@ function Diar:RenameSavedPlan(entryId, newName)
     end
 
     self:RefreshSavedPlansList()
-    print(("|cff00aaff[Raidstrats.gg]|r Renamed plan to |cff00ff00%s|r."):format(name))
+    print(L("|cff00aaff[Raidstrats.gg]|r Renamed plan to |cff00ff00%s|r."):format(name))
     return true
 end
 
 function Diar:CreateSavedPlansGroupForEntries(entryIds, groupName)
     local name = strtrim(tostring(groupName or ""))
     if name == "" then
-        print("|cffff6666[Raidstrats.gg]|r Group name cannot be empty.")
+        print(L("|cffff6666[Raidstrats.gg]|r Group name cannot be empty."))
         return false
     end
     local store = EnsureSavedPlansStorage()
@@ -957,7 +958,7 @@ function Diar:CreateSavedPlansGroupForEntries(entryIds, groupName)
         store.nextGroupId = math.max(1, store.nextGroupId - 1)
         return false
     end
-    print(("|cff00aaff[Raidstrats.gg]|r Created group |cff00ff00%s|r (%d plan%s)."):format(
+    print(L("|cff00aaff[Raidstrats.gg]|r Created group |cff00ff00%s|r (%d plan%s)."):format(
         name, #ids, (#ids == 1 and "" or "s")))
     return true
 end
@@ -984,7 +985,7 @@ function Diar:RemoveSavedPlansFromGroups(entryIds)
     end
     if changed > 0 then
         self:RefreshSavedPlansList()
-        print(("|cff00aaff[Raidstrats.gg]|r Removed %d plan%s from group%s."):format(
+        print(L("|cff00aaff[Raidstrats.gg]|r Removed %d plan%s from group%s."):format(
             changed, (changed == 1 and "" or "s"), (changed == 1 and "" or "s")))
         return true
     end
@@ -1004,7 +1005,7 @@ function Diar:DeleteSavedPlansGroup(groupId, deletePlansInGroup)
         end
     end
     if not groupIndex then return false end
-    if groupName == "" then groupName = "Group" end
+    if groupName == "" then groupName = L("Group") end
 
     local touched = 0
     local deletedActive = false
@@ -1079,10 +1080,10 @@ function Diar:DeleteSavedPlansGroup(groupId, deletePlansInGroup)
     end
 
     if deletePlansInGroup then
-        print(("|cff00aaff[Raidstrats.gg]|r Deleted group |cff00ff00%s|r and %d plan%s."):format(
+        print(L("|cff00aaff[Raidstrats.gg]|r Deleted group |cff00ff00%s|r and %d plan%s."):format(
             groupName, touched, (touched == 1 and "" or "s")))
     else
-        print(("|cff00aaff[Raidstrats.gg]|r Deleted group |cff00ff00%s|r. Moved %d plan%s to Ungrouped."):format(
+        print(L("|cff00aaff[Raidstrats.gg]|r Deleted group |cff00ff00%s|r. Moved %d plan%s to Ungrouped."):format(
             groupName, touched, (touched == 1 and "" or "s")))
     end
     return true
@@ -1131,7 +1132,7 @@ function Diar:ShareSavedPlanGroupToGroup(groupId)
         end
     end
     if not groupName or groupName == "" then
-        print("|cffff6666[Raidstrats.gg]|r Could not find that group.")
+        print(L("|cffff6666[Raidstrats.gg]|r Could not find that group."))
         return false
     end
     local plans = {}
@@ -1143,14 +1144,14 @@ function Diar:ShareSavedPlanGroupToGroup(groupId)
             local payload = self.BuildSharePayload and self:BuildSharePayload(entry.data) or nil
             if payload and payload ~= "" then
                 plans[#plans + 1] = {
-                    name = tostring(entry.planName or "Plan"),
+                    name = tostring(entry.planName or L("Plan")),
                     payload = payload,
                 }
             end
         end
     end
     if #plans == 0 then
-        print("|cffff6666[Raidstrats.gg]|r Group has no sharable plans.")
+        print(L("|cffff6666[Raidstrats.gg]|r Group has no sharable plans."))
         return false
     end
 
@@ -1160,7 +1161,7 @@ function Diar:ShareSavedPlanGroupToGroup(groupId)
     }
     local json = EncodeJson(packet)
     if not json or json == "" then
-        print("|cffff6666[Raidstrats.gg]|r Could not encode group share payload.")
+        print(L("|cffff6666[Raidstrats.gg]|r Could not encode group share payload."))
         return false
     end
 
@@ -1183,10 +1184,10 @@ function Diar:ShareSavedPlanGroupToGroup(groupId)
         postChatToken()
     end
     if broadcasted then
-        print(("|cff00aaff[Raidstrats.gg]|r Shared \"%s\" to %s (preloaded to group). Others click the link to import."):format(
+        print(L("|cff00aaff[Raidstrats.gg]|r Shared \"%s\" to %s (preloaded to group). Others click the link to import."):format(
             linkLabel, tostring(chan):lower()))
     else
-        print(("|cff00aaff[Raidstrats.gg]|r Shared \"%s\" to %s. Others click the link to import."):format(
+        print(L("|cff00aaff[Raidstrats.gg]|r Shared \"%s\" to %s. Others click the link to import."):format(
             linkLabel, tostring(chan):lower()))
     end
     return true
@@ -1215,7 +1216,7 @@ function Diar:BuildSavedPlanGroupShareToken(groupId)
             local payload = self.BuildSharePayload and self:BuildSharePayload(entry.data) or nil
             if payload and payload ~= "" then
                 plans[#plans + 1] = {
-                    name = tostring(entry.planName or "Plan"),
+                    name = tostring(entry.planName or L("Plan")),
                     payload = payload,
                 }
             end
@@ -1257,7 +1258,7 @@ function Diar:ShowSavedPlanGroupContextMenu(anchorBtn, groupId)
     local gid = tonumber(groupId)
     if not gid then return end
     local store = EnsureSavedPlansStorage()
-    local groupName = "Group"
+    local groupName = L("Group")
     for _, g in ipairs(store.groups or {}) do
         if tonumber(g and g.id) == gid then
             local name = strtrim(tostring(g.name or ""))
@@ -1284,7 +1285,7 @@ function Diar:ShowSavedPlanGroupContextMenu(anchorBtn, groupId)
         shareLbl:SetPoint("LEFT", shareBtn, "LEFT", 8, 0)
         shareLbl:SetPoint("RIGHT", shareBtn, "RIGHT", -8, 0)
         shareLbl:SetJustifyH("LEFT")
-        shareLbl:SetText("Share to group")
+        shareLbl:SetText(L("Share to group"))
         shareBtn:SetScript("OnEnter", function(s) s:SetBackdropColor(unpack(UI.ROW_HOV)) end)
         shareBtn:SetScript("OnLeave", function(s) s:SetBackdropColor(unpack(UI.ROW)) end)
         shareBtn:SetScript("OnClick", function()
@@ -1306,12 +1307,12 @@ function Diar:ShowSavedPlanGroupContextMenu(anchorBtn, groupId)
         deleteGroupLbl:SetPoint("LEFT", deleteGroupBtn, "LEFT", 8, 0)
         deleteGroupLbl:SetPoint("RIGHT", deleteGroupBtn, "RIGHT", -8, 0)
         deleteGroupLbl:SetJustifyH("LEFT")
-        deleteGroupLbl:SetText("Delete group")
+        deleteGroupLbl:SetText(L("Delete group"))
         deleteGroupBtn:SetScript("OnEnter", function(s) s:SetBackdropColor(unpack(UI.ROW_HOV)) end)
         deleteGroupBtn:SetScript("OnLeave", function(s) s:SetBackdropColor(unpack(UI.ROW)) end)
         deleteGroupBtn:SetScript("OnClick", function()
             local id = tonumber(menu.groupId)
-            local name = tostring(menu.groupName or "Group")
+            local name = tostring(menu.groupName or L("Group"))
             Diar:HideSavedPlanGroupContextMenu()
             if id then
                 Diar:ShowStyledDeletePlanGroupDialog(id, name, false)
@@ -1329,12 +1330,12 @@ function Diar:ShowSavedPlanGroupContextMenu(anchorBtn, groupId)
         deleteAllLbl:SetPoint("LEFT", deleteAllBtn, "LEFT", 8, 0)
         deleteAllLbl:SetPoint("RIGHT", deleteAllBtn, "RIGHT", -8, 0)
         deleteAllLbl:SetJustifyH("LEFT")
-        deleteAllLbl:SetText("Delete group + plans")
+        deleteAllLbl:SetText(L("Delete group + plans"))
         deleteAllBtn:SetScript("OnEnter", function(s) s:SetBackdropColor(unpack(UI.ROW_HOV)) end)
         deleteAllBtn:SetScript("OnLeave", function(s) s:SetBackdropColor(unpack(UI.ROW)) end)
         deleteAllBtn:SetScript("OnClick", function()
             local id = tonumber(menu.groupId)
-            local name = tostring(menu.groupName or "Group")
+            local name = tostring(menu.groupName or L("Group"))
             Diar:HideSavedPlanGroupContextMenu()
             if id then
                 Diar:ShowStyledDeletePlanGroupDialog(id, name, true)
@@ -1447,7 +1448,7 @@ function Diar:BuildAndCachePlansShareBundle(plans, groupName)
                     (plan.planName and plan.planName ~= "" and plan.planName)
                         or (data.planName and data.planName ~= "" and data.planName)
                         or plan.alias
-                        or "Plan"
+                        or L("Plan")
                 )
                 outPlans[#outPlans + 1] = {
                     name = planName,
@@ -1460,8 +1461,8 @@ function Diar:BuildAndCachePlansShareBundle(plans, groupName)
     if #outPlans == 0 then
         return nil, 0
     end
-    local gName = strtrim(tostring(groupName or "Note plans"))
-    if gName == "" then gName = "Note plans" end
+    local gName = strtrim(tostring(groupName or L("Note plans")))
+    if gName == "" then gName = L("Note plans") end
     local packet = {
         groupName = gName,
         plans = outPlans,
@@ -1485,7 +1486,7 @@ function Diar:ImportSharedPlanGroupPayload(payloadJson, sender)
     if type(payloadJson) ~= "string" or payloadJson == "" then return false end
     local parsed = DecodeJson(payloadJson)
     if type(parsed) ~= "table" or type(parsed.plans) ~= "table" then
-        print("|cffff6666[Raidstrats.gg]|r Could not import shared plan group.")
+        print(L("|cffff6666[Raidstrats.gg]|r Could not import shared plan group."))
         return false
     end
     local imported = 0
@@ -1579,19 +1580,19 @@ function Diar:ImportSharedPlanGroupPayload(payloadJson, sender)
             self:UpdatePlanSyncVersionLabel(self.plannerFrame)
         end
         if self.HideImportProgress then self:HideImportProgress() end
-        print(("|cff00aaff[Raidstrats.gg]|r Imported shared group \"%s\" (%d plan%s) from %s."):format(
-            tostring(parsed.groupName or "Group"), imported, (imported == 1 and "" or "s"), tostring(sender or "someone")))
+        print(L("|cff00aaff[Raidstrats.gg]|r Imported shared group \"%s\" (%d plan%s) from %s."):format(
+            tostring(parsed.groupName or L("Group")), imported, (imported == 1 and "" or "s"), tostring(sender or L("someone"))))
         if overridden > 0 then
-            print(("|cff00aaff[Raidstrats.gg]|r Updated %d existing plan%s with the incoming version."):format(
+            print(L("|cff00aaff[Raidstrats.gg]|r Updated %d existing plan%s with the incoming version."):format(
                 overridden, overridden == 1 and "" or "s"))
         end
         if failed > 0 then
-            print(("|cffff6666[Raidstrats.gg]|r %d plan(s) could not be imported."):format(failed))
+            print(L("|cffff6666[Raidstrats.gg]|r %d plan(s) could not be imported."):format(failed))
         end
         return true
     end
     if self.HideImportProgress then self:HideImportProgress() end
-    print("|cffff6666[Raidstrats.gg]|r Shared group received, but no plans could be imported.")
+    print(L("|cffff6666[Raidstrats.gg]|r Shared group received, but no plans could be imported."))
     return false
 end
 
@@ -1755,7 +1756,7 @@ function Diar:ShowSavedPlanContextMenu(anchorBtn, entryIds)
         createLbl:SetPoint("LEFT", createBtn, "LEFT", 8, 0)
         createLbl:SetPoint("RIGHT", createBtn, "RIGHT", -8, 0)
         createLbl:SetJustifyH("LEFT")
-        createLbl:SetText("Create group")
+        createLbl:SetText(L("Create group"))
         createBtn:SetScript("OnEnter", function(s)
             s:SetBackdropColor(unpack(UI.ROW_HOV))
         end)
@@ -1778,7 +1779,7 @@ function Diar:ShowSavedPlanContextMenu(anchorBtn, entryIds)
         renameLbl:SetPoint("LEFT", renameBtn, "LEFT", 8, 0)
         renameLbl:SetPoint("RIGHT", renameBtn, "RIGHT", -8, 0)
         renameLbl:SetJustifyH("LEFT")
-        renameLbl:SetText("Rename")
+        renameLbl:SetText(L("Rename"))
         renameBtn:SetScript("OnEnter", function(s)
             s:SetBackdropColor(unpack(UI.ROW_HOV))
         end)
@@ -1804,7 +1805,7 @@ function Diar:ShowSavedPlanContextMenu(anchorBtn, entryIds)
         removeLbl:SetPoint("LEFT", removeBtn, "LEFT", 8, 0)
         removeLbl:SetPoint("RIGHT", removeBtn, "RIGHT", -8, 0)
         removeLbl:SetJustifyH("LEFT")
-        removeLbl:SetText("Remove from group")
+        removeLbl:SetText(L("Remove from group"))
         removeBtn:SetScript("OnEnter", function(s)
             s:SetBackdropColor(unpack(UI.ROW_HOV))
         end)
@@ -1846,9 +1847,9 @@ function Diar:ShowSavedPlanContextMenu(anchorBtn, entryIds)
     end
 
     menu.entryIds = ids
-    local label = "Create group"
+    local label = L("Create group")
     if #ids > 1 then
-        label = ("Create group (%d selected)"):format(#ids)
+        label = L("Create group (%d selected)"):format(#ids)
     end
     if menu.createGroupLabel then
         menu.createGroupLabel:SetText(label)
@@ -1861,7 +1862,7 @@ function Diar:ShowSavedPlanContextMenu(anchorBtn, entryIds)
         end
     end
     if menu.removeGroupBtn then
-        local removeLabel = (#ids > 1) and ("Remove from group (%d selected)"):format(#ids) or "Remove from group"
+        local removeLabel = (#ids > 1) and L("Remove from group (%d selected)"):format(#ids) or L("Remove from group")
         if menu.removeGroupLabel then
             menu.removeGroupLabel:SetText(removeLabel)
         end
@@ -1900,8 +1901,8 @@ local function CreatePlanAutoToggle(parent)
     local toggle = CreateAnimatedCheckbox(parent, nil)
     toggle:SetScript("OnEnter", function(s)
         GameTooltip:SetOwner(s, "ANCHOR_LEFT")
-        GameTooltip:SetText("Auto-import updates", 1, 1, 1)
-        GameTooltip:AddLine("When enabled, pushed plan changes from your leader are applied automatically.", 0.78, 0.80, 0.84, true)
+        GameTooltip:SetText(L("Auto-import updates"), 1, 1, 1)
+        GameTooltip:AddLine(L("When enabled, pushed plan changes from your leader are applied automatically."), 0.78, 0.80, 0.84, true)
         GameTooltip:Show()
     end)
     toggle:SetScript("OnLeave", function()
@@ -1914,7 +1915,7 @@ local function ApplySavedPlanRowState(rowFrame, entry, isActive, planKey, autoEn
     rowFrame.entryId = entry.id
     rowFrame.planKey = planKey
 
-    local title = entry.planName or "Unnamed"
+    local title = entry.planName or L("Unnamed")
     rowFrame.label:SetText(title)
     rowFrame.meta:SetText(BuildPlanMetaLine(entry))
 
@@ -1958,7 +1959,7 @@ local function ApplySavedPlanRowState(rowFrame, entry, isActive, planKey, autoEn
     end
 
     if deleteConfirm then
-        rowFrame.meta:SetText("Are you sure?")
+        rowFrame.meta:SetText(L("Are you sure?"))
         rowFrame.meta:SetTextColor(0.94, 0.72, 0.72)
         if rowFrame.delBtn then rowFrame.delBtn:Hide() end
         if rowFrame.delCancelBtn then rowFrame.delCancelBtn:Show() end
@@ -2090,7 +2091,7 @@ local function AcquireSavedPlanRow(pf, child, planIndex, w)
         s:SetBackdropBorderColor(0.85, 0.30, 0.30, 1)
         s.label:SetTextColor(1, 0.55, 0.55)
         GameTooltip:SetOwner(s, "ANCHOR_LEFT")
-        GameTooltip:SetText("Delete plan", 1, 1, 1)
+        GameTooltip:SetText(L("Delete plan"), 1, 1, 1)
         GameTooltip:Show()
     end)
     delBtn:SetScript("OnLeave", function(s)
@@ -2111,7 +2112,7 @@ local function AcquireSavedPlanRow(pf, child, planIndex, w)
     SetBackdrop(delConfirmBtn, {0, 0, 0, 0}, {0.22, 0.55, 0.22, 0.95}, 1)
     local confirmFs = delConfirmBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     confirmFs:SetPoint("CENTER")
-    confirmFs:SetText("Yes")
+    confirmFs:SetText(L("Yes"))
     confirmFs:SetTextColor(0.70, 0.98, 0.70)
     delConfirmBtn.label = confirmFs
     delConfirmBtn:SetScript("OnEnter", function(s)
@@ -2119,7 +2120,7 @@ local function AcquireSavedPlanRow(pf, child, planIndex, w)
         s:SetBackdropBorderColor(0.30, 0.85, 0.30, 1)
         s.label:SetTextColor(0.75, 1, 0.75)
         GameTooltip:SetOwner(s, "ANCHOR_LEFT")
-        GameTooltip:SetText("Confirm delete", 1, 1, 1)
+        GameTooltip:SetText(L("Confirm delete"), 1, 1, 1)
         GameTooltip:Show()
     end)
     delConfirmBtn:SetScript("OnLeave", function(s)
@@ -2142,7 +2143,7 @@ local function AcquireSavedPlanRow(pf, child, planIndex, w)
     SetBackdrop(delCancelBtn, {0, 0, 0, 0}, {0.55, 0.22, 0.22, 0.95}, 1)
     local cancelFs = delCancelBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     cancelFs:SetPoint("CENTER")
-    cancelFs:SetText("No")
+    cancelFs:SetText(L("No"))
     cancelFs:SetTextColor(0.98, 0.70, 0.70)
     delCancelBtn.label = cancelFs
     delCancelBtn:SetScript("OnEnter", function(s)
@@ -2150,7 +2151,7 @@ local function AcquireSavedPlanRow(pf, child, planIndex, w)
         s:SetBackdropBorderColor(0.85, 0.30, 0.30, 1)
         s.label:SetTextColor(1, 0.55, 0.55)
         GameTooltip:SetOwner(s, "ANCHOR_LEFT")
-        GameTooltip:SetText("Cancel delete", 1, 1, 1)
+        GameTooltip:SetText(L("Cancel delete"), 1, 1, 1)
         GameTooltip:Show()
     end)
     delCancelBtn:SetScript("OnLeave", function(s)
@@ -2401,10 +2402,10 @@ end
 local function StartSavedPlanDragGhost(pf, planName)
     local ghost = EnsureSavedPlanDragGhost(pf)
     if not ghost then return end
-    local text = strtrim(tostring(planName or "Plan"))
-    if text == "" then text = "Plan" end
+    local text = strtrim(tostring(planName or L("Plan")))
+    if text == "" then text = L("Plan") end
     if #text > 28 then text = text:sub(1, 28) .. "..." end
-    ghost.label:SetText(("Move: %s"):format(text))
+    ghost.label:SetText(L("Move: %s"):format(text))
     local tw = ghost.label:GetStringWidth() or 120
     ghost:SetWidth(math.max(140, math.min(260, tw + 20)))
     ghost.__ownerPf = pf
@@ -2470,7 +2471,7 @@ function Diar:RefreshSavedPlansList()
     end
 
     if pf.savedPlansTitle then
-        pf.savedPlansTitle:SetText("Plan Library")
+        pf.savedPlansTitle:SetText(L("Plan Library"))
     end
     local query = CleanFilterText(pf.savedPlansSearchQuery)
     local queryLower = query ~= "" and query:lower() or nil
@@ -2502,7 +2503,9 @@ function Diar:RefreshSavedPlansList()
         end
     end
     if pf.savedPlansRaidFilterBtn then
-        local raidText = pf.savedPlansRaidFilter and ("Raid: " .. pf.savedPlansRaidFilter) or "Raid: All raids"
+        local selectedRaid = pf.savedPlansRaidFilter
+        local raidLabel = selectedRaid == "Other" and L("Other") or selectedRaid
+        local raidText = raidLabel and L("Raid: %s"):format(raidLabel) or L("Raid: All raids")
         if #raidText > 28 then
             raidText = raidText:sub(1, 25) .. "..."
         end
@@ -2599,7 +2602,7 @@ function Diar:RefreshSavedPlansList()
         rows[#rows + 1] = {
             type = "group_header",
             groupId = ungroupedKey,
-            text = "Ungrouped",
+            text = L("Ungrouped"),
             count = #ungrouped,
             collapsed = ungroupedCollapsed,
         }
@@ -2636,9 +2639,9 @@ function Diar:RefreshSavedPlansList()
             lbl:SetPoint("TOPLEFT", child, "TOPLEFT", 8, y - 18)
             lbl:SetWidth(w - 16)
             if #list == 0 then
-                lbl:SetText("No plans saved yet")
+                lbl:SetText(L("No plans saved yet"))
             else
-                lbl:SetText("No plans match filters")
+                lbl:SetText(L("No plans match filters"))
             end
             lbl:SetTextColor(0.52, 0.56, 0.62)
             lbl:Show()
@@ -2654,9 +2657,9 @@ function Diar:RefreshSavedPlansList()
             hint:SetPoint("TOPLEFT", child, "TOPLEFT", 12, y)
             hint:SetWidth(w - 24)
             if #list == 0 then
-                hint:SetText("Use Import Plan below, or paste a share link from chat.")
+                hint:SetText(L("Use Import Plan below, or paste a share link from chat."))
             else
-                hint:SetText("Try another search or raid filter.")
+                hint:SetText(L("Try another search or raid filter."))
             end
             hint:SetTextColor(0.42, 0.46, 0.52)
             hint:Show()
@@ -2673,7 +2676,7 @@ function Diar:RefreshSavedPlansList()
             local markerText = row.collapsed and "+" or "-"
             headerRow.marker:SetText(markerText)
             headerRow.marker:SetTextColor(0.72, 0.78, 0.90)
-            headerRow.label:SetText(("%s (%d)"):format(row.text or "Group", tonumber(row.count) or 0))
+            headerRow.label:SetText(("%s (%d)"):format(row.text or L("Group"), tonumber(row.count) or 0))
             headerRow.label:SetTextColor(unpack(UI.ACCENT))
             headerRow:SetScript("OnMouseUp", function(_, btn)
                 if btn == "RightButton" then
@@ -2826,7 +2829,7 @@ function Diar:RefreshSavedPlansList()
                 s.__draggingPlanEntryId = entry.id
                 pf.__draggingSavedPlanEntryId = entry.id
                 pf.__draggingSavedPlanEntryIds = dragIds
-                StartSavedPlanDragGhost(pf, selectedCount > 1 and (selectedCount .. " plans") or (entry.planName or "Plan"))
+                StartSavedPlanDragGhost(pf, selectedCount > 1 and L("%d plans"):format(selectedCount) or (entry.planName or L("Plan")))
             end)
             rowFrame:SetScript("OnDragStop", function(s)
                 local dropGroupId, dropFrame = ResolveSavedPlanDropTarget(pf)
@@ -2993,7 +2996,7 @@ end
 
 -- When there are no saved plans: clear canvas, set empty data, show "No plans" + Import in list.
 function Diar:ShowNoPlansState()
-    self.plannerData = { planName = "No plan", scenes = { { name = "Empty", items = {} } } }
+    self.plannerData = { planName = L("No plan"), scenes = { { name = L("Empty"), items = {} } } }
     self:ClearPlannerDisplay()
     if self.ShowPlannerViewer then
         -- Rebuild planner tabs/chrome so removed plan scenes are fully unloaded.
@@ -3002,7 +3005,7 @@ function Diar:ShowNoPlansState()
     self:RefreshSavedPlansList()
     local pf = self.plannerFrame
     if pf and pf.title then
-        pf.title:SetText(PUI.TruncatePlannerPlanTitle("No plan"))
+        pf.title:SetText(PUI.TruncatePlannerPlanTitle(L("No plan")))
     end
     self:RefreshPlannerScene()
     self:UpdatePlannerPlanLink()

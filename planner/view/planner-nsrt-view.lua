@@ -6,6 +6,7 @@ local Addon =
     AceAddon:GetAddon("Raidstratsgg", true) or
     AceAddon:GetAddon("raidstratsgg", true)
 if not Addon then return end
+local function L(key) return RSGG_L(key) end
 local Diar = Addon
 local PUI = Diar.PlannerUI
 local GetPlayerNameKey = PUI.GetPlayerNameKey
@@ -661,7 +662,7 @@ function Diar:ShowRaidPlanScene(sceneIndex, opts)
             if opts.readyCheckMode and self.plannerData and self.plannerData.scenes and #self.plannerData.scenes > 0 then
                 -- Ready check: keep the currently loaded plan when bind ref lookup fails.
             else
-                print(("|cffff6666[Raidstrats.gg]|r Could not resolve bound plan \"%s\" (ref: %s)."):format(
+                print(L("|cffff6666[Raidstrats.gg]|r Could not resolve bound plan \"%s\" (ref: %s)."):format(
                     alias, tostring(opts.planRef)))
                 return false
             end
@@ -672,13 +673,13 @@ function Diar:ShowRaidPlanScene(sceneIndex, opts)
             if opts.readyCheckMode and self.plannerData and self.plannerData.scenes and #self.plannerData.scenes > 0 then
                 -- Ready check: keep the currently loaded plan when bind/name lookup fails.
             else
-                print(("|cffff6666[Raidstrats.gg]|r Could not find saved plan \"%s\"."):format(opts.planName))
+                print(L("|cffff6666[Raidstrats.gg]|r Could not find saved plan \"%s\"."):format(opts.planName))
                 return false
             end
         end
     end
     if not self.plannerData or not self.plannerData.scenes or #self.plannerData.scenes == 0 then
-        print("|cffff6666[Raidstrats.gg]|r No plan loaded — import one with /rsimport.")
+        print(L("|cffff6666[Raidstrats.gg]|r No plan loaded — import one with /rsimport."))
         return false
     end
     sceneIndex = math.max(1, math.min(sceneIndex, #self.plannerData.scenes))
@@ -861,13 +862,13 @@ function Diar:OpenReadyCheckAssignments(opts)
     end
     if self.CanOpenReadyCheckAssignmentsInCurrentGroup and not self:CanOpenReadyCheckAssignmentsInCurrentGroup() then
         if opts.verbose then
-            print("|cffff6666[Raidstrats.gg]|r Ready check assignments are raid-only while \"Show only readycheck in raid group\" is enabled.")
+            print(L("|cffff6666[Raidstrats.gg]|r Ready check assignments are raid-only while \"Show only readycheck in raid group\" is enabled."))
         end
         return false
     end
     if not C_AddOns.IsAddOnLoaded("NorthernSkyRaidTools") then
         if opts.verbose then
-            print("|cffff6666[Raidstrats.gg]|r Northern Sky Raid Tools is not loaded.")
+            print(L("|cffff6666[Raidstrats.gg]|r Northern Sky Raid Tools is not loaded."))
         end
         return false
     end
@@ -881,9 +882,9 @@ function Diar:OpenReadyCheckAssignments(opts)
     if #list == 0 then
         if opts.verbose then
             if not noteLoaded then
-                print("|cffff6666[Raidstrats.gg]|r Ready check: no active NSRT note with rsgg lines.")
+                print(L("|cffff6666[Raidstrats.gg]|r Ready check: no active NSRT note with rsgg lines."))
             else
-                print("|cffff6666[Raidstrats.gg]|r Ready check: no matching assignments in the active note.")
+                print(L("|cffff6666[Raidstrats.gg]|r Ready check: no matching assignments in the active note."))
             end
         end
         return false
@@ -902,7 +903,7 @@ function Diar:OpenReadyCheckAssignments(opts)
     self.readyCheckAssignmentIndex = startIndex
     local ok = self:ShowReadyCheckAssignment(startIndex)
     if not ok and opts.verbose then
-        print("|cffff6666[Raidstrats.gg]|r Ready check: found assignments but could not open the plan viewer.")
+        print(L("|cffff6666[Raidstrats.gg]|r Ready check: found assignments but could not open the plan viewer."))
     end
     return ok
 end

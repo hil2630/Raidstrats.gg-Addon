@@ -6,6 +6,7 @@ local Addon =
     AceAddon:GetAddon("Raidstratsgg", true) or
     AceAddon:GetAddon("raidstratsgg", true)
 if not Addon then return end
+local function L(key) return RSGG_L(key) end
 
 local Diar = Addon
 local SetBackdrop = Diar.SetBackdrop
@@ -33,9 +34,9 @@ local function TryCallRegisterSystemFrame(manager, frame)
     if not manager or type(manager.RegisterSystemFrame) ~= "function" then return false end
     local calls = {
         { label = "RegisterSystemFrame(frame)", fn = function() return manager:RegisterSystemFrame(frame) end },
-        { label = "RegisterSystemFrame(frame,name)", fn = function() return manager:RegisterSystemFrame(frame, "Raidstrats Compact") end },
-        { label = "RegisterSystemFrame(name,frame)", fn = function() return manager:RegisterSystemFrame("Raidstrats Compact", frame) end },
-        { label = "RegisterSystemFrame(frame,name,clamped)", fn = function() return manager:RegisterSystemFrame(frame, "Raidstrats Compact", true) end },
+        { label = "RegisterSystemFrame(frame,name)", fn = function() return manager:RegisterSystemFrame(frame, L("Raidstrats Compact")) end },
+        { label = "RegisterSystemFrame(name,frame)", fn = function() return manager:RegisterSystemFrame(L("Raidstrats Compact"), frame) end },
+        { label = "RegisterSystemFrame(frame,name,clamped)", fn = function() return manager:RegisterSystemFrame(frame, L("Raidstrats Compact"), true) end },
     }
     for i = 1, #calls do
         local ok, resultOrErr = pcall(calls[i].fn)
@@ -193,7 +194,7 @@ function Diar:OpenWowEditModeForCompactPreview()
 
     local em = EditModeManagerFrame
     if not em then
-        print("|cffff6666[Raidstrats.gg]|r Edit Mode is not available.")
+        print(L("|cffff6666[Raidstrats.gg]|r Edit Mode is not available."))
         return false
     end
 
@@ -382,7 +383,7 @@ function Diar:EnsurePlannerEditModeIntegration()
         txt:SetPoint("RIGHT", bar, "RIGHT", -8, 0)
         txt:SetJustifyH("CENTER")
         txt:SetTextColor(0.88, 0.95, 1)
-        txt:SetText("Edit Mode: drag and resize Raidstrats compact frame")
+        txt:SetText(L("Edit Mode: drag and resize Raidstrats compact frame"))
         bar.text = txt
         bar:Hide()
         pf.editModeCompactOverlay = bar
@@ -426,7 +427,7 @@ function Diar:EnsurePlannerEditModeIntegration()
         if ok and lib and type(lib.RegisterFrame) == "function" then
             local s = self:GetPlannerSettings()
             s.editModeCompactFrame = s.editModeCompactFrame or {}
-            local regOk = pcall(lib.RegisterFrame, lib, pf, "Raidstrats Compact", s.editModeCompactFrame, UIParent, "BOTTOMLEFT", true)
+            local regOk = pcall(lib.RegisterFrame, lib, pf, L("Raidstrats Compact"), s.editModeCompactFrame, UIParent, "BOTTOMLEFT", true)
             if regOk then
                 pf._editModeExpandedRegistered = true
                 AddEditModeDebugLine("EditModeExpanded registration succeeded.")

@@ -7,6 +7,7 @@ local Addon =
     AceAddon:GetAddon("raidstratsgg", true)
 if not Addon then return end
 local Diar = Addon
+local function L(key) return RSGG_L(key) end
 
 local SEP = string.char(31)
 local PLAN_UPDATE_TTL = 300
@@ -52,7 +53,7 @@ local function CheckboxIsChecked(chk)
 end
 
 local function SenderLabel(sender)
-    if not sender or sender == "" then return "Someone" end
+    if not sender or sender == "" then return L("Someone") end
     return Ambiguate and Ambiguate(sender, "short") or sender
 end
 
@@ -1384,9 +1385,9 @@ function Diar:UpdatePlanSyncVersionLabel(pf)
     end
     local verText = ver and tostring(ver) or "—"
     if inst ~= "" then
-        label:SetText(("Version: %s-%s"):format(verText, inst))
+        label:SetText(L("Version: %s-%s"):format(verText, inst))
     else
-        label:SetText(("Version: %s"):format(verText))
+        label:SetText(L("Version: %s"):format(verText))
     end
     label:Show()
 end
@@ -1552,9 +1553,9 @@ function Diar:TryCompletePlanUpdate(transferId)
             PushDebug(("Delta version mismatch local=%s base=%s -> requesting full"):format(
                 tostring(localVersion or "-"), tostring(entry.baseVersion)
             ))
-            local label = entry.planName or "plan"
-            print(("|cffffff99[Raidstrats.gg]|r Your copy of \"%s\" is out of date — ask %s to re-share it."):format(
-                label, who))
+            local label = entry.planName or L("plan")
+            print("|cffffff99[Raidstrats.gg]|r " ..
+                L("Your copy of \"%s\" is out of date — ask %s to re-share it."):format(label, who))
             return
         end
     end
@@ -1566,12 +1567,13 @@ function Diar:TryCompletePlanUpdate(transferId)
                 tostring(entry.sceneIndex), tostring(entry.planName or "?")
             ))
             if entry.newVersion then self:SetPlanSyncVersion(entry.planKey, entry.newVersion) end
-            local label = entry.planName or "plan"
+            local label = entry.planName or L("plan")
             self:OpenPlanAfterUpdateIfNeeded(entry.planKey, entry.planId, nil)
-            print(("|cff00aaff[Raidstrats.gg]|r Applied scene update to \"%s\" from %s."):format(label, who))
+            print("|cff00aaff[Raidstrats.gg]|r " ..
+                L("Applied scene update to \"%s\" from %s."):format(label, who))
             return
         end
-        print("|cffff6666[Raidstrats.gg]|r Could not apply the scene update.")
+        print("|cffff6666[Raidstrats.gg]|r " .. L("Could not apply the scene update."))
         PushDebug("Failed to apply recv scene delta")
         return
     end
@@ -1581,12 +1583,13 @@ function Diar:TryCompletePlanUpdate(transferId)
         if moves and self:ApplyPlanObjectMovesUpdate(entry.planKey, entry.planId, moves) then
             PushDebug(("Applied recv move delta moves=%d plan=%s"):format(#moves, tostring(entry.planName or "?")))
             if entry.newVersion then self:SetPlanSyncVersion(entry.planKey, entry.newVersion) end
-            local label = entry.planName or "plan"
+            local label = entry.planName or L("plan")
             self:OpenPlanAfterUpdateIfNeeded(entry.planKey, entry.planId, nil)
-            print(("|cff00aaff[Raidstrats.gg]|r Applied move update to \"%s\" from %s."):format(label, who))
+            print("|cff00aaff[Raidstrats.gg]|r " ..
+                L("Applied move update to \"%s\" from %s."):format(label, who))
             return
         end
-        print("|cffff6666[Raidstrats.gg]|r Could not apply the move update.")
+        print("|cffff6666[Raidstrats.gg]|r " .. L("Could not apply the move update."))
         PushDebug("Failed to apply recv move delta")
         return
     end
@@ -1598,12 +1601,13 @@ function Diar:TryCompletePlanUpdate(transferId)
                 #delta.scenes, tostring(entry.planName or "?")
             ))
             if entry.newVersion then self:SetPlanSyncVersion(entry.planKey, entry.newVersion) end
-            local label = entry.planName or "plan"
+            local label = entry.planName or L("plan")
             self:OpenPlanAfterUpdateIfNeeded(entry.planKey, entry.planId, nil)
-            print(("|cff00aaff[Raidstrats.gg]|r Applied object update to \"%s\" from %s."):format(label, who))
+            print("|cff00aaff[Raidstrats.gg]|r " ..
+                L("Applied object update to \"%s\" from %s."):format(label, who))
             return
         end
-        print("|cffff6666[Raidstrats.gg]|r Could not apply the object update.")
+        print("|cffff6666[Raidstrats.gg]|r " .. L("Could not apply the object update."))
         PushDebug("Failed to apply recv item delta")
         return
     end
@@ -1615,12 +1619,13 @@ function Diar:TryCompletePlanUpdate(transferId)
                 #delta.ops, delta.count, tostring(entry.planName or "?")
             ))
             if entry.newVersion then self:SetPlanSyncVersion(entry.planKey, entry.newVersion) end
-            local label = entry.planName or "plan"
+            local label = entry.planName or L("plan")
             self:OpenPlanAfterUpdateIfNeeded(entry.planKey, entry.planId, nil)
-            print(("|cff00aaff[Raidstrats.gg]|r Applied scene update to \"%s\" from %s."):format(label, who))
+            print("|cff00aaff[Raidstrats.gg]|r " ..
+                L("Applied scene update to \"%s\" from %s."):format(label, who))
             return
         end
-        print("|cffff6666[Raidstrats.gg]|r Could not apply the scene update.")
+        print("|cffff6666[Raidstrats.gg]|r " .. L("Could not apply the scene update."))
         PushDebug("Failed to apply recv scenes delta")
         return
     end
@@ -1632,34 +1637,36 @@ function Diar:TryCompletePlanUpdate(transferId)
                 #delta.removed, tostring(entry.planName or "?")
             ))
             if entry.newVersion then self:SetPlanSyncVersion(entry.planKey, entry.newVersion) end
-            local label = entry.planName or "plan"
+            local label = entry.planName or L("plan")
             self:OpenPlanAfterUpdateIfNeeded(entry.planKey, entry.planId, nil)
-            print(("|cff00aaff[Raidstrats.gg]|r Applied scene update to \"%s\" from %s."):format(label, who))
+            print("|cff00aaff[Raidstrats.gg]|r " ..
+                L("Applied scene update to \"%s\" from %s."):format(label, who))
             return
         end
-        print("|cffff6666[Raidstrats.gg]|r Could not apply the scene update.")
+        print("|cffff6666[Raidstrats.gg]|r " .. L("Could not apply the scene update."))
         PushDebug("Failed to apply recv scene-remove delta")
         return
     end
 
     local data = self.DecodePlanFromBase64 and self:DecodePlanFromBase64(b64)
     if not data then
-        print("|cffff6666[Raidstrats.gg]|r Could not apply the plan update.")
+        print("|cffff6666[Raidstrats.gg]|r " .. L("Could not apply the plan update."))
         PushDebug("Failed to decode recv full update payload")
         return
     end
 
     if self:ApplyPlanUpdateFromData(data, entry.planKey) then
-        local label = entry.planName or data.planName or "plan"
+        local label = entry.planName or data.planName or L("plan")
         if data.instanceKey then
             entry.planKey = "inst:" .. data.instanceKey
         end
         -- Full update establishes a known base version so later deltas can apply.
         if entry.newVersion then self:SetPlanSyncVersion(entry.planKey, entry.newVersion) end
         self:OpenPlanAfterUpdateIfNeeded(entry.planKey, entry.planId, data)
-        print(("|cff00aaff[Raidstrats.gg]|r Applied update to \"%s\" from %s."):format(label, who))
+        print("|cff00aaff[Raidstrats.gg]|r " ..
+            L("Applied update to \"%s\" from %s."):format(label, who))
     else
-        print("|cffff6666[Raidstrats.gg]|r Could not apply the plan update.")
+        print("|cffff6666[Raidstrats.gg]|r " .. L("Could not apply the plan update."))
     end
 end
 
@@ -1695,7 +1702,7 @@ function Diar:ShowPlanUpdatePopup(entry)
     self:HidePlanUpdatePopup()
 
     local who = SenderLabel(entry.sender)
-    local planLabel = (entry.planName and entry.planName ~= "") and entry.planName or "the plan"
+    local planLabel = (entry.planName and entry.planName ~= "") and entry.planName or L("the plan")
     local f = CreateFrame("Frame", "RaidstratsPlanUpdatePopup", UIParent, "BackdropTemplate")
     f:SetSize(380, 168)
     f:SetFrameStrata("FULLSCREEN_DIALOG")
@@ -1705,17 +1712,18 @@ function Diar:ShowPlanUpdatePopup(entry)
 
     local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     title:SetPoint("TOP", 0, -14)
-    title:SetText(("Plan update — %s"):format(planLabel))
+    title:SetText(L("Plan update — %s"):format(planLabel))
     title:SetTextColor(0.92, 0.92, 0.92)
 
     local msg = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     msg:SetPoint("TOP", title, "BOTTOM", 0, -10)
     msg:SetWidth(340)
     msg:SetJustifyH("CENTER")
-    msg:SetText(("%s has updated \"%s\".\nWould you like to import the changes?"):format(who, planLabel))
+    msg:SetText(L("%s has updated \"%s\".\nWould you like to import the changes?"):format(who, planLabel))
     msg:SetTextColor(0.78, 0.80, 0.84)
 
-    local autoChk = Diar.CreateAnimatedCheckbox and Diar.CreateAnimatedCheckbox(f, "Always import updates for this plan")
+    local autoChk = Diar.CreateAnimatedCheckbox and
+        Diar.CreateAnimatedCheckbox(f, L("Always import updates for this plan"))
     if autoChk then
         autoChk:SetPoint("TOPLEFT", f, "TOPLEFT", 18, -88)
         if autoChk.label then
@@ -1747,18 +1755,18 @@ function Diar:ShowPlanUpdatePopup(entry)
         return b
     end
 
-    makeBtn("Not now", -62, function()
+    makeBtn(L("Not now"), -62, function()
         entry.status = "declined"
         Diar:HidePlanUpdatePopup()
     end)
-    makeBtn("Import", 62, function()
+    makeBtn(L("Import"), 62, function()
         if autoChk and CheckboxIsChecked(autoChk) then
             Diar:SetPlanAutoImport(entry.planKey, true)
         end
         entry.status = "accepted"
         Diar:HidePlanUpdatePopup()
         if Diar.ShowImportProgress then
-            Diar:ShowImportProgress(true, 0, nil, "Importing plan update...")
+            Diar:ShowImportProgress(true, 0, nil, L("Importing plan update..."))
         end
         Diar:TryCompletePlanUpdate(entry.id)
     end)
@@ -1828,11 +1836,11 @@ function Diar:HandlePlanUpdatePush(msg, sender, channel)
 
     if status == "auto" then
         if self.ShowImportProgress then
-            self:ShowImportProgress(true, 0, nil, "Importing plan update...")
+            self:ShowImportProgress(true, 0, nil, L("Importing plan update..."))
         end
-        local label = (planName and planName ~= "") and planName or "plan"
-        print(("|cff00aaff[Raidstrats.gg]|r %s updated \"%s\" — importing..."):format(
-            SenderLabel(sender), label))
+        local label = (planName and planName ~= "") and planName or L("plan")
+        print("|cff00aaff[Raidstrats.gg]|r " ..
+            L("%s updated \"%s\" — importing..."):format(SenderLabel(sender), label))
     else
         self:ShowPlanUpdatePopup(self._planUpdates[transferId])
     end
@@ -1884,18 +1892,20 @@ end
 
 function Diar:PushPlanUpdateToGroup()
     if not self.IsPushUpdateLeader or not self:IsPushUpdateLeader() then
-        print("|cffff6666[Raidstrats.gg]|r Only the party or raid leader can push plan updates.")
+        print("|cffff6666[Raidstrats.gg]|r " ..
+            L("Only the party or raid leader can push plan updates."))
         return false
     end
     local chan = self.GetGroupChatChannel and self:GetGroupChatChannel()
     if not chan then
-        print("|cffff6666[Raidstrats.gg]|r Join a party, raid, or guild to push updates.")
+        print("|cffff6666[Raidstrats.gg]|r " ..
+            L("Join a party, raid, or guild to push updates."))
         return false
     end
 
     local data = self.plannerData
     if not self:HasActiveSavedPlan() then
-        print("|cffff6666[Raidstrats.gg]|r No plan loaded to push.")
+        print("|cffff6666[Raidstrats.gg]|r " .. L("No plan loaded to push."))
         return false
     end
 
@@ -1913,12 +1923,13 @@ function Diar:PushPlanUpdateToGroup()
 
     local planKey = self:GetPlanIdentityKey(data)
     if not planKey then
-        print("|cffff6666[Raidstrats.gg]|r Couldn't resolve a team instance for this plan. Reload the planner and try again.")
+        print("|cffff6666[Raidstrats.gg]|r " ..
+            L("Couldn't resolve a team instance for this plan. Reload the planner and try again."))
         return false
     end
 
     local transferId = string.format("%x%x", time(), math.random(0, 0xFFFFFF))
-    local planName = tostring(data.planName or "Raid plan"):gsub(SEP, "")
+    local planName = tostring(data.planName or L("Raid plan")):gsub(SEP, "")
     local planId = (data.planId and tostring(data.planId) ~= "") and tostring(data.planId):gsub(SEP, "") or ""
     local prefix = self.COMM_PLAN_PREFIX or "RAIDSTRATS_PLAN"
 
@@ -1937,7 +1948,7 @@ function Diar:PushPlanUpdateToGroup()
         deltaBase = BuildPushBaselineData(self, previousData)
     end
     if not deltaData then
-        print("|cffff6666[Raidstrats.gg]|r Couldn't prepare the plan update.")
+        print("|cffff6666[Raidstrats.gg]|r " .. L("Couldn't prepare the plan update."))
         return false
     end
     local objectMoves, moveReason = nil, nil
@@ -2031,7 +2042,7 @@ function Diar:PushPlanUpdateToGroup()
     if not payload then
         if hasTrackedBaseline and deltaBase and TableDeepEqual(deltaBase, deltaData) then
             PushDebug("Push skipped: no changes since last pushed state")
-            print("|cffffff99[Raidstrats.gg]|r No changes to push.")
+            print("|cffffff99[Raidstrats.gg]|r " .. L("No changes to push."))
             return false
         end
         if not hasTrackedBaseline then
@@ -2047,7 +2058,7 @@ function Diar:PushPlanUpdateToGroup()
         -- Push tracks its own version below, so don't let the share builder bump it.
         payload = self.BuildSharePayload and self:BuildSharePayload(data, { skipSyncVersionStamp = true })
         if not payload or payload == "" then
-            print("|cffff6666[Raidstrats.gg]|r Couldn't prepare the plan update.")
+            print("|cffff6666[Raidstrats.gg]|r " .. L("Couldn't prepare the plan update."))
             return false
         end
         PushDebug("Push select mode=full")
@@ -2071,17 +2082,17 @@ function Diar:PushPlanUpdateToGroup()
     self:SetPlanPushBaseline(planKey, deltaData, newVersion)
 
     if mode == "move" then
-        print(("|cff00aaff[Raidstrats.gg]|r Pushed move update for \"%s\" to %s."):format(
-            planName, chan:lower()))
+        print("|cff00aaff[Raidstrats.gg]|r " ..
+            L("Pushed move update for \"%s\" to %s."):format(planName, chan:lower()))
     elseif mode == "items" then
-        print(("|cff00aaff[Raidstrats.gg]|r Pushed object update for \"%s\" to %s."):format(
-            planName, chan:lower()))
+        print("|cff00aaff[Raidstrats.gg]|r " ..
+            L("Pushed object update for \"%s\" to %s."):format(planName, chan:lower()))
     elseif mode == "scene" or mode == "scenes" or mode == "scenerm" then
-        print(("|cff00aaff[Raidstrats.gg]|r Pushed scene update for \"%s\" to %s."):format(
-            planName, chan:lower()))
+        print("|cff00aaff[Raidstrats.gg]|r " ..
+            L("Pushed scene update for \"%s\" to %s."):format(planName, chan:lower()))
     else
-        print(("|cff00aaff[Raidstrats.gg]|r Pushed plan update for \"%s\" to %s."):format(
-            planName, chan:lower()))
+        print("|cff00aaff[Raidstrats.gg]|r " ..
+            L("Pushed plan update for \"%s\" to %s."):format(planName, chan:lower()))
     end
     return true
 end

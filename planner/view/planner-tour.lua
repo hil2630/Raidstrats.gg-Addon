@@ -14,6 +14,7 @@ local SetBackdrop = Diar.SetBackdrop
 local PUI = Diar.PlannerUI
 local UI = PUI.UI
 local CreatePlannerIconBtn = PUI.CreatePlannerIconBtn
+local function L(key) return RSGG_L(key) end
 
 local TOUR_STRATA = "TOOLTIP"
 local POPUP_GAP = 16
@@ -30,92 +31,92 @@ local function BuildTourSteps()
             key = "welcome",
             side = "CENTER",
             anchor = function() return pf end,
-            title = "Welcome to Raidstrats.gg!",
-            text = "This quick tour points out the main parts of the planner so you know where everything is. Use Next / Back to move around, or Skip at any time.",
+            title = L("TOUR_WELCOME_TITLE"),
+            text = L("TOUR_WELCOME_TEXT"),
         },
         {
             key = "canvas",
             side = "CENTER",
             anchor = function() return pf.canvas end,
-            title = "The Canvas",
-            text = "Your raid plan is drawn here. Boss positions, player spots, paths and assignments all show on top of the encounter map.",
+            title = L("TOUR_CANVAS_TITLE"),
+            text = L("TOUR_CANVAS_TEXT"),
         },
         {
             key = "palette",
             side = "AUTO",
             anchor = function() return pf.paletteToggleBtn end,
-            title = "The Palette",
-            text = "Toggle the object palette to drag shapes, raid markers, role icons and text onto the canvas. It's how you build the actual plan.",
+            title = L("TOUR_PALETTE_TITLE"),
+            text = L("TOUR_PALETTE_TEXT"),
         },
         {
             key = "lock",
             side = "AUTO",
             anchor = function() return pf.canvasLockBtn end,
-            title = "Lock / Unlock Canvas",
-            text = "Lock the canvas to safely view and pan a plan without moving anything by accident. Unlock it again when you want to edit spots and paths.",
+            title = L("TOUR_LOCK_TITLE"),
+            text = L("TOUR_LOCK_TEXT"),
         },
         {
             key = "scenes",
             side = "AUTO",
             anchor = function() return pf.sceneTabsContainer end,
-            title = "Scenes",
-            text = "Each scene is a moment/phase of the fight. Click a tab to jump to it, or use \"New Scene\" to add another step to your plan.",
+            title = L("TOUR_SCENES_TITLE"),
+            text = L("TOUR_SCENES_TEXT"),
         },
         {
             key = "library",
             side = "AUTO",
             anchor = function() return pf.savedPlansPanel end,
-            title = "Plan Library",
-            text = "All of your saved and imported plans live here. Click a plan to load it. Right-click a plan to rename it, create a group, or remove it from a group. Hold Ctrl and click to select several plans at once (then right-click to group them all), and drag plans in or out of groups.",
+            title = L("TOUR_LIBRARY_TITLE"),
+            text = L("TOUR_LIBRARY_TEXT"),
         },
         {
             key = "newplan",
             side = "AUTO",
             anchor = function() return pf.savedPlansNewBtn end,
-            title = "New Plan",
-            text = "Start a fresh plan from scratch — pick an encounter and begin placing your raid.",
+            title = L("TOUR_NEWPLAN_TITLE"),
+            text = L("TOUR_NEWPLAN_TEXT"),
         },
         {
             key = "import",
             side = "AUTO",
             anchor = function() return pf.savedPlansImportBtn end,
-            title = "Import a Plan",
-            text = "Paste an import string from the Raidstrats.gg website or a teammate to load their plan instantly.",
+            title = L("TOUR_IMPORT_TITLE"),
+            text = L("TOUR_IMPORT_TEXT"),
         },
         {
             key = "share",
             side = "AUTO",
             anchor = function() return pf.savedPlansShareBtn end,
-            title = "Share to Group",
-            text = "Send the current plan straight to your party or raid so everyone can load it with one click.",
+            title = L("TOUR_SHARE_TITLE"),
+            text = L("TOUR_SHARE_TEXT"),
         },
         {
             key = "pushupdate",
             side = "AUTO",
             anchor = function() return pf.pushUpdateBtn end,
-            title = "Push Update",
-            text = "Already shared this plan? After making changes, click Push Update to send the newest version to everyone who has it — their copy updates in place, no re-import needed.",
+            title = L("TOUR_PUSH_TITLE"),
+            text = L("TOUR_PUSH_TEXT"),
         },
         {
             key = "raidcheck",
             side = "AUTO",
             anchor = function() return pf.raidCheckChk or pf.raidCheckLabel or pf.raidCheckBar end,
-            title = "Raidcheck",
-            text = "Raid leaders can see who has the plan open and push assignments on ready check, so everyone is on the same page before the pull.",
+            title = L("TOUR_RAIDCHECK_TITLE"),
+            text = L("TOUR_RAIDCHECK_TEXT"),
         },
         {
             key = "compact",
             side = "AUTO",
             anchor = function() return pf.modeToggleBtn end,
-            title = "Compact View",
-            text = "Switch to a small overlay that shows just your assignment during the fight. It can also open automatically via NSRT notes.",
+            title = L("TOUR_COMPACT_TITLE"),
+            text = L("TOUR_COMPACT_TEXT"),
         },
         {
             key = "settings",
             side = "AUTO",
             anchor = function() return pf.settingsBtn end,
-            title = "Settings",
-            text = "Fine-tune everything here: compact view, assignment colors, NSRT timing, ready-check options and more.",
+            title = L("TOUR_SETTINGS_TITLE"),
+            text = L("TOUR_SETTINGS_TEXT"),
         },
         {
             key = "finish",
@@ -125,8 +126,8 @@ local function BuildTourSteps()
                 if mb and mb.IsShown and mb:IsShown() then return mb end
                 return pf
             end,
-            title = "You're all set!",
-            text = "Open the planner anytime from this minimap button, or type /rsgg. You can replay this tour with /rsggtour. Happy raiding!",
+            title = L("TOUR_FINISH_TITLE"),
+            text = L("TOUR_FINISH_TEXT"),
         },
     }
 end
@@ -243,12 +244,12 @@ local function EnsureTourPopup()
     body:SetSpacing(3)
     f.body = body
 
-    local skipBtn = CreatePlannerIconBtn(f, "Skip tour", 84, 24)
+    local skipBtn = CreatePlannerIconBtn(f, L("Skip tour"), 84, 24)
     skipBtn:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 14, 12)
     skipBtn:SetScript("OnClick", function() Diar:EndPlannerTour(true) end)
     f.skipBtn = skipBtn
 
-    local nextBtn = CreatePlannerIconBtn(f, "Next", 74, 24)
+    local nextBtn = CreatePlannerIconBtn(f, L("Next"), 74, 24)
     nextBtn:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -14, 12)
     nextBtn.selected = true
     nextBtn:SetBackdropColor(unpack(UI.ACCENT))
@@ -256,7 +257,7 @@ local function EnsureTourPopup()
     nextBtn:SetScript("OnClick", function() Diar:AdvanceTour(1) end)
     f.nextBtn = nextBtn
 
-    local prevBtn = CreatePlannerIconBtn(f, "Back", 64, 24)
+    local prevBtn = CreatePlannerIconBtn(f, L("Back"), 64, 24)
     prevBtn:SetPoint("RIGHT", nextBtn, "LEFT", -8, 0)
     prevBtn:SetScript("OnClick", function() Diar:AdvanceTour(-1) end)
     f.prevBtn = prevBtn
@@ -316,7 +317,9 @@ function Diar:ShowTourStep(index)
     PositionHighlight(target)
 
     local isLast = index >= #steps
-    popup.nextBtn:SetText(isLast and "Finish" or "Next")
+    popup.nextBtn:SetText(isLast and L("Finish") or L("Next"))
+    if popup.skipBtn and popup.skipBtn.SetText then popup.skipBtn:SetText(L("Skip tour")) end
+    if popup.prevBtn and popup.prevBtn.SetText then popup.prevBtn:SetText(L("Back")) end
     if index <= 1 then
         popup.prevBtn:Hide()
     else
@@ -382,8 +385,15 @@ function Diar:ShowFirstTimePrompt()
     if self:IsOnboardingTourCompleted() then return end
     if not (self.plannerFrame and self.plannerFrame:IsShown()) then return end
 
+    local activeLocale = RaidstratsggLocale and RaidstratsggLocale:GetActiveCode() or "enUS"
+    if self._firstTimePrompt and self._firstTimePrompt.__localeCode ~= activeLocale then
+        self._firstTimePrompt:Hide()
+        self._firstTimePrompt = nil
+    end
+
     if not self._firstTimePrompt then
         local f = CreateFrame("Frame", "RaidstratsTourPrompt", UIParent, "BackdropTemplate")
+        f.__localeCode = activeLocale
         f:SetSize(360, 176)
         f:SetFrameStrata(TOUR_STRATA)
         f:SetFrameLevel(9200)
@@ -400,7 +410,7 @@ function Diar:ShowFirstTimePrompt()
 
         local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
         title:SetPoint("TOP", f, "TOP", 0, -18)
-        title:SetText("Is this your first time?")
+        title:SetText(L("Is this your first time?"))
         title:SetTextColor(0.98, 0.98, 0.98)
 
         local body = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
@@ -408,10 +418,10 @@ function Diar:ShowFirstTimePrompt()
         body:SetPoint("TOPRIGHT", f, "TOPRIGHT", -20, -50)
         body:SetJustifyH("CENTER")
         body:SetSpacing(3)
-        body:SetText("Welcome to Raidstrats.gg! Would you like a short tour of the planner? You can always replay it later with /rsggtour.")
+        body:SetText(L("Welcome to Raidstrats.gg! Would you like a short tour of the planner? You can always replay it later with /rsggtour."))
         body:SetTextColor(0.82, 0.85, 0.90)
 
-        local yesBtn = CreatePlannerIconBtn(f, "Yes, show me around", 168, 28)
+        local yesBtn = CreatePlannerIconBtn(f, L("Yes, show me around"), 168, 28)
         yesBtn:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 16, 16)
         yesBtn.selected = true
         yesBtn:SetBackdropColor(unpack(UI.ACCENT))
@@ -421,7 +431,7 @@ function Diar:ShowFirstTimePrompt()
             Diar:StartPlannerTour()
         end)
 
-        local noBtn = CreatePlannerIconBtn(f, "No thanks", 140, 28)
+        local noBtn = CreatePlannerIconBtn(f, L("No thanks"), 140, 28)
         noBtn:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -16, 16)
         noBtn:SetScript("OnClick", function()
             Diar:SetOnboardingTourCompleted(true)
@@ -453,7 +463,7 @@ end
 -- Replay entry point: open the planner (normal mode) then start the tour.
 function Diar:StartPlannerTourFromCommand()
     if InCombatLockdown() then
-        print("|cffff9900[Raidstrats.gg]|r Can't start the tour during combat.")
+        print("|cffff9900[Raidstrats.gg]|r " .. L("Can't start the tour during combat."))
         return
     end
     if self._firstTimePrompt then self._firstTimePrompt:Hide() end

@@ -6,6 +6,7 @@ local Addon =
     AceAddon:GetAddon("Raidstratsgg", true) or
     AceAddon:GetAddon("raidstratsgg", true)
 if not Addon then return end
+local function L(key) return RSGG_L(key) end
 local Diar = Addon
 local SetBackdrop = Diar.SetBackdrop
 local PUI = Diar.PlannerUI
@@ -23,9 +24,10 @@ local CIRCLE_MASK = "Interface\\Masks\\CircleMaskScalable"
 local RAID_TEX = "Interface\\TargetingFrame\\UI-RaidTargetingIcon_"
 
 local RAID_MARKERS = {
-    { key = "star", idx = 1 }, { key = "circle", idx = 2 }, { key = "diamond", idx = 3 },
-    { key = "triangle", idx = 4 }, { key = "moon", idx = 5 }, { key = "square", idx = 6 },
-    { key = "cross", idx = 7 }, { key = "skull", idx = 8 },
+    { key = "star", label = L("Star"), idx = 1 }, { key = "circle", label = L("Circle"), idx = 2 },
+    { key = "diamond", label = L("Diamond"), idx = 3 }, { key = "triangle", label = L("Triangle"), idx = 4 },
+    { key = "moon", label = L("Moon"), idx = 5 }, { key = "square", label = L("Square"), idx = 6 },
+    { key = "cross", label = L("Cross"), idx = 7 }, { key = "skull", label = L("Skull"), idx = 8 },
 }
 local RAID_MARKER_KEY_SET = {}
 for _, marker in ipairs(RAID_MARKERS) do
@@ -33,65 +35,65 @@ for _, marker in ipairs(RAID_MARKERS) do
 end
 
 local ROLE_ENTRIES = {
-    { key = "tank", label = "Tank" },
-    { key = "healer", label = "Healer" },
-    { key = "rdps", label = "Ranged" },
-    { key = "mdps", label = "Melee" },
+    { key = "tank", label = L("Tank") },
+    { key = "healer", label = L("Healer") },
+    { key = "rdps", label = L("Ranged") },
+    { key = "mdps", label = L("Melee") },
 }
 
 local CLASS_ENTRIES = {
-    { key = "deathknight", label = "Death Knight" },
-    { key = "demonhunter", label = "Demon Hunter" },
-    { key = "druid", label = "Druid" },
-    { key = "evoker", label = "Evoker" },
-    { key = "hunter", label = "Hunter" },
-    { key = "mage", label = "Mage" },
-    { key = "monk", label = "Monk" },
-    { key = "paladin", label = "Paladin" },
-    { key = "priest", label = "Priest" },
-    { key = "rogue", label = "Rogue" },
-    { key = "shaman", label = "Shaman" },
-    { key = "warlock", label = "Warlock" },
-    { key = "warrior", label = "Warrior" },
+    { key = "deathknight", label = L("Death Knight") },
+    { key = "demonhunter", label = L("Demon Hunter") },
+    { key = "druid", label = L("Druid") },
+    { key = "evoker", label = L("Evoker") },
+    { key = "hunter", label = L("Hunter") },
+    { key = "mage", label = L("Mage") },
+    { key = "monk", label = L("Monk") },
+    { key = "paladin", label = L("Paladin") },
+    { key = "priest", label = L("Priest") },
+    { key = "rogue", label = L("Rogue") },
+    { key = "shaman", label = L("Shaman") },
+    { key = "warlock", label = L("Warlock") },
+    { key = "warrior", label = L("Warrior") },
 }
 
 local SPEC_LABEL_BY_KEY = {
-    beastmastery = "Beast Mastery",
-    marksmanship = "Marksmanship",
-    blood = "Blood",
-    frost = "Frost",
-    unholy = "Unholy",
-    havoc = "Havoc",
-    vengeance = "Vengeance",
-    devourer = "Devourer",
-    balance = "Balance",
-    feral = "Feral",
-    guardian = "Guardian",
-    restoration = "Restoration",
-    devastation = "Devastation",
-    preservation = "Preservation",
-    augmentation = "Augmentation",
-    arcane = "Arcane",
-    fire = "Fire",
-    brewmaster = "Brewmaster",
-    windwalker = "Windwalker",
-    mistweaver = "Mistweaver",
-    holy = "Holy",
-    protection = "Protection",
-    retribution = "Retribution",
-    discipline = "Discipline",
-    shadow = "Shadow",
-    assassination = "Assassination",
-    outlaw = "Outlaw",
-    subtlety = "Subtlety",
-    elemental = "Elemental",
-    enhancement = "Enhancement",
-    affliction = "Affliction",
-    demonology = "Demonology",
-    destruction = "Destruction",
-    arms = "Arms",
-    fury = "Fury",
-    survival = "Survival",
+    beastmastery = L("Beast Mastery"),
+    marksmanship = L("Marksmanship"),
+    blood = L("Blood"),
+    frost = L("Frost"),
+    unholy = L("Unholy"),
+    havoc = L("Havoc"),
+    vengeance = L("Vengeance"),
+    devourer = L("Devourer"),
+    balance = L("Balance"),
+    feral = L("Feral"),
+    guardian = L("Guardian"),
+    restoration = L("Restoration"),
+    devastation = L("Devastation"),
+    preservation = L("Preservation"),
+    augmentation = L("Augmentation"),
+    arcane = L("Arcane"),
+    fire = L("Fire"),
+    brewmaster = L("Brewmaster"),
+    windwalker = L("Windwalker"),
+    mistweaver = L("Mistweaver"),
+    holy = L("Holy"),
+    protection = L("Protection"),
+    retribution = L("Retribution"),
+    discipline = L("Discipline"),
+    shadow = L("Shadow"),
+    assassination = L("Assassination"),
+    outlaw = L("Outlaw"),
+    subtlety = L("Subtlety"),
+    elemental = L("Elemental"),
+    enhancement = L("Enhancement"),
+    affliction = L("Affliction"),
+    demonology = L("Demonology"),
+    destruction = L("Destruction"),
+    arms = L("Arms"),
+    fury = L("Fury"),
+    survival = L("Survival"),
 }
 
 local UI = {
@@ -102,14 +104,14 @@ local UI = {
     ACCENT  = {0.23, 0.51, 0.96, 1},
 }
 
-local PALETTE_HINT_DEFAULT = "Palette: click item, then canvas · Right-click object to delete"
+local PALETTE_HINT_DEFAULT = L("Palette: click item, then canvas · Right-click object to delete")
 local PALETTE_HINT_H = 34
 
 if not StaticPopupDialogs["RAIDSTRATSGG_PALETTE_TEXT"] then
     StaticPopupDialogs["RAIDSTRATSGG_PALETTE_TEXT"] = {
-        text = "Enter label text:",
-        button1 = _G.OKAY or "OK",
-        button2 = _G.CANCEL or "Cancel",
+        text = L("Enter label text:"),
+        button1 = _G.OKAY or L("OK"),
+        button2 = _G.CANCEL or L("Cancel"),
         hasEditBox = true,
         maxLetters = 64,
         timeout = 0,
@@ -118,14 +120,14 @@ if not StaticPopupDialogs["RAIDSTRATSGG_PALETTE_TEXT"] then
         OnShow = function(self)
             local eb = self.editBox or self.EditBox
             if not eb then return end
-            eb:SetText(self.data and self.data.defaultText or "Label")
+            eb:SetText(self.data and self.data.defaultText or L("Label"))
             eb:HighlightText()
             eb:SetFocus()
         end,
         OnAccept = function(self)
             local eb = self.editBox or self.EditBox
             local text = eb and strtrim(eb:GetText()) or ""
-            if text == "" then text = "Label" end
+            if text == "" then text = L("Label") end
             local base = self.data and self.data.template
             if not base then return end
             local template = {}
@@ -138,9 +140,9 @@ end
 
 if not StaticPopupDialogs["RAIDSTRATSGG_DELETE_OBJECT"] then
     StaticPopupDialogs["RAIDSTRATSGG_DELETE_OBJECT"] = {
-        text = "Delete this object?",
-        button1 = _G.YES or "Yes",
-        button2 = _G.NO or "No",
+        text = L("Delete this object?"),
+        button1 = _G.YES or L("Yes"),
+        button2 = _G.NO or L("No"),
         timeout = 0,
         whileDead = 1,
         hideOnEscape = 1,
@@ -947,7 +949,7 @@ function Diar:PromptPaletteTextLabel(template, label)
     if self.IsPlannerCanvasLocked and self:IsPlannerCanvasLocked() then return end
     StaticPopup_Show("RAIDSTRATSGG_PALETTE_TEXT", nil, nil, {
         template = template,
-        defaultText = (template and template.label) or "Label",
+        defaultText = (template and template.label) or L("Label"),
     })
 end
 
@@ -973,9 +975,9 @@ function Diar:BeginPalettePlacement(template, label, opts)
     end
     if pf.objectPaletteHint then
         if pf.__palettePlacement.__dragDraw then
-            pf.objectPaletteHint:SetText(("Drag on canvas to draw %s (right-click cancel)"):format(label or "shape"))
+            pf.objectPaletteHint:SetText(L("Drag on canvas to draw %s (right-click cancel)"):format(label or L("shape")))
         else
-            pf.objectPaletteHint:SetText(("Click canvas to place %s (right-click cancel)"):format(label or "object"))
+            pf.objectPaletteHint:SetText(L("Click canvas to place %s (right-click cancel)"):format(label or L("object")))
         end
         pf.objectPaletteHint:SetTextColor(0.55, 0.78, 1, 1)
     end
@@ -1134,8 +1136,8 @@ end
 
 local PALETTE_SHAPES = {
     {
-        label = "Circle",
-        tooltip = "Circle shape",
+        label = L("Circle"),
+        tooltip = L("Circle shape"),
         previewKind = "circle",
         template = {
             kind = "shape", shape = "circle", w = 4, h = 4,
@@ -1143,8 +1145,8 @@ local PALETTE_SHAPES = {
         },
     },
     {
-        label = "Rectangle",
-        tooltip = "Rectangle shape",
+        label = L("Rectangle"),
+        tooltip = L("Rectangle shape"),
         previewKind = "rect",
         template = {
             kind = "shape", shape = "rect", w = 5, h = 3.5,
@@ -1152,17 +1154,17 @@ local PALETTE_SHAPES = {
         },
     },
     {
-        label = "Text",
-        tooltip = "Text label",
+        label = L("Text"),
+        tooltip = L("Text label"),
         previewKind = "text",
         template = {
-            kind = "text", label = "Label", w = 10, h = 3, fontSize = 4,
+            kind = "text", label = L("Label"), w = 10, h = 3, fontSize = 4,
             textColor = "#ffffff", stroke = "#000000", strokeWidth = 0.2,
         },
     },
     {
-        label = "Line",
-        tooltip = "Line tool (right-click to switch line/arrow)",
+        label = L("Line"),
+        tooltip = L("Line tool (right-click to switch line/arrow)"),
         previewKind = "line",
         template = {
             kind = "line", shape = "line", stroke = "#ffffff", strokeWidth = 0.42,
@@ -1274,7 +1276,7 @@ local function RefreshClassTile(btn, tile, tileSize)
 end
 
 local function HumanizeSpecKey(specKey)
-    if type(specKey) ~= "string" or specKey == "" then return "Spec" end
+    if type(specKey) ~= "string" or specKey == "" then return L("Spec") end
     local key = specKey:lower():gsub("%s+", ""):gsub("%-", "")
     if SPEC_LABEL_BY_KEY[key] then return SPEC_LABEL_BY_KEY[key] end
     return key:gsub("^%l", string.upper)
@@ -1380,7 +1382,7 @@ function Diar:ShowPaletteSpecPicker(anchorBtn, classEntry)
 
     local specs = BuildClassSpecEntries(classEntry.key)
     if #specs == 0 then
-        print("|cffff6666[Raidstrats.gg]|r No specs found for this class.")
+        print("|cffff6666[Raidstrats.gg]|r " .. L("No specs found for this class."))
         return
     end
 
@@ -1422,7 +1424,7 @@ function Diar:ShowPaletteSpecPicker(anchorBtn, classEntry)
         local scale = UIParent:GetEffectiveScale()
         menu:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", x / scale, y / scale)
     end
-    menu.title:SetText(("Specs: %s"):format(classEntry.label or classEntry.key))
+    menu.title:SetText(L("Specs: %s"):format(classEntry.label or classEntry.key))
 
     for i = 1, #specs do
         local spec = specs[i]
@@ -1464,7 +1466,7 @@ function Diar:ShowPaletteSpecPicker(anchorBtn, classEntry)
                 kind = "icon",
                 icon = ("specs/%s/%s"):format(cls.key, sp.key),
                 w = Diar.OBJECT_PALETTE_ICON_W_PCT,
-            }, ("%s %s"):format(sp.label or HumanizeSpecKey(sp.key), cls.label or cls.key))
+            }, L("%s %s"):format(sp.label or HumanizeSpecKey(sp.key), cls.label or cls.key))
         end)
         row:Show()
     end
@@ -1565,7 +1567,7 @@ function Diar:EnsureObjectPalettePanel(pf)
 
     local title = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     title:SetPoint("TOPLEFT", panel, "TOPLEFT", 8, -8)
-    title:SetText("Objects")
+    title:SetText(L("Objects"))
     title:SetTextColor(0.92, 0.92, 0.92)
 
     local child = CreateFrame("Frame", nil, panel)
@@ -1591,7 +1593,7 @@ function Diar:EnsureObjectPalettePanel(pf)
         return section
     end
 
-    local shapesSec = AddSection("SHAPES")
+    local shapesSec = AddSection(L("SHAPES"))
     local shapeCol, shapeRow = 0, 0
     for _, entry in ipairs(PALETTE_SHAPES) do
         local btn = CreatePaletteTile(child, PALETTE_TILE, entry.tooltip or entry.label, entry.previewKind)
@@ -1600,14 +1602,14 @@ function Diar:EnsureObjectPalettePanel(pf)
             WirePaletteTile(btn, entry.template, entry.label, { promptText = true })
         elseif entry.template.kind == "line" then
             btn.__lineToolMode = "line"
-            btn.__paletteTooltip = "Line tool (right-click: line/arrow)"
+            btn.__paletteTooltip = L("Line tool (right-click: line/arrow)")
             WirePaletteTile(btn, entry.template, entry.label, {
                 dragDraw = true,
                 resolvePlacement = function(anchorBtn, baseTemplate)
                     local mode = (anchorBtn and anchorBtn.__lineToolMode) or "line"
                     local t = CopyTemplate(baseTemplate)
                     t.shape = (mode == "arrow") and "arrow" or "line"
-                    return t, (mode == "arrow") and "Arrow" or "Line"
+                    return t, (mode == "arrow") and L("Arrow") or L("Line")
                 end,
                 onRightClick = function(anchorBtn)
                     local mode = (anchorBtn and anchorBtn.__lineToolMode) or "line"
@@ -1615,8 +1617,8 @@ function Diar:EnsureObjectPalettePanel(pf)
                     if anchorBtn then
                         anchorBtn.__lineToolMode = mode
                         anchorBtn.__paletteTooltip = (mode == "arrow")
-                            and "Arrow tool (right-click: switch to line)"
-                            or "Line tool (right-click: switch to arrow)"
+                            and L("Arrow tool (right-click: switch to line)")
+                            or L("Line tool (right-click: switch to arrow)")
                         ApplyPaletteTilePreview(anchorBtn, "line", anchorBtn:GetWidth() or PALETTE_TILE)
                     end
                 end,
@@ -1633,17 +1635,17 @@ function Diar:EnsureObjectPalettePanel(pf)
         end
     end
 
-    local markersSec = AddSection("MARKERS")
+    local markersSec = AddSection(L("MARKERS"))
     local col, row = 0, 0
     for _, marker in ipairs(RAID_MARKERS) do
-        local btn = CreatePaletteTile(child, PALETTE_TILE, marker.key:gsub("^%l", string.upper))
+        local btn = CreatePaletteTile(child, PALETTE_TILE, marker.label)
         markersSec.tiles[#markersSec.tiles + 1] = {
             btn = btn, col = col, row = row, markerKey = marker.key, raidIdx = marker.idx,
         }
         RefreshMarkerTile(btn, markersSec.tiles[#markersSec.tiles], PALETTE_TILE)
         WirePaletteTile(btn, {
             kind = "icon", icon = marker.key, w = Diar.OBJECT_PALETTE_ICON_W_PCT,
-        }, marker.key)
+        }, marker.label)
         col = col + 1
         if col >= PALETTE_COLS then
             col = 0
@@ -1651,7 +1653,7 @@ function Diar:EnsureObjectPalettePanel(pf)
         end
     end
 
-    local rolesSec = AddSection("ROLES")
+    local rolesSec = AddSection(L("ROLES"))
     col, row = 0, 0
     for _, role in ipairs(ROLE_ENTRIES) do
         local btn = CreatePaletteTile(child, PALETTE_TILE, role.label)
@@ -1668,7 +1670,7 @@ function Diar:EnsureObjectPalettePanel(pf)
         end
     end
 
-    local classesSec = AddSection("CLASSES")
+    local classesSec = AddSection(L("CLASSES"))
     col, row = 0, 0
     for _, classEntry in ipairs(CLASS_ENTRIES) do
         local classData = classEntry
@@ -1733,10 +1735,10 @@ function Diar:ApplyObjectPaletteLockedState(pf)
     end
     if pf.objectPaletteHint and not pf.__palettePlacement then
         if noPlan then
-            pf.objectPaletteHint:SetText("Load a plan to use the palette")
+            pf.objectPaletteHint:SetText(L("Load a plan to use the palette"))
             pf.objectPaletteHint:SetTextColor(0.40, 0.43, 0.48)
         elseif locked then
-            pf.objectPaletteHint:SetText("Objects locked")
+            pf.objectPaletteHint:SetText(L("Objects locked"))
             pf.objectPaletteHint:SetTextColor(0.40, 0.43, 0.48)
         else
             pf.objectPaletteHint:SetText(PALETTE_HINT_DEFAULT)

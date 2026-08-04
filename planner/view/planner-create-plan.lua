@@ -6,6 +6,7 @@ local Addon =
     AceAddon:GetAddon("Raidstratsgg", true) or
     AceAddon:GetAddon("raidstratsgg", true)
 if not Addon then return end
+local function L(key) return RSGG_L(key) end
 local Diar = Addon
 local SetBackdrop = Diar.SetBackdrop
 local PUI = Diar.PlannerUI
@@ -306,7 +307,7 @@ local function UpdateCreatePlanPreview(f, arena)
     if not arena or not arena.key then
         f.previewTex:SetTexture(nil)
         if f.previewHint then
-            f.previewHint:SetText("Select a background to preview")
+            f.previewHint:SetText(L("Select a background to preview"))
             f.previewHint:Show()
         end
         if f.previewCaption then f.previewCaption:SetText("") end
@@ -317,7 +318,7 @@ local function UpdateCreatePlanPreview(f, arena)
         if ok then
             f.previewHint:Hide()
         else
-            f.previewHint:SetText("Preview not available for this background")
+            f.previewHint:SetText(L("Preview not available for this background"))
             f.previewHint:Show()
         end
     end
@@ -346,7 +347,7 @@ local function RelayoutCreatePlanPreviewTexture(f)
 end
 
 local function MakeUniquePlanName(base)
-    base = (type(base) == "string" and base ~= "") and base or "Untitled Plan"
+    base = (type(base) == "string" and base ~= "") and base or L("Untitled Plan")
     RaidstratsggSavedPlans = RaidstratsggSavedPlans or { list = {}, nextId = 1 }
     local used = {}
     for _, entry in ipairs(RaidstratsggSavedPlans.list) do
@@ -363,14 +364,14 @@ local function MakeUniquePlanName(base)
 end
 
 local function SuggestedPlanName(arena)
-    if type(arena) ~= "table" then return "Untitled Plan" end
+    if type(arena) ~= "table" then return L("Untitled Plan") end
     local boss = tostring(arena.boss or ""):gsub("^%s+", ""):gsub("%s+$", "")
     if boss ~= "" and boss ~= "Unknown" then
         return boss
     end
     local label = tostring(arena.label or ""):gsub("^%s+", ""):gsub("%s+$", "")
     if label ~= "" then return label end
-    return "Untitled Plan"
+    return L("Untitled Plan")
 end
 
 local function SetPrimaryButtonStyle(btn)
@@ -384,9 +385,9 @@ end
 
 if not StaticPopupDialogs["RAIDSTRATSGG_CREATE_PLAN_NAME"] then
     StaticPopupDialogs["RAIDSTRATSGG_CREATE_PLAN_NAME"] = {
-        text = "Plan name:",
-        button1 = _G.OKAY or "OK",
-        button2 = _G.CANCEL or "Cancel",
+        text = L("Plan name:"),
+        button1 = _G.OKAY or L("OK"),
+        button2 = _G.CANCEL or L("Cancel"),
         hasEditBox = true,
         maxLetters = 64,
         timeout = 0,
@@ -395,7 +396,7 @@ if not StaticPopupDialogs["RAIDSTRATSGG_CREATE_PLAN_NAME"] then
         OnShow = function(self)
             local eb = self.editBox or self.EditBox
             if not eb then return end
-            local suggested = (self.data and self.data.suggestedName) or "Untitled Plan"
+            local suggested = (self.data and self.data.suggestedName) or L("Untitled Plan")
             eb:SetText(suggested)
             eb:HighlightText()
             eb:SetFocus()
@@ -429,12 +430,12 @@ function Diar:PromptCreatePlanName(arena, dialog)
 
         local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
         title:SetPoint("TOPLEFT", f, "TOPLEFT", 16, -16)
-        title:SetText("Name your plan")
+        title:SetText(L("Name your plan"))
         title:SetTextColor(0.92, 0.92, 0.92)
 
         local subtitle = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         subtitle:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -4)
-        subtitle:SetText("Choose a plan name before creating it.")
+        subtitle:SetText(L("Choose a plan name before creating it."))
         subtitle:SetTextColor(0.55, 0.60, 0.66)
 
         local nameWrap = CreateFrame("Frame", nil, f, "BackdropTemplate")
@@ -463,12 +464,12 @@ function Diar:PromptCreatePlanName(arena, dialog)
         btnRow:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 16, 16)
         btnRow:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -16, 16)
 
-        local okBtn = CreatePlannerIconBtn(btnRow, "Okay", 190, 30)
+        local okBtn = CreatePlannerIconBtn(btnRow, L("Okay"), 190, 30)
         okBtn:SetPoint("LEFT", btnRow, "LEFT", 0, 0)
         okBtn:SetPoint("RIGHT", btnRow, "CENTER", -4, 0)
         SetPrimaryButtonStyle(okBtn)
 
-        local cancelBtn = CreatePlannerIconBtn(btnRow, "Cancel", 190, 30)
+        local cancelBtn = CreatePlannerIconBtn(btnRow, L("Cancel"), 190, 30)
         cancelBtn:SetPoint("LEFT", btnRow, "CENTER", 4, 0)
         cancelBtn:SetPoint("RIGHT", btnRow, "RIGHT", 0, 0)
         cancelBtn:SetScript("OnClick", function()
@@ -520,7 +521,7 @@ function Diar:PromptCreatePlanName(arena, dialog)
         f:SetFrameLevel(650)
     end
     if f.nameEdit then
-        f.nameEdit:SetText(f._createPlanNameData.suggestedName or "Untitled Plan")
+        f.nameEdit:SetText(f._createPlanNameData.suggestedName or L("Untitled Plan"))
         f.nameEdit:HighlightText()
     end
     f:Show()
@@ -538,7 +539,7 @@ function Diar:CreateNewPlan(arena, opts)
         return false
     end
 
-    local planName = MakeUniquePlanName(opts.planName or "Untitled Plan")
+    local planName = MakeUniquePlanName(opts.planName or L("Untitled Plan"))
     local data = {
         v = 2,
         planName = planName,
@@ -593,7 +594,7 @@ function Diar:AddSceneFromArena(arena)
     local data = self.plannerData
     if not data then return false end
     if tostring(data.planName or "") == "No plan" then
-        print("|cffff6666[Raidstrats.gg]|r No plan loaded. Load a plan before adding scenes.")
+        print("|cffff6666[Raidstrats.gg]|r " .. L("No plan loaded. Load a plan before adding scenes."))
         return false
     end
     data.scenes = data.scenes or {}
@@ -624,7 +625,7 @@ end
 function Diar:ShowCreateSceneDialog()
     local data = self.plannerData
     if not data or tostring(data.planName or "") == "No plan" then
-        print("|cffff6666[Raidstrats.gg]|r No plan loaded. Load a plan before adding scenes.")
+        print("|cffff6666[Raidstrats.gg]|r " .. L("No plan loaded. Load a plan before adding scenes."))
         return
     end
     self:ShowCreatePlanDialog({ sceneMode = true })
@@ -649,18 +650,18 @@ function Diar:ShowCreatePlanDialog(opts)
 
         local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
         title:SetPoint("TOP", 0, -18)
-        title:SetText("Create new plan")
+        title:SetText(L("Create new plan"))
         title:SetTextColor(0.9, 0.9, 0.9)
 
         local hint = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         hint:SetPoint("TOP", title, "BOTTOM", 0, -8)
         hint:SetWidth(940)
         hint:SetTextColor(0.55, 0.6, 0.65)
-        hint:SetText("Select Expansion -> Raid -> Boss -> Background for Scene 1.")
+        hint:SetText(L("Select Expansion -> Raid -> Boss -> Background for Scene 1."))
 
         local expansionLabel = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         expansionLabel:SetPoint("TOPLEFT", f, "TOPLEFT", 18, -74)
-        expansionLabel:SetText("EXPANSIONS")
+        expansionLabel:SetText(L("EXPANSIONS"))
         expansionLabel:SetTextColor(unpack(UI.ACCENT))
 
         local expansionTabsContainer = CreateFrame("Frame", nil, f)
@@ -670,17 +671,17 @@ function Diar:ShowCreatePlanDialog(opts)
 
         local raidLabel = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         raidLabel:SetPoint("TOPLEFT", f, "TOPLEFT", 18, -126)
-        raidLabel:SetText("RAIDS")
+        raidLabel:SetText(L("RAIDS"))
         raidLabel:SetTextColor(unpack(UI.ACCENT))
 
         local bossLabel = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         bossLabel:SetPoint("TOPLEFT", f, "TOPLEFT", 330, -126)
-        bossLabel:SetText("BOSSES")
+        bossLabel:SetText(L("BOSSES"))
         bossLabel:SetTextColor(unpack(UI.ACCENT))
 
         local rightLabel = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         rightLabel:SetPoint("TOPLEFT", f, "TOPLEFT", 642, -126)
-        rightLabel:SetText("BACKGROUNDS")
+        rightLabel:SetText(L("BACKGROUNDS"))
         rightLabel:SetTextColor(unpack(UI.ACCENT))
 
         local raidScroll = CreateFrame("ScrollFrame", nil, f, "UIPanelScrollFrameTemplate")
@@ -712,7 +713,7 @@ function Diar:ShowCreatePlanDialog(opts)
 
         local previewTitle = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         previewTitle:SetPoint("TOPLEFT", bgScroll, "BOTTOMLEFT", 0, -4)
-        previewTitle:SetText("PREVIEW")
+        previewTitle:SetText(L("PREVIEW"))
         previewTitle:SetTextColor(unpack(UI.ACCENT))
 
         local previewPanel = CreateFrame("Frame", nil, f, "BackdropTemplate")
@@ -726,7 +727,7 @@ function Diar:ShowCreatePlanDialog(opts)
         local previewHint = previewPanel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         previewHint:SetPoint("CENTER", previewTex, "CENTER", 0, 0)
         previewHint:SetTextColor(0.55, 0.60, 0.66)
-        previewHint:SetText("Select a background to preview")
+        previewHint:SetText(L("Select a background to preview"))
 
         local previewCaption = previewPanel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         previewCaption:SetPoint("BOTTOMLEFT", previewPanel, "BOTTOMLEFT", 8, 6)
@@ -742,14 +743,14 @@ function Diar:ShowCreatePlanDialog(opts)
         btnRow:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 16, 14)
         btnRow:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -16, 14)
 
-        local createBtn = CreatePlannerIconBtn(btnRow, "Create Plan", 200, 36)
+        local createBtn = CreatePlannerIconBtn(btnRow, L("Create Plan"), 200, 36)
         createBtn:SetPoint("LEFT", btnRow, "LEFT", 0, 0)
         createBtn:SetPoint("RIGHT", btnRow, "CENTER", -4, 0)
         createBtn:Disable()
         createBtn:SetAlpha(0.45)
         if createBtn.label then createBtn.label:SetTextColor(0.55, 0.55, 0.55) end
 
-        local cancelBtn = CreatePlannerIconBtn(btnRow, "Cancel", 200, 36)
+        local cancelBtn = CreatePlannerIconBtn(btnRow, L("Cancel"), 200, 36)
         cancelBtn:SetPoint("LEFT", btnRow, "CENTER", 4, 0)
         cancelBtn:SetPoint("RIGHT", btnRow, "RIGHT", 0, 0)
         cancelBtn:SetScript("OnClick", function() f:Hide() end)
@@ -960,14 +961,14 @@ function Diar:ShowCreatePlanDialog(opts)
             lbl:SetPoint("LEFT", row, "LEFT", 10, 5)
             lbl:SetPoint("RIGHT", row, "RIGHT", -10, 5)
             lbl:SetJustifyH("LEFT")
-            lbl:SetText(bossNode.boss or "Unknown")
+            lbl:SetText(bossNode.boss or L("Unknown"))
             lbl:SetTextColor(0.92, 0.92, 0.92)
             row.label = lbl
             local sub = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
             sub:SetPoint("TOPLEFT", lbl, "BOTTOMLEFT", 0, -1)
             sub:SetPoint("RIGHT", row, "RIGHT", -10, 0)
             sub:SetJustifyH("LEFT")
-            sub:SetText(("%d backgrounds"):format(#(bossNode.arenas or {})))
+            sub:SetText(L("%d backgrounds"):format(#(bossNode.arenas or {})))
             sub:SetTextColor(0.56, 0.60, 0.66)
             row:SetScript("OnEnter", function(s)
                 if f.selectedBossIndex ~= bossIndex then
@@ -1028,7 +1029,7 @@ function Diar:ShowCreatePlanDialog(opts)
             lbl:SetPoint("LEFT", row, "LEFT", 10, 5)
             lbl:SetPoint("RIGHT", row, "RIGHT", -10, 5)
             lbl:SetJustifyH("LEFT")
-            lbl:SetText(raidNode.raid or "Other")
+            lbl:SetText(raidNode.raid or L("Other"))
             lbl:SetTextColor(0.92, 0.92, 0.92)
             row.label = lbl
             local sub = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
@@ -1036,7 +1037,7 @@ function Diar:ShowCreatePlanDialog(opts)
             sub:SetPoint("RIGHT", row, "RIGHT", -10, 0)
             sub:SetJustifyH("LEFT")
             local bossCount = #BuildBossOptionsForRaid(raidNode)
-            sub:SetText((raidNode.expansion or "Other") .. ("  (%d bosses)"):format(bossCount))
+            sub:SetText(L("%s  (%d bosses)"):format(raidNode.expansion or L("Other"), bossCount))
             sub:SetTextColor(0.56, 0.60, 0.66)
             row:SetScript("OnEnter", function(s)
                 if f.selectedRaidIndex ~= raidIndex then
@@ -1077,7 +1078,7 @@ function Diar:ShowCreatePlanDialog(opts)
 
     if f.createBtn then
         if f.createBtn.SetText then
-            f.createBtn:SetText(sceneMode and "Add Scene" or "Create Plan")
+            f.createBtn:SetText(sceneMode and L("Add Scene") or L("Create Plan"))
         end
         f.createBtn:SetScript("OnClick", function()
             local selected = f.selectedArena
@@ -1126,13 +1127,13 @@ function Diar:ShowCreatePlanDialog(opts)
     end
 
     if f.title then
-        f.title:SetText(sceneMode and "Add new scene" or "Create new plan")
+        f.title:SetText(sceneMode and L("Add new scene") or L("Create new plan"))
     end
     if f.hint then
         if sceneMode then
-            f.hint:SetText("Select Expansion -> Raid -> Boss -> Background for the new scene.")
+            f.hint:SetText(L("Select Expansion -> Raid -> Boss -> Background for the new scene."))
         else
-            f.hint:SetText("Select Expansion -> Raid -> Boss -> Background for Scene 1.")
+            f.hint:SetText(L("Select Expansion -> Raid -> Boss -> Background for Scene 1."))
         end
     end
 

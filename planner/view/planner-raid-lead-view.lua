@@ -6,6 +6,7 @@ local Addon =
     AceAddon:GetAddon("Raidstratsgg", true) or
     AceAddon:GetAddon("raidstratsgg", true)
 if not Addon then return end
+local function L(key) return RSGG_L(key) end
 local Diar = Addon
 
 local SEP = string.char(31)
@@ -113,7 +114,7 @@ function Diar:ShowRaidCheckMemberContextMenu(anchor, memberName)
         if SetBackdrop then SetBackdrop(notifBtn, UI.ROW, UI.BORDER, 1) end
         local lbl = notifBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         lbl:SetPoint("CENTER")
-        lbl:SetText("Send notif")
+        lbl:SetText(L("Send notif"))
         lbl:SetTextColor(0.92, 0.92, 0.92)
         notifBtn:SetScript("OnEnter", function(s)
             s:SetBackdropColor(unpack(UI.ROW_HOV))
@@ -252,7 +253,7 @@ function Diar:CollectReadyCheckRequiredPlans(opts)
             planKey = planKey,
             planName = (planName and planName ~= "" and planName)
                 or (alias and alias ~= "" and alias)
-                or "Raid plan",
+        or L("Raid plan"),
             data = data,
             alias = alias,
         }
@@ -415,14 +416,14 @@ function Diar:HandleRaidCheckMissingPlansComm(msg, sender)
     -- Always send the full note plan set (every rsgg-bind), not only requested/assigned ones.
     local sendable = self:GetSendableReadyCheckNotePlans({ reload = true })
     if #sendable == 0 then
-        print(("|cffff9900[Raidstrats.gg]|r %s needs the note plans, but you don't have them saved locally to send."):format(
+        print(L("|cffff9900[Raidstrats.gg]|r %s needs the note plans, but you don't have them saved locally to send."):format(
             Ambiguate and Ambiguate(sender, "short") or sender))
         return
     end
 
     self:MarkReadyCheckAutoSent(senderKey)
     if self:SendReadyCheckNotePlansBundleToMember(sender, sendable) then
-        print(("|cff00aaff[Raidstrats.gg]|r Sent all %d note plan%s to %s. One import popup on their end."):format(
+    print(L("|cff00aaff[Raidstrats.gg]|r Sent all %d note plan%s to %s. One import popup on their end."):format(
             #sendable,
             #sendable == 1 and "" or "s",
             Ambiguate and Ambiguate(sender, "short") or sender))
@@ -481,7 +482,7 @@ function Diar:MaybeAutoNotReadyForMissingPlans()
 
     local function doConfirm()
         if ConfirmReadyCheckNotReady() then
-            print(("|cffff9900[Raidstrats.gg]|r Clicked Not Ready for you. You're missing %d plan%s: %s"):format(
+        print(L("|cffff9900[Raidstrats.gg]|r Clicked Not Ready for you. You're missing %d plan%s: %s"):format(
                 #missingNames,
                 #missingNames == 1 and "" or "s",
                 table.concat(missingNames, ", ")
@@ -489,7 +490,7 @@ function Diar:MaybeAutoNotReadyForMissingPlans()
             if self.RequestMissingReadyCheckPlans then
                 -- Request the full note plan set, not only the ones this player is assigned to.
                 if self:RequestMissingReadyCheckPlans(plans) then
-                    print("|cff00aaff[Raidstrats.gg]|r Asked the raid lead for the note plans. Hit import when they pop up.")
+        print(L("|cff00aaff[Raidstrats.gg]|r Asked the raid lead for the note plans. Hit import when they pop up."))
                 end
             end
         end
@@ -519,7 +520,7 @@ local function EnsureReadyCheckRaidCheckSendAllBtn(f)
     if SetBackdrop then SetBackdrop(btn, UI.ROW, UI.BORDER, 1) end
     local lbl = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     lbl:SetPoint("CENTER")
-    lbl:SetText("Send to all missing")
+        lbl:SetText(L("Send to all missing"))
     lbl:SetTextColor(0.92, 0.92, 0.92)
     btn.label = lbl
     btn:SetScript("OnEnter", function(s)
@@ -563,7 +564,7 @@ function Diar:EnsureReadyCheckRaidCheckPanel()
 
     local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     title:SetPoint("TOPLEFT", f, "TOPLEFT", 12, -10)
-    title:SetText("Raidcheck")
+        title:SetText(L("Raidcheck"))
     title:SetTextColor(0.92, 0.94, 0.98)
     f.title = title
 
@@ -579,7 +580,7 @@ function Diar:EnsureReadyCheckRaidCheckPanel()
     refreshBtn:SetPoint("TOPRIGHT", closeBtn, "TOPLEFT", -2, -6)
     local refreshLbl = refreshBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     refreshLbl:SetPoint("CENTER")
-    refreshLbl:SetText("Refresh")
+    refreshLbl:SetText(L("Refresh"))
     refreshLbl:SetTextColor(unpack(UI.LINK))
     refreshBtn:SetScript("OnEnter", function()
         refreshLbl:SetTextColor(unpack(UI.LINK_HOV))
@@ -712,7 +713,7 @@ function Diar:OpenRaidCheckForReadyCheck()
         return false
     end
     if not self:EnsurePlanLoadedForReadyCheckRaidCheck() then
-        print("|cffff9900[Raidstrats.gg]|r No plan binds in the loaded NSRT note, so raidcheck has nothing to check.")
+        print(L("|cffff9900[Raidstrats.gg]|r No plan binds in the loaded NSRT note, so raidcheck has nothing to check."))
         return false
     end
 
@@ -1209,13 +1210,13 @@ local function MemberViewStatus(memberName, presence, currentKey, currentPlanId,
     if not key then return "idle", "—" end
     if localViewing then
         if localHasPlan or currentKey == "" then
-            return "viewing", "Viewing"
+            return "viewing", L("Viewing")
         end
-        return "missing", "Missing plan"
+        return "missing", L("Missing plan")
     end
     if localHasAddon then
         if not localHasPlan and currentKey ~= "" then
-            return "missing", "Missing plan"
+            return "missing", L("Missing plan")
         end
         return "idle", "—"
     end
@@ -1223,7 +1224,7 @@ local function MemberViewStatus(memberName, presence, currentKey, currentPlanId,
     local entry = presence[key]
     if not PresenceEntryFresh(entry) then
         if PollAckWindowClosed() then
-            return "noaddon", "Missing addon"
+            return "noaddon", L("Missing addon")
         end
         return "idle", "—"
     end
@@ -1234,7 +1235,7 @@ local function MemberViewStatus(memberName, presence, currentKey, currentPlanId,
     end
 
     if entry.hasPlan == false then
-        return "missing", "Missing plan"
+        return "missing", L("Missing plan")
     end
 
     if not entry.open then
@@ -1243,20 +1244,20 @@ local function MemberViewStatus(memberName, presence, currentKey, currentPlanId,
 
     local activeKey = entry.activePlanKey or entry.planKey or ""
     if currentKey ~= "" and activeKey == currentKey then
-        return "viewing", "Viewing"
+        return "viewing", L("Viewing")
     end
     if activeKey ~= "" then
-        return "other", "Other plan"
+        return "other", L("Other plan")
     end
-    return "viewing", "Viewing"
+    return "viewing", L("Viewing")
 end
 
 local DEBUG_RAIDCHECK_STATUSES = {
-    { "viewing", "Viewing" },
-    { "other", "Other plan" },
-    { "wrongversion", "Wrong version" },
-    { "missing", "Missing plan" },
-    { "noaddon", "Missing addon" },
+    { "viewing", L("Viewing") },
+    { "other", L("Other plan") },
+    { "wrongversion", L("Wrong version") },
+    { "missing", L("Missing plan") },
+    { "noaddon", L("Missing addon") },
     { "idle", "—" },
 }
 
@@ -1315,21 +1316,21 @@ end
 local function BuildReadyCheckStatusTooltip(missing, wrong)
     local lines = {}
     if wrong and #wrong > 0 then
-        lines[#lines + 1] = (#wrong == 1) and "Wrong version" or "Wrong versions"
+        lines[#lines + 1] = (#wrong == 1) and L("Wrong version") or L("Wrong versions")
         for _, item in ipairs(wrong) do
-            local name = item.planName or item.alias or item.planId or "Plan"
+            local name = item.planName or item.alias or item.planId or L("Plan")
             local theirs = item.theirsVersion ~= nil and tostring(item.theirsVersion) or "?"
             local correct = item.expectedVersion ~= nil and tostring(item.expectedVersion) or "?"
-            lines[#lines + 1] = ("%s — theirs: %s · correct: %s"):format(name, theirs, correct)
+            lines[#lines + 1] = L("%s — theirs: %s · correct: %s"):format(name, theirs, correct)
         end
     end
     if missing and #missing > 0 then
         if #lines > 0 then
             lines[#lines + 1] = " "
         end
-        lines[#lines + 1] = (#missing == 1) and "Missing plan" or "Missing plans"
+        lines[#lines + 1] = (#missing == 1) and L("Missing plan") or L("Missing plans")
         for _, plan in ipairs(missing) do
-            lines[#lines + 1] = plan.planName or plan.alias or plan.planId or "Plan"
+            lines[#lines + 1] = plan.planName or plan.alias or plan.planId or L("Plan")
         end
     end
     return lines
@@ -1408,7 +1409,7 @@ function Diar:GetReadyCheckMemberPlanStatus(memberName, presence)
     local status, label
     if not isMe and answered == 0 and not PresenceEntryFresh(entry) then
         if closed then
-            status, label = "noaddon", "Missing addon"
+            status, label = "noaddon", L("Missing addon")
             missing = {}
             wrong = {}
             for _, plan in ipairs(plans) do
@@ -1422,7 +1423,7 @@ function Diar:GetReadyCheckMemberPlanStatus(memberName, presence)
         if #missing > 0 then
             status = "missing"
         elseif #wrong > 0 then
-            status, label = "wrongversion", "Wrong version"
+            status, label = "wrongversion", L("Wrong version")
         elseif pending then
             status = "idle"
         else
@@ -1433,7 +1434,7 @@ function Diar:GetReadyCheckMemberPlanStatus(memberName, presence)
     -- After we auto-sent missing/outdated plans, show that until they finish importing.
     if not isMe and (status == "missing" or status == "wrongversion")
         and self:WasReadyCheckAutoSent(memberName) then
-        status, label = "autosent", "Auto-sent"
+        status, label = "autosent", L("Auto-sent")
     end
 
     local sendPlans = {}
@@ -1466,9 +1467,9 @@ function Diar:RefreshReadyCheckRaidCheckPanel()
     local planTotal = #plans
     if f.title then
         if planTotal > 1 then
-            f.title:SetText(("Raidcheck (%d plans)"):format(planTotal))
+            f.title:SetText(L("Raidcheck (%d plans)"):format(planTotal))
         else
-            f.title:SetText("Raidcheck")
+            f.title:SetText(L("Raidcheck"))
         end
     end
 
@@ -1509,7 +1510,7 @@ function Diar:RefreshReadyCheckRaidCheckPanel()
                 for pi = 2, planTotal do
                     missing[#missing + 1] = plans[pi]
                 end
-                status, label = "wrongversion", "Wrong version"
+                status, label = "wrongversion", L("Wrong version")
             elseif have < planTotal then
                 for pi = have + 1, planTotal do
                     missing[#missing + 1] = plans[pi]
@@ -1522,7 +1523,7 @@ function Diar:RefreshReadyCheckRaidCheckPanel()
                 status, label = "viewing", ("%d/%d"):format(have, planTotal)
             end
             if status == "noaddon" then
-                label = "Missing addon"
+                label = L("Missing addon")
             end
             info = {
                 status = status,
@@ -1648,20 +1649,20 @@ function Diar:RefreshReadyCheckRaidCheckPanel()
 
     child:SetHeight(math.max(1, y))
     if f.summary then
-        f.summary:SetText(("%d / %d complete"):format(completeCount, #sorted))
+        f.summary:SetText(L("%d / %d complete"):format(completeCount, #sorted))
     end
     if f.sendAllBtn then
         if missingPeople > 0 and self:CanSendRaidCheckNotif() then
             f.sendAllBtn:Enable()
             f.sendAllBtn:SetAlpha(1)
             if f.sendAllBtn.label then
-                f.sendAllBtn.label:SetText(("Send to all missing (%d)"):format(missingPeople))
+                f.sendAllBtn.label:SetText(L("Send to all missing (%d)"):format(missingPeople))
             end
         else
             f.sendAllBtn:Disable()
             f.sendAllBtn:SetAlpha(0.45)
             if f.sendAllBtn.label then
-                f.sendAllBtn.label:SetText("Send to all missing")
+                f.sendAllBtn.label:SetText(L("Send to all missing"))
             end
         end
     end
@@ -1815,10 +1816,10 @@ function Diar:RefreshRaidLeadView(pf)
                 row.autoSwitchBtn:Show()
                 if member.autoSwitchApproved then
                     row.autoSwitchBtn.icon:SetTexture("Interface\\RaidFrame\\ReadyCheck-Ready")
-                    row.autoSwitchBtn.tooltipText = "Auto-switch enabled"
+                    row.autoSwitchBtn.tooltipText = L("Auto-switch enabled")
                 else
                     row.autoSwitchBtn.icon:SetTexture("Interface\\RaidFrame\\ReadyCheck-NotReady")
-                    row.autoSwitchBtn.tooltipText = "Auto-switch not enabled"
+                    row.autoSwitchBtn.tooltipText = L("Auto-switch not enabled")
                 end
             else
                 row.autoSwitchBtn:Hide()
@@ -1831,7 +1832,7 @@ function Diar:RefreshRaidLeadView(pf)
 
     child:SetHeight(math.max(1, y))
     if pf.raidCheckSummary then
-        pf.raidCheckSummary:SetText(("%d / %d viewing"):format(viewingCount, #sorted))
+        pf.raidCheckSummary:SetText(L("%d / %d viewing"):format(viewingCount, #sorted))
     end
     self:UpdateRaidCheckNotifBtn(pf)
 end
@@ -1910,7 +1911,7 @@ function Diar:SetRaidCheckAutoSwitchEnabled(pf, enabled, opts)
     opts = opts or {}
 
     if enabled and not self:CanSendRaidCheckNotif() then
-        print("|cffff6666[Raidstrats.gg]|r Only the raid leader can enable Auto-switch scene for all.")
+        print(L("|cffff6666[Raidstrats.gg]|r Only the raid leader can enable Auto-switch scene for all."))
         enabled = false
     end
     if enabled and not self:IsRaidCheckEnabled(pf) then
@@ -1932,8 +1933,8 @@ function Diar:SetRaidCheckAutoSwitchEnabled(pf, enabled, opts)
 
     if changed and opts.broadcast ~= false then
         if self:BroadcastRaidCheckAutoSwitchState(enabled) then
-            local stateText = enabled and "enabled" or "disabled"
-            print(("|cff00aaff[Raidstrats.gg]|r Auto-switch scene for all %s."):format(stateText))
+            local stateText = enabled and L("enabled") or L("disabled")
+            print(L("|cff00aaff[Raidstrats.gg]|r Auto-switch scene for all %s."):format(stateText))
         end
     end
 
@@ -1958,7 +1959,7 @@ end
 
 function Diar:ShowRaidCheckAutoSwitchPrompt(sender, planKey)
     self:HideRaidCheckAutoSwitchPrompt()
-    local who = sender and (Ambiguate and Ambiguate(sender, "short") or sender) or "Raid leader"
+    local who = sender and (Ambiguate and Ambiguate(sender, "short") or sender) or L("Raid leader")
 
     local f = CreateFrame("Frame", "RaidstratsAutoSwitchPromptPopup", UIParent, "BackdropTemplate")
     f:SetSize(390, 168)
@@ -1969,14 +1970,14 @@ function Diar:ShowRaidCheckAutoSwitchPrompt(sender, planKey)
 
     local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     title:SetPoint("TOP", 0, -14)
-    title:SetText("Auto-switch scene request")
+    title:SetText(L("Auto-switch scene request"))
     title:SetTextColor(0.92, 0.92, 0.92)
 
     local msg = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     msg:SetPoint("TOP", title, "BOTTOM", 0, -10)
     msg:SetWidth(338)
     msg:SetJustifyH("CENTER")
-    msg:SetText(("%s enabled auto-switch scene for the group.\nAllow scene changes from raid lead?"):format(who))
+    msg:SetText(L("%s enabled auto-switch scene for the group.\nAllow scene changes from raid lead?"):format(who))
     msg:SetTextColor(0.78, 0.80, 0.84)
 
     local function MakeBtn(text, x, onClick)
@@ -2000,21 +2001,21 @@ function Diar:ShowRaidCheckAutoSwitchPrompt(sender, planKey)
         return b
     end
 
-    MakeBtn("Deny", -70, function()
+    MakeBtn(L("Deny"), -70, function()
         Diar._raidCheckRemoteAutoSwitchEnabled = false
         Diar._raidCheckRemoteAutoSwitchApproved = false
         Diar._raidCheckRemoteAutoSwitchPlanKey = planKey or ""
         Diar:BroadcastRaidCheckAutoSwitchResponse(planKey, false)
         Diar:HideRaidCheckAutoSwitchPrompt()
-        print("|cff00aaff[Raidstrats.gg]|r Auto-switch scene denied.")
+        print(L("|cff00aaff[Raidstrats.gg]|r Auto-switch scene denied."))
     end)
-    MakeBtn("Approve", 70, function()
+    MakeBtn(L("Approve"), 70, function()
         Diar._raidCheckRemoteAutoSwitchEnabled = true
         Diar._raidCheckRemoteAutoSwitchApproved = true
         Diar._raidCheckRemoteAutoSwitchPlanKey = planKey or ""
         Diar:BroadcastRaidCheckAutoSwitchResponse(planKey, true)
         Diar:HideRaidCheckAutoSwitchPrompt()
-        print("|cff00aaff[Raidstrats.gg]|r Auto-switch scene approved.")
+        print(L("|cff00aaff[Raidstrats.gg]|r Auto-switch scene approved."))
     end)
 
     f:SetScript("OnHide", function()
@@ -2040,9 +2041,9 @@ function Diar:HandleRaidCheckAutoSwitchComm(msg, sender)
     if parts[1] ~= "RASC" then return end
     local enabled = parts[2] == "1"
     local planKey = parts[3] or ""
-    local senderName = sender and (Ambiguate and Ambiguate(sender, "short") or sender) or "Raid leader"
-    local stateText = enabled and "enabled" or "disabled"
-    print(("|cff00aaff[Raidstrats.gg]|r %s %s Auto-switch scene for all."):format(senderName, stateText))
+    local senderName = sender and (Ambiguate and Ambiguate(sender, "short") or sender) or L("Raid leader")
+    local stateText = enabled and L("enabled") or L("disabled")
+    print(L("|cff00aaff[Raidstrats.gg]|r %s %s Auto-switch scene for all."):format(senderName, stateText))
     if enabled then
         self._raidCheckRemoteAutoSwitchEnabled = false
         self._raidCheckRemoteAutoSwitchApproved = false
@@ -2153,19 +2154,19 @@ end
 
 function Diar:SendRaidCheckNotif()
     if not self:CanSendRaidCheckNotif() then
-        print("|cffff6666[Raidstrats.gg]|r Only the raid lead can send those.")
+        print(L("|cffff6666[Raidstrats.gg]|r Only the raid lead can send those."))
         return
     end
 
     local chan = self.GetGroupChatChannel and self:GetGroupChatChannel()
     if not chan then
-        print("|cffff6666[Raidstrats.gg]|r Hop in a party or raid first.")
+        print(L("|cffff6666[Raidstrats.gg]|r Hop in a party or raid first."))
         return
     end
 
     local data = self.plannerData
     if not data or not data.scenes or #data.scenes == 0 then
-        print("|cffff6666[Raidstrats.gg]|r Load a plan first.")
+        print(L("|cffff6666[Raidstrats.gg]|r Load a plan first."))
         return
     end
     if self.EnsurePlanInstanceKey then self:EnsurePlanInstanceKey(data) end
@@ -2174,11 +2175,11 @@ function Diar:SendRaidCheckNotif()
     -- Smart stamp: bump only if content differs from last sync baseline.
     local payload = self.BuildSharePayload and self:BuildSharePayload(data)
     if not payload or payload == "" then
-        print("|cffff6666[Raidstrats.gg]|r Couldn't pack that plan up to send.")
+        print(L("|cffff6666[Raidstrats.gg]|r Couldn't pack that plan up to send."))
         return
     end
 
-    local planName = (data.planName and data.planName ~= "") and data.planName or "Raid plan"
+    local planName = (data.planName and data.planName ~= "") and data.planName or L("Raid plan")
     local planKey = SanitizeCommField(self:GetCurrentPlanPresenceKey())
     local planId = SanitizeCommField(self:GetCurrentPlanId())
     local transferId = string.format("rc%x%x", time(), math.random(0, 0xFFFFFF))
@@ -2193,8 +2194,8 @@ function Diar:SendRaidCheckNotif()
         SanitizeCommField(transferId), SanitizeCommField(owner),
     }, SEP)
     self:SendCommMessage(prefix, msg, chan)
-    print(("|cff00aaff[Raidstrats.gg]|r Pinged the %s about \"%s\"."):format(
-        chan == "RAID" and "raid" or (chan == "PARTY" and "party" or "group"), planName))
+    print(L("|cff00aaff[Raidstrats.gg]|r Pinged the %s about \"%s\"."):format(
+        chan == "RAID" and L("raid") or (chan == "PARTY" and L("party") or L("group")), planName))
 end
 
 local function BuildWhisperTargetFromMember(name)
@@ -2223,13 +2224,13 @@ end
 
 function Diar:SendRaidCheckPlanToMember(memberName, plan)
     if not self:CanSendRaidCheckNotif() then
-        print("|cffff6666[Raidstrats.gg]|r Only the raid lead can send those.")
+        print(L("|cffff6666[Raidstrats.gg]|r Only the raid lead can send those."))
         return false
     end
 
     local target = BuildWhisperTargetFromMember(memberName)
     if not target or target == "" then
-        print("|cffff6666[Raidstrats.gg]|r Couldn't find that player to whisper.")
+        print(L("|cffff6666[Raidstrats.gg]|r Couldn't find that player to whisper."))
         return false
     end
 
@@ -2239,8 +2240,8 @@ function Diar:SendRaidCheckPlanToMember(memberName, plan)
         data = FindSavedPlanDataByPlanId(plan.planId)
     end
     if not data or not data.scenes or #data.scenes == 0 then
-        print(("|cffff6666[Raidstrats.gg]|r You don't have \"%s\" saved locally, so nothing to send."):format(
-            tostring(plan.planName or plan.alias or plan.planId or "plan")))
+        print(L("|cffff6666[Raidstrats.gg]|r You don't have \"%s\" saved locally, so nothing to send."):format(
+            tostring(plan.planName or plan.alias or plan.planId or L("plan"))))
         return false
     end
     if self.EnsurePlanInstanceKey then self:EnsurePlanInstanceKey(data) end
@@ -2248,12 +2249,12 @@ function Diar:SendRaidCheckPlanToMember(memberName, plan)
     -- Smart stamp: bump only if content differs from last sync baseline.
     local payload = self.BuildSharePayload and self:BuildSharePayload(data)
     if not payload or payload == "" then
-        print("|cffff6666[Raidstrats.gg]|r Couldn't pack that plan up to send.")
+        print(L("|cffff6666[Raidstrats.gg]|r Couldn't pack that plan up to send."))
         return false
     end
 
     local planName = (plan.planName and plan.planName ~= "") and plan.planName
-        or ((data.planName and data.planName ~= "") and data.planName or "Raid plan")
+        or ((data.planName and data.planName ~= "") and data.planName or L("Raid plan"))
     local planKey = SanitizeCommField(plan.planKey or (self.GetPlanIdentityKey and self:GetPlanIdentityKey(data)) or "")
     local planId = SanitizeCommField(plan.planId or data.planId or "")
     local transferId = string.format("rc%x%x", time(), math.random(0, 0xFFFFFF))
@@ -2268,7 +2269,7 @@ function Diar:SendRaidCheckPlanToMember(memberName, plan)
         SanitizeCommField(transferId), SanitizeCommField(owner),
     }, SEP)
     self:SendCommMessage(prefix, msg, "WHISPER", target, "NORMAL")
-    print(("|cff00aaff[Raidstrats.gg]|r Sent \"%s\" to %s."):format(
+    print(L("|cff00aaff[Raidstrats.gg]|r Sent \"%s\" to %s."):format(
         planName, Ambiguate and Ambiguate(target, "short") or target))
     return true
 end
@@ -2276,26 +2277,26 @@ end
 -- One whisper offer for the full note plan set; receiver gets a single Import N plans modal.
 function Diar:SendReadyCheckNotePlansBundleToMember(memberName, sendable)
     if not self:CanSendRaidCheckNotif() then
-        print("|cffff6666[Raidstrats.gg]|r Only the raid lead can send those.")
+        print(L("|cffff6666[Raidstrats.gg]|r Only the raid lead can send those."))
         return false
     end
     local target = BuildWhisperTargetFromMember(memberName)
     if not target or target == "" then
-        print("|cffff6666[Raidstrats.gg]|r Couldn't find that player to whisper.")
+        print(L("|cffff6666[Raidstrats.gg]|r Couldn't find that player to whisper."))
         return false
     end
     sendable = sendable or self:GetSendableReadyCheckNotePlans({ reload = true })
     if type(sendable) ~= "table" or #sendable == 0 then
-        print("|cffff6666[Raidstrats.gg]|r You don't have the note plans saved locally.")
+        print(L("|cffff6666[Raidstrats.gg]|r You don't have the note plans saved locally."))
         return false
     end
     if not self.BuildAndCachePlansShareBundle then
-        print("|cffff6666[Raidstrats.gg]|r Plan bundle share isn't available.")
+        print(L("|cffff6666[Raidstrats.gg]|r Plan bundle share isn't available."))
         return false
     end
-    local linkLabel, count = self:BuildAndCachePlansShareBundle(sendable, "Note plans")
+    local linkLabel, count = self:BuildAndCachePlansShareBundle(sendable, L("Note plans"))
     if not linkLabel or not count or count < 1 then
-        print("|cffff6666[Raidstrats.gg]|r Couldn't pack the note plans to send.")
+        print(L("|cffff6666[Raidstrats.gg]|r Couldn't pack the note plans to send."))
         return false
     end
     local owner = self.GetPlayerShareName and self:GetPlayerShareName()
@@ -2316,14 +2317,14 @@ function Diar:SendReadyCheckMissingPlansToMember(memberName, missingPlans)
     if memberName == "" then return false end
     local sendable = self:GetSendableReadyCheckNotePlans({ reload = true })
     if #sendable == 0 then
-        print("|cffff6666[Raidstrats.gg]|r You don't have the note plans saved locally.")
+        print(L("|cffff6666[Raidstrats.gg]|r You don't have the note plans saved locally."))
         return false
     end
 
     self:MarkReadyCheckAutoSent(memberName)
     local ok = self:SendReadyCheckNotePlansBundleToMember(memberName, sendable)
     if ok then
-        print(("|cff00aaff[Raidstrats.gg]|r Sent all %d note plan%s to %s."):format(
+        print(L("|cff00aaff[Raidstrats.gg]|r Sent all %d note plan%s to %s."):format(
             #sendable,
             #sendable == 1 and "" or "s",
             Ambiguate and Ambiguate(memberName, "short") or memberName))
@@ -2336,7 +2337,7 @@ end
 
 function Diar:SendReadyCheckMissingPlansToAll()
     if not self:CanSendRaidCheckNotif() then
-        print("|cffff6666[Raidstrats.gg]|r Only the raid lead can send those.")
+        print(L("|cffff6666[Raidstrats.gg]|r Only the raid lead can send those."))
         return false
     end
     local members = self.GetGroupMemberRoster and self:GetGroupMemberRoster() or {}
@@ -2354,13 +2355,13 @@ function Diar:SendReadyCheckMissingPlansToAll()
         end
     end
     if #queue == 0 then
-        print("|cffff9900[Raidstrats.gg]|r Everyone already has the correct note plans.")
+        print(L("|cffff9900[Raidstrats.gg]|r Everyone already has the correct note plans."))
         return false
     end
 
     local sendable = self:GetSendableReadyCheckNotePlans({ reload = true })
     if #sendable == 0 then
-        print("|cffff6666[Raidstrats.gg]|r You don't have the note plans saved locally.")
+        print(L("|cffff6666[Raidstrats.gg]|r You don't have the note plans saved locally."))
         return false
     end
 
@@ -2372,10 +2373,10 @@ function Diar:SendReadyCheckMissingPlansToAll()
         end
     end
     if people == 0 then
-        print("|cffff6666[Raidstrats.gg]|r Couldn't send the note plans to anyone.")
+        print(L("|cffff6666[Raidstrats.gg]|r Couldn't send the note plans to anyone."))
         return false
     end
-    print(("|cff00aaff[Raidstrats.gg]|r Sent all %d note plan%s to %d player%s..."):format(
+    print(L("|cff00aaff[Raidstrats.gg]|r Sent all %d note plan%s to %d player%s..."):format(
         #sendable,
         #sendable == 1 and "" or "s",
         people,
@@ -2399,14 +2400,14 @@ function Diar:ShowReadyCheckRaidCheckMemberMenu(anchor, memberName, missingPlans
         return
     end
     if not self:CanSendRaidCheckNotif() then
-        print("|cffff6666[Raidstrats.gg]|r Only the raid lead can send those.")
+        print(L("|cffff6666[Raidstrats.gg]|r Only the raid lead can send those."))
         return
     end
 
     local sendable = self:GetSendableReadyCheckNotePlans({ reload = true })
     local sendCount = #sendable
     if sendCount == 0 then
-        print("|cffff6666[Raidstrats.gg]|r You don't have the note plans saved locally.")
+        print(L("|cffff6666[Raidstrats.gg]|r You don't have the note plans saved locally."))
         return
     end
 
@@ -2427,7 +2428,7 @@ function Diar:ShowReadyCheckRaidCheckMemberMenu(anchor, memberName, missingPlans
         if SetBackdrop then SetBackdrop(sendBtn, UI.ROW, UI.BORDER, 1) end
         local lbl = sendBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         lbl:SetPoint("CENTER")
-        lbl:SetText("Send all note plans")
+        lbl:SetText(L("Send all note plans"))
         lbl:SetTextColor(0.92, 0.92, 0.92)
         sendBtn.label = lbl
         sendBtn:SetScript("OnEnter", function(s)
@@ -2456,7 +2457,7 @@ function Diar:ShowReadyCheckRaidCheckMemberMenu(anchor, memberName, missingPlans
     menu.memberName = memberName
     menu.missingPlans = missingPlans
     if menu.sendBtn and menu.sendBtn.label then
-        menu.sendBtn.label:SetText(sendCount > 1 and ("Send all note plans (%d)"):format(sendCount) or "Send note plan")
+        menu.sendBtn.label:SetText(sendCount > 1 and L("Send all note plans (%d)"):format(sendCount) or L("Send note plan"))
     end
     menu:ClearAllPoints()
     if anchor then
@@ -2551,11 +2552,11 @@ function Diar:ImportPlanFromRaidCheckNotif(sender, transferId, owner, planName)
     local prefix = self.COMM_PLAN_PREFIX or "RAIDSTRATS_PLAN"
     local whisperTo = (self.ResolveWhisperTarget and self:ResolveWhisperTarget(sender)) or sender
     if self.ArmShareRequestTimeout then
-        self:ArmShareRequestTimeout(sender, transferId, "requesting plan")
+        self:ArmShareRequestTimeout(sender, transferId, L("requesting plan"))
     end
     self:SendCommMessage(prefix, "REQ:" .. transferId, "WHISPER", whisperTo, "NORMAL")
 
-    local displayName = (planName and planName ~= "") and planName or "Raid plan"
+    local displayName = (planName and planName ~= "") and planName or L("Raid plan")
     self.plannerData = {
         planName = displayName,
         scenes = { { name = "Empty", items = {} } },
@@ -2567,12 +2568,12 @@ function Diar:ImportPlanFromRaidCheckNotif(sender, transferId, owner, planName)
     end
 
     if self.ShowImportProgress then
-        self:ShowImportProgress(true, 0, nil, "Requesting plan...")
+        self:ShowImportProgress(true, 0, nil, L("Requesting plan..."))
     end
 
-    local who = sender and (Ambiguate and Ambiguate(sender, "short") or sender) or "Raid leader"
-    print(("|cff00aaff[Raidstrats.gg]|r Grabbing \"%s\" from %s..."):format(
-        planName and planName ~= "" and planName or "raid plan", who))
+    local who = sender and (Ambiguate and Ambiguate(sender, "short") or sender) or L("Raid leader")
+    print(L("|cff00aaff[Raidstrats.gg]|r Grabbing \"%s\" from %s..."):format(
+        planName and planName ~= "" and planName or L("raid plan"), who))
     return true
 end
 
@@ -2619,9 +2620,9 @@ local function EnsureRaidCheckNotifPopupFrame(selfRef, globalName, fieldName)
             return b
         end
 
-        f.declineBtn = makeBtn(f, "Not now")
+        f.declineBtn = makeBtn(f, L("Not now"))
         f.declineBtn:SetPoint("BOTTOM", -62, 14)
-        f.acceptBtn = makeBtn(f, "Import plan")
+        f.acceptBtn = makeBtn(f, L("Import plan"))
         f.acceptBtn:SetPoint("BOTTOM", 62, 14)
     end
     selfRef[fieldName] = f
@@ -2632,21 +2633,21 @@ function Diar:ShowRaidCheckNotifPopup(sender, planName, planKey, planId, transfe
     if not self:IsRaidCheckNotifsEnabled() then return end
     if self._raidCheckBundleNotifPopup then self._raidCheckBundleNotifPopup:Hide() end
 
-    local who = sender and (Ambiguate and Ambiguate(sender, "short") or sender) or "Raid leader"
-    planName = (planName and planName ~= "") and planName or "the raid plan"
+    local who = sender and (Ambiguate and Ambiguate(sender, "short") or sender) or L("Raid leader")
+    planName = (planName and planName ~= "") and planName or L("the raid plan")
     planId = planId and tostring(planId) or ""
     local hasPlan = self:PlayerHasPlanKey(planKey, planId)
 
     local f = EnsureRaidCheckNotifPopupFrame(self, "RaidstratsRaidCheckNotifPopup", "_raidCheckNotifPopup")
     f:SetSize(360, hasPlan and 148 or 158)
-    f.title:SetText(hasPlan and "Review the raid plan" or "Import the raid plan")
+    f.title:SetText(hasPlan and L("Review the raid plan") or L("Import the raid plan"))
     if hasPlan then
-        f.msg:SetText(("%s wants you to open \"%s\" in the planner."):format(who, planName))
+        f.msg:SetText(L("%s wants you to open \"%s\" in the planner."):format(who, planName))
     else
-        f.msg:SetText(("%s wants you to review \"%s\".\nImport the plan to follow along."):format(who, planName))
+        f.msg:SetText(L("%s wants you to review \"%s\".\nImport the plan to follow along."):format(who, planName))
     end
     if f.acceptBtn.label then
-        f.acceptBtn.label:SetText(hasPlan and "Open plan" or "Import plan")
+        f.acceptBtn.label:SetText(hasPlan and L("Open plan") or L("Import plan"))
     end
 
     f.declineBtn:SetScript("OnClick", function()
@@ -2675,17 +2676,17 @@ function Diar:ShowRaidCheckBundleNotifPopup(sender, linkLabel, count, owner)
     if not self:IsRaidCheckNotifsEnabled() then return end
     if self._raidCheckNotifPopup then self._raidCheckNotifPopup:Hide() end
 
-    local who = sender and (Ambiguate and Ambiguate(sender, "short") or sender) or "Raid leader"
+    local who = sender and (Ambiguate and Ambiguate(sender, "short") or sender) or L("Raid leader")
     count = math.max(1, tonumber(count) or 1)
     linkLabel = strtrim(tostring(linkLabel or ""))
     if linkLabel == "" then return end
 
     local f = EnsureRaidCheckNotifPopupFrame(self, "RaidstratsRaidCheckBundleNotifPopup", "_raidCheckBundleNotifPopup")
     f:SetSize(360, 158)
-    f.title:SetText(count == 1 and "Import 1 plan" or ("Import %d plans"):format(count))
-    f.msg:SetText(("%s wants you to import the note plans.\nOne click grabs all %d."):format(who, count))
+    f.title:SetText(count == 1 and L("Import 1 plan") or L("Import %d plans"):format(count))
+    f.msg:SetText(L("%s wants you to import the note plans.\nOne click grabs all %d."):format(who, count))
     if f.acceptBtn.label then
-        f.acceptBtn.label:SetText(count == 1 and "Import plan" or "Import plans")
+        f.acceptBtn.label:SetText(count == 1 and L("Import plan") or L("Import plans"))
     end
 
     f.declineBtn:SetScript("OnClick", function()
@@ -2739,7 +2740,7 @@ local function EnsureRaidCheckExpandedHost(pf)
 
         local hdr = host:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         hdr:SetPoint("TOPLEFT", host, "TOPLEFT", 12, -10)
-        hdr:SetText("Raidcheck")
+        hdr:SetText(L("Raidcheck"))
         hdr:SetTextColor(0.92, 0.94, 0.98)
         host.title = hdr
 
@@ -2755,7 +2756,7 @@ local function EnsureRaidCheckExpandedHost(pf)
         refreshBtn:SetPoint("TOPRIGHT", host, "TOPRIGHT", -8, -6)
         local refreshLbl = refreshBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         refreshLbl:SetPoint("CENTER")
-        refreshLbl:SetText("Refresh")
+        refreshLbl:SetText(L("Refresh"))
         refreshLbl:SetTextColor(unpack(UI.LINK))
         refreshBtn:SetScript("OnEnter", function()
             refreshLbl:SetTextColor(unpack(UI.LINK_HOV))
@@ -2991,7 +2992,7 @@ local function CreateRaidCheckNotifBtn(box, pf)
 
         local autoLbl = box:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         autoLbl:SetPoint("LEFT", autoChk, "RIGHT", 6, 0)
-        autoLbl:SetText("Auto-switch scene for all")
+        autoLbl:SetText(L("Auto-switch scene for all"))
         autoLbl:SetTextColor(0.66, 0.69, 0.74)
         autoChk:Hide()
         autoLbl:Hide()
@@ -3005,7 +3006,7 @@ local function CreateRaidCheckNotifBtn(box, pf)
     if SetBackdrop then SetBackdrop(notifBtn, UI.ROW, UI.BORDER, 1) end
     local notifLbl = notifBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     notifLbl:SetPoint("CENTER")
-    notifLbl:SetText("Send notif")
+    notifLbl:SetText(L("Send notif"))
     notifLbl:SetTextColor(0.88, 0.88, 0.88)
     notifBtn:SetScript("OnEnter", function(s)
         s:SetBackdropColor(unpack(UI.ROW_HOV))
@@ -3051,8 +3052,8 @@ function Diar:EnsureRaidLeadViewPanel(pf)
     bar:SetHeight(RAID_CHECK_BAR_H)
     pf.raidCheckBar = bar
 
-    local exportBtn = CreateButton and CreateButton(bar, "EXPORT ROSTER") or CreateFrame("Button", nil, bar, "UIPanelButtonTemplate")
-    if exportBtn.SetText then exportBtn:SetText("EXPORT ROSTER") end
+    local exportBtn = CreateButton and CreateButton(bar, L("EXPORT ROSTER")) or CreateFrame("Button", nil, bar, "UIPanelButtonTemplate")
+    if exportBtn.SetText then exportBtn:SetText(L("EXPORT ROSTER")) end
     exportBtn:SetHeight(22)
     exportBtn:SetPoint("TOPLEFT", bar, "TOPLEFT", 0, 0)
     exportBtn:SetPoint("TOPRIGHT", bar, "TOPRIGHT", 0, 0)
@@ -3079,7 +3080,7 @@ function Diar:EnsureRaidLeadViewPanel(pf)
 
     local label = bar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     label:SetPoint("LEFT", chk or bar, chk and "RIGHT" or "LEFT", chk and 8 or 0, chk and 0 or 1)
-    label:SetText("Raidcheck")
+    label:SetText(L("Raidcheck"))
     label:SetTextColor(0.78, 0.80, 0.84)
     pf.raidCheckLabel = label
 
@@ -3097,7 +3098,7 @@ function Diar:EnsureRaidLeadViewPanel(pf)
     refreshBtn:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", 0, 1)
     local refreshLbl = refreshBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     refreshLbl:SetPoint("CENTER")
-    refreshLbl:SetText("Refresh")
+    refreshLbl:SetText(L("Refresh"))
     refreshLbl:SetTextColor(unpack(UI.LINK))
     refreshBtn:SetScript("OnEnter", function()
         refreshLbl:SetTextColor(unpack(UI.LINK_HOV))

@@ -14,9 +14,7 @@ local UI = PUI.UI
 local CreatePlannerIconBtn = PUI.CreatePlannerIconBtn
 local SetPlannerBtnShadowHidden = PUI.SetPlannerBtnShadowHidden
 local SCENE_TAB_H = PUI.SCENE_TAB_H
-
-local HELP_NOTE =
-    "Quick guide: build plans either on raidstrats.gg or directly in this addon, then export NSRT from either place."
+local function L(key) return RSGG_L(key) end
 
 local function IsPlanLoaded()
     local data = Diar and Diar.plannerData
@@ -25,78 +23,80 @@ local function IsPlanLoaded()
     return tostring(data.planName or "") ~= "No plan"
 end
 
-local HELP_SECTIONS = {
-    {
-        title = "Build a plan on website (raidstrats.gg)",
-        lines = {
-            "Open raidstrats.gg/planner in your browser.",
-            "Create a plan (or copy one from library), add scenes, and place assignments on the map.",
-            "For best addon + NSRT compatibility, keep assignments simple (indexed spots + text labels).",
-            "Save your plan.",
+local function GetHelpSections()
+    return {
+        {
+            title = L("HELP_SEC_WEB_TITLE"),
+            lines = {
+                L("HELP_SEC_WEB_1"),
+                L("HELP_SEC_WEB_2"),
+                L("HELP_SEC_WEB_3"),
+                L("HELP_SEC_WEB_4"),
+            },
         },
-    },
-    {
-        title = "Build a plan in addon (in-game)",
-        lines = {
-            "Open Planner -> create/load a plan from the Plan Library.",
-            "Use New Scene for more phases and place assignment spots/labels directly in-game.",
-            "Save and Share/Push Update if you want your group to get changes.",
+        {
+            title = L("HELP_SEC_ADDON_TITLE"),
+            lines = {
+                L("HELP_SEC_ADDON_1"),
+                L("HELP_SEC_ADDON_2"),
+                L("HELP_SEC_ADDON_3"),
+            },
         },
-    },
-    {
-        title = "Plan Library (organizing)",
-        lines = {
-            "Click a plan to load it; right-click a plan for Rename, Create group, and Remove from group.",
-            "Hold Ctrl and click to select multiple plans, then right-click to group them all at once.",
-            "Shift-click selects a range of plans between two rows.",
-            "Drag plans into or out of a group, or drag to reorder them.",
+        {
+            title = L("HELP_SEC_LIB_TITLE"),
+            lines = {
+                L("HELP_SEC_LIB_1"),
+                L("HELP_SEC_LIB_2"),
+                L("HELP_SEC_LIB_3"),
+                L("HELP_SEC_LIB_4"),
+            },
         },
-    },
-    {
-        title = "Share, Push Update & Raidcheck",
-        lines = {
-            "Share to Group: sends the current plan to your party/raid so everyone can load it with one click.",
-            "Push Update: after editing a plan you already shared, sends the newest version to everyone who has it — their copy updates in place, no re-import needed.",
-            "Raidcheck: raid leaders can see who has the plan open and push assignments on ready check, so the whole group is synced before the pull.",
-            "Tip: enable Auto-import updates on a plan (in the library) to apply pushed changes automatically.",
+        {
+            title = L("HELP_SEC_SHARE_TITLE"),
+            lines = {
+                L("HELP_SEC_SHARE_1"),
+                L("HELP_SEC_SHARE_2"),
+                L("HELP_SEC_SHARE_3"),
+                L("HELP_SEC_SHARE_4"),
+            },
         },
-    },
-    {
-        title = "Canvas tools (palette & lock)",
-        lines = {
-            "Show palette to drag shapes, raid markers, role icons and text onto the canvas.",
-            "Lock the canvas to view/pan without moving anything; unlock to edit spots and paths again.",
+        {
+            title = L("HELP_SEC_CANVAS_TITLE"),
+            lines = {
+                L("HELP_SEC_CANVAS_1"),
+                L("HELP_SEC_CANVAS_2"),
+            },
         },
-    },
-    {
-        title = "Move website plan into addon",
-        lines = {
-            "On website: Export -> Copy for addon (string starts with !raidstrats-addon-).",
-            "In addon: Plan Library -> Import Plan -> paste string -> confirm.",
-            "Load the imported plan from the library.",
+        {
+            title = L("HELP_SEC_MOVE_TITLE"),
+            lines = {
+                L("HELP_SEC_MOVE_1"),
+                L("HELP_SEC_MOVE_2"),
+                L("HELP_SEC_MOVE_3"),
+            },
         },
-    },
-    {
-        title = "NSRT export on website",
-        lines = {
-            "Use the website NSRT export if you prefer managing notes outside the game.",
-            "Copy the generated rsgg lines and paste them into your NSRT note manually.",
-            "Then use NSRT's normal Load & Send flow.",
+        {
+            title = L("HELP_SEC_NSRTWEB_TITLE"),
+            lines = {
+                L("HELP_SEC_NSRTWEB_1"),
+                L("HELP_SEC_NSRTWEB_2"),
+                L("HELP_SEC_NSRTWEB_3"),
+            },
         },
-    },
-    {
-        title = "NSRT export in addon (recommended)",
-        lines = {
-            "Open your plan in addon -> click NSRT button.",
-            "Set per-scene time / phase / duration and review tag preview.",
-            "Click Add+Send to write into the active NSRT note and broadcast to group.",
-            "If active note already has rsggNote from another plan, you will be asked before override.",
-            "Use /rsggtest to test cues quickly in-game.",
-            "Preview index icon shows spot numbers used for tag mapping.",
-            "Timing lead/lag is in Settings -> NSRT Timing.",
+        {
+            title = L("HELP_SEC_NSRTADDON_TITLE"),
+            lines = {
+                L("HELP_SEC_NSRTADDON_1"),
+                L("HELP_SEC_NSRTADDON_2"),
+                L("HELP_SEC_NSRTADDON_3"),
+                L("HELP_SEC_NSRTADDON_4"),
+                L("HELP_SEC_NSRTADDON_5"),
+                L("HELP_SEC_NSRTADDON_6"),
+                L("HELP_SEC_NSRTADDON_7"),
+            },
         },
-    },
-}
+    }
+end
 
 local function BuildHelpScrollContent(parent, width)
     local y = -8
@@ -110,12 +110,12 @@ local function BuildHelpScrollContent(parent, width)
     note:SetJustifyH("LEFT")
     note:SetWordWrap(true)
     note:SetNonSpaceWrap(false)
-    note:SetText(HELP_NOTE)
+    note:SetText(L("HELP_NOTE"))
     note:SetTextColor(1.00, 0.88, 0.45)
     local noteH = note:GetStringHeight() or lineH
     y = y - (noteH + sectionGap)
 
-    for _, section in ipairs(HELP_SECTIONS) do
+    for _, section in ipairs(GetHelpSections()) do
         local hdr = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         hdr:SetPoint("TOPLEFT", parent, "TOPLEFT", 4, y)
         hdr:SetWidth(width - 8)
@@ -146,10 +146,10 @@ function Diar:EnsurePlannerHelpButton(pf)
     if not pf or not pf.toolbar or not pf.planLinkBtn then return end
 
     if not pf.newSceneBtn then
-        local newSceneBtn = CreatePlannerIconBtn(pf.toolbar, "New Scene", 86, SCENE_TAB_H + 4)
+        local newSceneBtn = CreatePlannerIconBtn(pf.toolbar, L("New Scene"), 86, SCENE_TAB_H + 4)
         newSceneBtn:SetScript("OnClick", function()
             if not IsPlanLoaded() then
-                print("|cffff6666[Raidstrats.gg]|r No plan loaded. Load a plan before adding scenes.")
+                print("|cffff6666[Raidstrats.gg]|r " .. L("No plan loaded. Load a plan before adding scenes."))
                 return
             end
             if Diar.ShowCreateSceneDialog then
@@ -160,15 +160,19 @@ function Diar:EnsurePlannerHelpButton(pf)
         end)
         if SetPlannerBtnShadowHidden then SetPlannerBtnShadowHidden(newSceneBtn) end
         pf.newSceneBtn = newSceneBtn
+    elseif pf.newSceneBtn.SetText then
+        pf.newSceneBtn:SetText(L("New Scene"))
     end
 
     if not pf.planHelpBtn then
-        local helpBtn = CreatePlannerIconBtn(pf.toolbar, "Help", 52, SCENE_TAB_H + 4)
+        local helpBtn = CreatePlannerIconBtn(pf.toolbar, L("Help"), 52, SCENE_TAB_H + 4)
         helpBtn:SetScript("OnClick", function()
             Diar:ShowPlannerHelpDialog()
         end)
         if SetPlannerBtnShadowHidden then SetPlannerBtnShadowHidden(helpBtn) end
         pf.planHelpBtn = helpBtn
+    elseif pf.planHelpBtn.SetText then
+        pf.planHelpBtn:SetText(L("Help"))
     end
 
     if SetPlannerBtnShadowHidden then
@@ -210,8 +214,15 @@ function Diar:EnsurePlannerHelpButton(pf)
 end
 
 function Diar:ShowPlannerHelpDialog()
+    local activeLocale = RaidstratsggLocale and RaidstratsggLocale:GetActiveCode() or "enUS"
+    if self.plannerHelpDialog and self.plannerHelpDialog.__localeCode ~= activeLocale then
+        self.plannerHelpDialog:Hide()
+        self.plannerHelpDialog = nil
+    end
+
     if not self.plannerHelpDialog then
         local f = CreateFrame("Frame", "RaidstratsPlannerHelpDialog", UIParent, "BackdropTemplate")
+        f.__localeCode = activeLocale
         f:SetSize(540, 520)
         f:SetFrameStrata("FULLSCREEN_DIALOG")
         f:SetFrameLevel(500)
@@ -228,12 +239,12 @@ function Diar:ShowPlannerHelpDialog()
 
         local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
         title:SetPoint("TOPLEFT", f, "TOPLEFT", 18, -16)
-        title:SetText("Planner help")
+        title:SetText(L("Planner help"))
         title:SetTextColor(0.92, 0.92, 0.92)
 
         local subtitle = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         subtitle:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -2)
-        subtitle:SetText("website or addon plan creation + NSRT export flow")
+        subtitle:SetText(L("website or addon plan creation + NSRT export flow"))
         subtitle:SetTextColor(0.50, 0.54, 0.60)
 
         local scroll = CreateFrame("ScrollFrame", nil, f, "UIPanelScrollFrameTemplate")
@@ -254,7 +265,7 @@ function Diar:ShowPlannerHelpDialog()
         btnRow:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -18, 14)
 
         local closeAction = CreateButton and CreateButton(btnRow, "CLOSE") or CreateFrame("Button", nil, btnRow, "UIPanelButtonTemplate")
-        if closeAction.SetText then closeAction:SetText("CLOSE") end
+        if closeAction.SetText then closeAction:SetText(L("CLOSE")) end
         closeAction:SetPoint("LEFT", btnRow, "LEFT", 0, 0)
         closeAction:SetPoint("RIGHT", btnRow, "RIGHT", 0, 0)
         closeAction:SetScript("OnClick", function() f:Hide() end)

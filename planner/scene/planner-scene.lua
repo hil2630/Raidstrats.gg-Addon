@@ -8,6 +8,7 @@ local Addon =
 if not Addon then
     error(("Raidstratsgg planner: could not resolve addon instance (addonName=%s)"):format(tostring(addonName)))
 end
+local function L(key) return RSGG_L(key) end
 local Diar = Addon
 local SetBackdrop = Diar.SetBackdrop
 local CreateAnimatedCheckbox = Diar.CreateAnimatedCheckbox
@@ -20,9 +21,9 @@ local SetPlannerBtnShadowHidden = PUI and PUI.SetPlannerBtnShadowHidden
 
 if not StaticPopupDialogs["RAIDSTRATSGG_DELETE_SCENE"] then
     StaticPopupDialogs["RAIDSTRATSGG_DELETE_SCENE"] = {
-        text = "Delete scene %d?",
-        button1 = _G.YES or "Yes",
-        button2 = _G.NO or "No",
+        text = L("Delete scene %d?"),
+        button1 = _G.YES or L("Yes"),
+        button2 = _G.NO or L("No"),
         timeout = 0,
         whileDead = 1,
         hideOnEscape = 1,
@@ -37,9 +38,9 @@ end
 
 if not StaticPopupDialogs["RAIDSTRATSGG_NSRT_OVERRIDE_BLOCK"] then
     StaticPopupDialogs["RAIDSTRATSGG_NSRT_OVERRIDE_BLOCK"] = {
-        text = "Active NSRT note already has an rsggNote from another plan.\n\nOverride that block with this plan?",
-        button1 = "Yes, override",
-        button2 = _G.NO or "No",
+        text = L("Active NSRT note already has an rsggNote from another plan.\n\nOverride that block with this plan?"),
+        button1 = L("Yes, override"),
+        button2 = _G.NO or L("No"),
         timeout = 0,
         whileDead = 1,
         hideOnEscape = 1,
@@ -92,7 +93,7 @@ function Diar:ShowSceneTabContextMenu(anchor, sceneIndex)
         if SetBackdrop then SetBackdrop(delBtn, UI.ROW, UI.BORDER, 1) end
         local lbl = delBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         lbl:SetPoint("CENTER")
-        lbl:SetText("Delete")
+        lbl:SetText(L("Delete"))
         lbl:SetTextColor(0.92, 0.92, 0.92)
         delBtn:SetScript("OnEnter", function(s)
             s:SetBackdropColor(unpack(UI.ROW_HOV))
@@ -157,7 +158,7 @@ function Diar:DeletePlannerScene(sceneIndex)
     end
     local scenes = data.scenes
     if #scenes <= 1 then
-        print("|cffff6666[Raidstrats.gg]|r Cannot delete the only scene.")
+        print(L("|cffff6666[Raidstrats.gg]|r Cannot delete the only scene."))
         return false
     end
 
@@ -334,23 +335,23 @@ function Diar:ShowCompactPreviewChrome(pf, show)
         lbl:SetPoint("LEFT", bar, "LEFT", 10, 0)
         lbl:SetWidth(340)
         lbl:SetJustifyH("LEFT")
-        lbl:SetText("Drag + resize to set compact preview position.")
+        lbl:SetText(L("Drag + resize to set compact preview position."))
         lbl:SetTextColor(0.85, 0.88, 0.92)
         bar.label = lbl
         local autoSaved = bar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         autoSaved:SetPoint("RIGHT", bar, "RIGHT", -12, 0)
         autoSaved:SetJustifyH("RIGHT")
-        autoSaved:SetText("Saved automatically")
+        autoSaved:SetText(L("Saved automatically"))
         autoSaved:SetTextColor(0.55, 0.82, 0.62)
         autoSaved:Hide()
         bar.autoSavedLabel = autoSaved
-        local saveBtn = CreatePlannerIconBtn(bar, "Save", 84, 28)
+        local saveBtn = CreatePlannerIconBtn(bar, L("Save"), 84, 28)
         saveBtn:SetPoint("RIGHT", bar, "RIGHT", -96, 0)
         saveBtn:SetScript("OnClick", function()
             Diar:EndCompactPositionPreview(true)
         end)
         bar.saveBtn = saveBtn
-        local cancelBtn = CreatePlannerIconBtn(bar, "Cancel", 84, 28)
+        local cancelBtn = CreatePlannerIconBtn(bar, L("Cancel"), 84, 28)
         cancelBtn:SetPoint("RIGHT", bar, "RIGHT", -6, 0)
         cancelBtn:SetScript("OnClick", function()
             Diar:EndCompactPositionPreview(false)
@@ -368,7 +369,7 @@ function Diar:ShowCompactPreviewChrome(pf, show)
         txt:SetPoint("RIGHT", note, "RIGHT", -8, 0)
         txt:SetJustifyH("CENTER")
         txt:SetTextColor(1.00, 0.88, 0.50)
-        txt:SetText("NSRT in-combat position preview")
+        txt:SetText(L("NSRT in-combat position preview"))
         note.text = txt
         pf.compactPreviewNote = note
     end
@@ -382,9 +383,9 @@ function Diar:ShowCompactPreviewChrome(pf, show)
         bar:SetFrameLevel(pf:GetFrameLevel() + 40)
         if bar.label then
             if fromEditMode then
-                bar.label:SetText("Drag + resize to set compact position.")
+                bar.label:SetText(L("Drag + resize to set compact position."))
             else
-                bar.label:SetText("Drag + resize to set compact preview position.")
+                bar.label:SetText(L("Drag + resize to set compact preview position."))
             end
         end
         if bar.saveBtn then
@@ -429,7 +430,7 @@ function Diar:StartCompactPositionPreview(opts)
         self.plannerSettingsDialog:Hide()
     end
     if not self.plannerData or not self.plannerData.scenes or #self.plannerData.scenes == 0 then
-        print("|cffff6666[Raidstrats.gg]|r Load a plan first, then preview the compact position.")
+        print(L("|cffff6666[Raidstrats.gg]|r Load a plan first, then preview the compact position."))
         return
     end
     self:ShowPlannerViewer({ reloadOnly = self.plannerFrame and self.plannerFrame:IsShown() })
@@ -644,7 +645,7 @@ function Diar:UpdatePreviewNamesButton(pf)
     local btn = pf and pf.previewNamesBtn
     if not btn then return end
     local on = pf.previewNamesVisible == true
-    SetPlannerBtnText(btn, on and "Hide names" or "Preview names")
+    SetPlannerBtnText(btn, on and L("Hide names") or L("Preview names"))
     btn.selected = on
     if on then
         btn:SetBackdropColor(0.18, 0.38, 0.72, 1)
@@ -672,7 +673,7 @@ function Diar:UpdatePreviewAssignmentsButton(pf)
     end
     btn:SetFrameLevel((pf.canvas:GetFrameLevel() or pf:GetFrameLevel()) + 6)
     local on = self:IsPlannerAssignmentsVisible()
-    SetPlannerBtnText(btn, on and "Hide assignments" or "Show assignments")
+    SetPlannerBtnText(btn, on and L("Hide assignments") or L("Show assignments"))
     btn.selected = on
     if on then
         btn:SetBackdropColor(0.18, 0.38, 0.72, 1)
@@ -710,7 +711,7 @@ function Diar:EnsurePreviewNamesButton(pf)
     local btn = pf.previewNamesBtn
     if not btn then
         -- Parent to frame (not canvas) so scene refresh doesn't recycle/hide it.
-        btn = CreatePlannerIconBtn(pf, "Preview names", 104, 22)
+        btn = CreatePlannerIconBtn(pf, L("Preview names"), 104, 22)
         btn:SetScript("OnClick", function()
             Diar:TogglePlannerPreviewNames()
         end)
@@ -730,7 +731,7 @@ function Diar:EnsurePreviewAssignmentsButton(pf)
     local btn = pf.previewAssignmentsBtn
     if not btn then
         -- Parent to frame (not canvas) so scene refresh doesn't recycle/hide it.
-        btn = CreatePlannerIconBtn(pf, "Hide assignments", 124, 22)
+        btn = CreatePlannerIconBtn(pf, L("Hide assignments"), 124, 22)
         btn:SetScript("OnClick", function()
             Diar:TogglePlannerPreviewAssignments()
         end)
@@ -796,7 +797,7 @@ function Diar:UpdateSpellTooltipToggle(pf)
     check:Show()
     if check.text then
         check.text:Show()
-        check.text:SetText("Enable spell tooltips")
+        check.text:SetText(L("Enable spell tooltips"))
         check.text:SetTextColor(0.90, 0.93, 0.98)
     end
 end
@@ -842,7 +843,7 @@ function Diar:UpdatePlannerAssignmentButton(pf)
         return
     end
 
-    SetPlannerBtnText(btn, ("Assignment: %d"):format(tonumber(selectedIndex) or 1))
+    SetPlannerBtnText(btn, L("Assignment: %d"):format(tonumber(selectedIndex) or 1))
     btn:Show()
     btn:ClearAllPoints()
     if pf.previewAssignmentsBtn and pf.previewAssignmentsBtn:IsShown() then
@@ -859,7 +860,7 @@ function Diar:EnsurePlannerAssignmentButton(pf)
     if not pf or not pf.canvas then return end
     local btn = pf.assignmentBtn
     if not btn then
-        btn = CreatePlannerIconBtn(pf, "Assignment: 1", 110, 22)
+        btn = CreatePlannerIconBtn(pf, L("Assignment: 1"), 110, 22)
         btn:SetScript("OnClick", function(selfBtn)
             local pf2 = Diar.plannerFrame
             if not pf2 then return end
@@ -874,7 +875,7 @@ function Diar:EnsurePlannerAssignmentButton(pf)
                 local t = (opt and opt.time and opt.time < math.huge) and tostring(opt.time) or "?"
                 local ph = tostring((opt and opt.phase) or "?")
                 menu[#menu + 1] = {
-                    text = ("Assignment %d  (t=%s, ph=%s)"):format(i, t, ph),
+                    text = L("Assignment %d  (t=%s, ph=%s)"):format(i, t, ph),
                     checked = (i == selectedIdx),
                     notCheckable = false,
                     keepShownOnClick = false,
@@ -926,7 +927,7 @@ end
 function Diar:EnsurePlannerControlsButtons(pf)
     if not pf or not pf.controls then return end
     if not pf.settingsBtn then
-        pf.settingsBtn = CreatePlannerIconBtn(pf.controls, "Settings", 72, CONTROLS_H)
+        pf.settingsBtn = CreatePlannerIconBtn(pf.controls, L("Settings"), 72, CONTROLS_H)
         pf.settingsBtn:SetScript("OnClick", function()
             Diar:ShowPlannerSettingsDialog()
         end)
@@ -947,12 +948,12 @@ function Diar:EnsurePlannerControlsButtons(pf)
     end
     ApplyPreviewIndexCornerStyle(pf.previewIndexBtn)
     if not pf.nsrtExportBtn then
-        pf.nsrtExportBtn = CreatePlannerIconBtn(pf.controls, "NSRT", 72, CONTROLS_H)
+        pf.nsrtExportBtn = CreatePlannerIconBtn(pf.controls, L("NSRT"), 72, CONTROLS_H)
         pf.nsrtExportBtn:SetScript("OnClick", function()
             Diar:ShowPlannerNsrtExportDialog()
         end)
     else
-        SetPlannerBtnText(pf.nsrtExportBtn, "NSRT")
+        SetPlannerBtnText(pf.nsrtExportBtn, L("NSRT"))
         pf.nsrtExportBtn:SetWidth(72)
     end
     self:UpdatePreviewIndexButton(pf)
@@ -981,7 +982,7 @@ end
 
 function Diar:EnsurePaletteToggleButton(pf)
     if not pf or not pf.controls or pf.paletteToggleBtn then return end
-    local btn = CreatePlannerIconBtn(pf.controls, "Show palette", 96, CONTROLS_H)
+    local btn = CreatePlannerIconBtn(pf.controls, L("Show palette"), 96, CONTROLS_H)
     btn:SetScript("OnClick", function()
         Diar:ToggleObjectPalette()
     end)
@@ -993,7 +994,7 @@ function Diar:UpdatePaletteToggleButton(pf)
     local btn = pf and pf.paletteToggleBtn
     if not btn then return end
     local on = self:IsObjectPaletteEnabled()
-    SetPlannerBtnText(btn, on and "Hide palette" or "Show palette")
+    SetPlannerBtnText(btn, on and L("Hide palette") or L("Show palette"))
     btn.selected = on
     btn:Enable()
     if on then
@@ -1022,7 +1023,7 @@ end
 
 function Diar:EnsureCanvasLockButton(pf)
     if not pf or not pf.controls or pf.canvasLockBtn then return end
-    local btn = CreatePlannerIconBtn(pf.controls, "Unlock", 72, CONTROLS_H)
+    local btn = CreatePlannerIconBtn(pf.controls, L("Unlock"), 72, CONTROLS_H)
     btn:SetScript("OnClick", function()
         Diar:TogglePlannerCanvasLock()
     end)
@@ -1034,7 +1035,7 @@ function Diar:UpdateCanvasLockButton(pf)
     local btn = pf and pf.canvasLockBtn
     if not btn then return end
     local locked = self:IsPlannerCanvasLocked()
-    SetPlannerBtnText(btn, locked and "Unlock" or "Lock")
+    SetPlannerBtnText(btn, locked and L("Unlock") or L("Lock"))
     btn.selected = not locked
     if not locked then
         btn:SetBackdropColor(0.18, 0.38, 0.72, 1)
@@ -1060,7 +1061,7 @@ function Diar:EnsureCanvasLockLabel(pf)
     if not pf or not pf.canvas or pf.canvasLockLabel then return end
     local lbl = pf.canvas:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     lbl:SetPoint("BOTTOMLEFT", pf.canvas, "BOTTOMLEFT", 8, 6)
-    lbl:SetText("Locked")
+    lbl:SetText(L("Locked"))
     lbl:SetTextColor(0.42, 0.45, 0.52, 0.9)
     pf.canvasLockLabel = lbl
     lbl:Hide()
@@ -1691,7 +1692,7 @@ end
 function Diar:ShowPlannerNsrtExportDialog()
     local data = self.plannerData
     if not data or type(data.scenes) ~= "table" or #data.scenes == 0 then
-        print("|cffff6666[Raidstrats.gg]|r No plan loaded to export.")
+        print(L("|cffff6666[Raidstrats.gg]|r No plan loaded to export."))
         return
     end
 
@@ -1732,7 +1733,7 @@ function Diar:ShowPlannerNsrtExportDialog()
         local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
         title:SetPoint("TOPLEFT", 16, -16)
         title:SetTextColor(0.92, 0.92, 0.92)
-        title:SetText("Build NSRT Note")
+        title:SetText(L("Build NSRT Note"))
 
         local legacyWarn = CreateFrame("Frame", nil, f, "BackdropTemplate")
         legacyWarn:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -6)
@@ -1746,14 +1747,14 @@ function Diar:ShowPlannerNsrtExportDialog()
         legacyWarnText:SetJustifyH("LEFT")
         legacyWarnText:SetJustifyV("MIDDLE")
         legacyWarnText:SetTextColor(1.00, 0.90, 0.72)
-        legacyWarnText:SetText("Legacy notice: this NSRT modal is kept for backwards compatibility. Please use the builder on raidstrats.gg instead.")
+        legacyWarnText:SetText(L("Legacy notice: this NSRT modal is kept for backwards compatibility. Please use the builder on raidstrats.gg instead."))
 
         local hint = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         hint:SetPoint("TOPLEFT", legacyWarn, "BOTTOMLEFT", 0, -6)
         hint:SetPoint("TOPRIGHT", f, "TOPRIGHT", -16, -6)
         hint:SetJustifyH("LEFT")
         hint:SetTextColor(0.58, 0.62, 0.7)
-        hint:SetText("You can still set time/ph/dur per scene here and copy the generated lines into your NSRT note. Dur is seconds shown BEFORE the cue time.")
+        hint:SetText(L("You can still set time/ph/dur per scene here and copy the generated lines into your NSRT note. Dur is seconds shown BEFORE the cue time."))
 
         local rowsWrap = CreateFrame("Frame", nil, f, "BackdropTemplate")
         rowsWrap:SetPoint("TOPLEFT", hint, "BOTTOMLEFT", 0, -8)
@@ -1783,16 +1784,16 @@ function Diar:ShowPlannerNsrtExportDialog()
             fs:SetText(text)
             return fs
         end
-        MakeHeader("Scene", 8, 180)
-        MakeHeader("Time", 196, 78)
-        MakeHeader("Phase", 282, 78)
-        MakeHeader("Dur (pre)", 368, 60)
+        MakeHeader(L("Scene"), 8, 180)
+        MakeHeader(L("Time"), 196, 78)
+        MakeHeader(L("Phase"), 282, 78)
+        MakeHeader(L("Dur (pre)"), 368, 60)
         local tagHeader = headerRow:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         tagHeader:SetPoint("LEFT", headerRow, "LEFT", 438, 0)
         tagHeader:SetPoint("RIGHT", headerRow, "RIGHT", -8, 0)
         tagHeader:SetJustifyH("LEFT")
         tagHeader:SetTextColor(0.78, 0.82, 0.90)
-        tagHeader:SetText("Tag Preview")
+        tagHeader:SetText(L("Tag Preview"))
 
         local rowsScroll = CreateFrame("ScrollFrame", nil, rowsWrap, "UIPanelScrollFrameTemplate")
         rowsScroll:SetPoint("TOPLEFT", rowsWrap, "TOPLEFT", 6, -44)
@@ -1810,7 +1811,7 @@ function Diar:ShowPlannerNsrtExportDialog()
         previewHint:SetPoint("TOPRIGHT", rowsWrap, "BOTTOMRIGHT", -2, -10)
         previewHint:SetJustifyH("LEFT")
         previewHint:SetTextColor(0.82, 0.85, 0.9)
-        previewHint:SetText("You can copy this block manually, or use Add+Send to auto-fill your active NSRT note and send it to your group.")
+        previewHint:SetText(L("You can copy this block manually, or use Add+Send to auto-fill your active NSRT note and send it to your group."))
 
         local textWrap = CreateFrame("Frame", nil, f, "BackdropTemplate")
         textWrap:SetPoint("TOPLEFT", previewHint, "BOTTOMLEFT", -2, -6)
@@ -1856,20 +1857,20 @@ function Diar:ShowPlannerNsrtExportDialog()
         btnRow:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 16, 14)
         btnRow:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -16, 14)
 
-        local selectBtn = CreatePlannerIconBtn(btnRow, "Select All", 104, 30)
+        local selectBtn = CreatePlannerIconBtn(btnRow, L("Select All"), 104, 30)
         selectBtn:SetPoint("LEFT", btnRow, "LEFT", 0, 0)
         selectBtn:SetScript("OnClick", function()
             eb:SetFocus()
             eb:HighlightText()
         end)
 
-        local refreshBtn = CreatePlannerIconBtn(btnRow, "Refresh", 92, 30)
+        local refreshBtn = CreatePlannerIconBtn(btnRow, L("Refresh"), 92, 30)
         refreshBtn:SetPoint("LEFT", selectBtn, "RIGHT", 6, 0)
 
-        local addSendBtn = CreatePlannerIconBtn(btnRow, "Add+Send", 100, 30)
+        local addSendBtn = CreatePlannerIconBtn(btnRow, L("Add+Send"), 100, 30)
         addSendBtn:SetPoint("LEFT", refreshBtn, "RIGHT", 6, 0)
 
-        local closeBottomBtn = CreatePlannerIconBtn(btnRow, "Close", 80, 30)
+        local closeBottomBtn = CreatePlannerIconBtn(btnRow, L("Close"), 80, 30)
         closeBottomBtn:SetPoint("RIGHT", btnRow, "RIGHT", 0, 0)
         closeBottomBtn:SetScript("OnClick", function() f:Hide() end)
 
@@ -1961,14 +1962,14 @@ function Diar:ShowPlannerNsrtExportDialog()
     for i, scene in ipairs(scenes) do
         local raw = strtrim(tostring((scene and scene.name) or ""))
         if raw == "" or raw == tostring(i) then
-            names[#names + 1] = ("Scene %d"):format(i)
+            names[#names + 1] = L("Scene %d"):format(i)
         else
-            names[#names + 1] = ("Scene %d - %s"):format(i, raw)
+            names[#names + 1] = L("Scene %d - %s"):format(i, raw)
         end
     end
-    local hintBase = ("Includes %d scenes: %s"):format(#names, table.concat(names, ", "))
+    local hintBase = L("Includes %d scenes: %s"):format(#names, table.concat(names, ", "))
     if loadedManagedBlock then
-        hintBase = hintBase .. " |cff00cc88(loaded existing rsggNote timings)|r"
+        hintBase = hintBase .. L(" |cff00cc88(loaded existing rsggNote timings)|r")
     end
     dlg.sceneListHint:SetText(hintBase)
 
@@ -2018,14 +2019,14 @@ function Diar:ShowPlannerNsrtExportDialog()
         row.frame:ClearAllPoints()
         row.frame:SetPoint("TOPLEFT", dlg.rowsChild, "TOPLEFT", 0, -((i - 1) * rowH))
         row.frame:SetPoint("TOPRIGHT", dlg.rowsChild, "TOPRIGHT", 0, -((i - 1) * rowH))
-        row.sceneLabel:SetText(names[i] or ("Scene " .. i))
+        row.sceneLabel:SetText(names[i] or L("Scene %d"):format(i))
         local existing = existingSceneTiming[i]
         row.timeEdit:SetText((existing and existing.time) or "")
         row.phaseEdit:SetText((existing and existing.phase) or "")
         row.durationEdit:SetText((existing and existing.duration) or "6")
         row.spotNames = ResolveSpotNamesForScene(i)
         local tagBody = BuildSceneNsrtTagBody(scenes[i], nil)
-        row.tagPreview:SetText((tagBody ~= "" and tagBody) or "(no labels indexed)")
+        row.tagPreview:SetText((tagBody ~= "" and tagBody) or L("(no labels indexed)"))
     end
     for i = #scenes + 1, #dlg.sceneRows do
         local row = dlg.sceneRows[i]
@@ -2040,31 +2041,31 @@ function Diar:ShowPlannerNsrtExportDialog()
             local ok, sent, changed, activeNameOrReason, nsiAvailable = AppendRsggToActiveNsrtNoteAndSend(block, sendOpts)
             if not ok then
                 if activeNameOrReason == "no_active_reminder" then
-                    print("|cffff6666[Raidstrats.gg]|r No active NSRT reminder selected. Select a shared note in NSRT first.")
+                    print(L("|cffff6666[Raidstrats.gg]|r No active NSRT reminder selected. Select a shared note in NSRT first."))
                 elseif activeNameOrReason == "nsrt_not_loaded" then
-                    print("|cffff6666[Raidstrats.gg]|r NorthernSkyRaidTools is not loaded.")
+                    print(L("|cffff6666[Raidstrats.gg]|r NorthernSkyRaidTools is not loaded."))
                 elseif activeNameOrReason == "setreminder_missing" then
-                    print("|cffff6666[Raidstrats.gg]|r NSRT API unavailable (SetReminder missing).")
+                    print(L("|cffff6666[Raidstrats.gg]|r NSRT API unavailable (SetReminder missing)."))
                 else
-                    print("|cffff6666[Raidstrats.gg]|r Could not append to active NSRT reminder.")
+                    print(L("|cffff6666[Raidstrats.gg]|r Could not append to active NSRT reminder."))
                 end
                 return
             end
             if sent then
-                print(("|cff00aaff[Raidstrats.gg]|r Added lines to active NSRT note (%s)%s and sent to group."):format(
+                print(L("|cff00aaff[Raidstrats.gg]|r Added lines to active NSRT note (%s)%s and sent to group."):format(
                     tostring(activeNameOrReason or "?"),
-                    changed and "" or " (already present)"
+                    changed and "" or L(" (already present)")
                 ))
             else
-                print(("|cffff9900[Raidstrats.gg]|r Added lines to active NSRT note (%s)%s, but you need raid leader/assistant to send."):format(
+                print(L("|cffff9900[Raidstrats.gg]|r Added lines to active NSRT note (%s)%s, but you need raid leader/assistant to send."):format(
                     tostring(activeNameOrReason or "?"),
-                    changed and "" or " (already present)"
+                    changed and "" or L(" (already present)")
                 ))
             end
             if not nsiAvailable then
                 -- NSRT exposes no public API to re-render the active note; that only happens
                 -- via its internal NSI namespace, which this client doesn't let us reach.
-                print("|cffff9900[Raidstrats.gg]|r Note saved + broadcast, but your own NSRT view won't refresh until you reopen the note in NSRT (group members update automatically).")
+                print(L("|cffff9900[Raidstrats.gg]|r Note saved + broadcast, but your own NSRT view won't refresh until you reopen the note in NSRT (group members update automatically)."))
             end
             if self.ReloadRsggCuesFromActiveNote then
                 self:ReloadRsggCuesFromActiveNote()
@@ -2074,7 +2075,7 @@ function Diar:ShowPlannerNsrtExportDialog()
         refreshPreview()
         block = strtrim(tostring(dlg.editBox and dlg.editBox:GetText() or ""))
         if block == "" then
-            print("|cffff9900[Raidstrats.gg]|r Nothing to add.")
+            print(L("|cffff9900[Raidstrats.gg]|r Nothing to add."))
             return
         end
 
@@ -2124,11 +2125,11 @@ local function EnsurePlannerDebugPanel(pf)
 
     local title = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     title:SetPoint("TOPLEFT", panel, "TOPLEFT", 8, -8)
-    title:SetText("Planner debug output (copy/paste)")
+    title:SetText(L("Planner debug output (copy/paste)"))
     title:SetTextColor(0.78, 0.80, 0.84)
     panel.title = title
 
-    local clearBtn = CreatePlannerIconBtn(panel, "Clear", 54, 18)
+    local clearBtn = CreatePlannerIconBtn(panel, L("Clear"), 54, 18)
     clearBtn:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -6, -6)
     clearBtn:SetScript("OnClick", function()
         if Diar.ClearPlannerDebugLines then
@@ -2200,7 +2201,7 @@ function Diar:UpdatePlannerDebugPanel()
         return
     end
     panel:Show()
-    local dump = self.GetPlannerDebugDump and self:GetPlannerDebugDump() or "Planner debug unavailable."
+    local dump = self.GetPlannerDebugDump and self:GetPlannerDebugDump() or L("Planner debug unavailable.")
     if panel.edit:GetText() ~= dump then
         panel.edit.__scrollToEnd = true
         panel.edit:SetText(dump)
@@ -2360,7 +2361,7 @@ local function EnsureReadyCheckAssignmentArrowButtons(pf)
             end
         end)
         if prevBtn.SetTooltip then
-            prevBtn:SetTooltip("Previous assignment")
+            prevBtn:SetTooltip(L("Previous assignment"))
         end
         pf.readyCheckAssignPrevBtn = prevBtn
     end
@@ -2372,7 +2373,7 @@ local function EnsureReadyCheckAssignmentArrowButtons(pf)
             end
         end)
         if nextBtn.SetTooltip then
-            nextBtn:SetTooltip("Next assignment")
+            nextBtn:SetTooltip(L("Next assignment"))
         end
         pf.readyCheckAssignNextBtn = nextBtn
     end
@@ -2460,7 +2461,7 @@ function Diar:UpdateReadyCheckAssignmentArrows(pf)
         if pf.readyCheckAssignLabel.SetParent and pf.readyCheckAssignLabel:GetParent() ~= anchor then
             pf.readyCheckAssignLabel:SetParent(anchor)
         end
-        pf.readyCheckAssignLabel:SetText(("Assignment %d / %d - Phase %s"):format(idx, total, phaseText))
+        pf.readyCheckAssignLabel:SetText(L("Assignment %d / %d - Phase %s"):format(idx, total, phaseText))
         pf.readyCheckAssignLabel:ClearAllPoints()
         pf.readyCheckAssignLabel:SetPoint("TOP", anchor, "TOP", 0, -6)
         if pf.readyCheckAssignLabel.SetDrawLayer then
@@ -2553,7 +2554,7 @@ function Diar:UpdateReadyCheckAssignmentArrows(pf)
             end
         end)
         if btn.SetTooltip then
-            btn:SetTooltip(("Jump to phase %s"):format(ph.token))
+            btn:SetTooltip(L("Jump to phase %s"):format(ph.token))
         end
         btn:SetFrameStrata(pf:GetFrameStrata())
         btn:SetFrameLevel((pf:GetFrameLevel() or 0) + 25)
@@ -2665,7 +2666,7 @@ local function UpdatePlannerModeToggleBtn(pf)
             pf.modeToggleBtn:Hide()
         else
             pf.modeToggleBtn:SetPoint("TOPRIGHT", pf.closeBtn, "TOPLEFT", -2, 0)
-            SetPlannerBtnText(pf.modeToggleBtn, "Expand")
+            SetPlannerBtnText(pf.modeToggleBtn, L("Expand"))
             pf.modeToggleBtn:Show()
         end
         BindCompactChromeHover(pf)
@@ -2691,7 +2692,7 @@ local function UpdatePlannerModeToggleBtn(pf)
         pf.modeToggleBtn:Show()
         pf.closeBtn:SetPoint("TOPRIGHT", pf, "TOPRIGHT", -6, -6)
         pf.modeToggleBtn:SetPoint("TOPRIGHT", pf.closeBtn, "TOPLEFT", -2, 1)
-        SetPlannerBtnText(pf.modeToggleBtn, "Compact")
+        SetPlannerBtnText(pf.modeToggleBtn, L("Compact"))
         if pf.discordBtn then
             pf.discordBtn:Show()
             pf.discordBtn:SetPoint("TOPRIGHT", pf.modeToggleBtn, "TOPLEFT", -2, 0)
@@ -3123,7 +3124,7 @@ local function SetNoPlanCanvasHint(pf, show)
         hint:SetJustifyH("CENTER")
         hint:SetJustifyV("MIDDLE")
         hint:SetWordWrap(true)
-        hint:SetText("No plan loaded. Select a plan in the plan library on the right.")
+        hint:SetText(L("No plan loaded. Select a plan in the plan library on the right."))
         hint:SetTextColor(0.62, 0.66, 0.72)
         pf.noPlanHint = hint
     end
@@ -3142,7 +3143,7 @@ local function BuildPlannerInfoStripText()
     if Diar.GetAddonVersion then
         addonVer = "v" .. tostring(Diar:GetAddonVersion() or "0.0.2")
     end
-    return ("Raidstrats.gg - Raidplanner & Assignments   |   Author: Nairyana   |   Website: raidstrats.gg   |   %s (alpha build)"):format(addonVer)
+    return L("Raidstrats.gg - Raidplanner & Assignments   |   Author: Nairyana   |   Website: raidstrats.gg   |   %s (alpha build)"):format(addonVer)
 end
 
 local function EnsurePlannerInfoStrip(pf)
@@ -3336,7 +3337,7 @@ local function EnsurePlannerZoomControls(pf, canvas)
     zoomIn:SetPoint("RIGHT", zoomLabel, "LEFT", -gap, 0)
     zoomIn:SetScript("OnClick", function() Diar:PlannerZoomIn() end)
 
-    local resetBtn = CreatePlannerIconBtn(bar, "Reset", 44, btnH)
+    local resetBtn = CreatePlannerIconBtn(bar, L("Reset"), 44, btnH)
     resetBtn:SetPoint("RIGHT", zoomIn, "LEFT", -gap, 0)
     resetBtn:SetScript("OnClick", function() Diar:PlannerResetViewport() end)
 
@@ -3503,7 +3504,7 @@ end
 
 function Diar:PreviewCompactAssignmentZoomFromSettings(settingsDialog)
     if not self.plannerData or not self.plannerData.scenes or #self.plannerData.scenes == 0 then
-        print("|cffff6666[Raidstrats.gg]|r Load a plan first, then preview assignment zoom.")
+        print(L("|cffff6666[Raidstrats.gg]|r Load a plan first, then preview assignment zoom."))
         return
     end
     -- Apply current dialog controls immediately for live preview (without requiring Save).
@@ -3608,7 +3609,7 @@ end
 
 function Diar:PreviewCompactBackgroundFromSettings(settingsDialog)
     if not self.plannerData or not self.plannerData.scenes or #self.plannerData.scenes == 0 then
-        print("|cffff6666[Raidstrats.gg]|r Load a plan first, then preview the compact background.")
+        print(L("|cffff6666[Raidstrats.gg]|r Load a plan first, then preview the compact background."))
         return
     end
     if settingsDialog then
@@ -4948,7 +4949,7 @@ function Diar:SanitizePlanData(data)
                         end
                         item.kind = "shape"
                         item.shape = "circle"
-                        item.trashBadgeLabel = rawLabel ~= "" and rawLabel or "Trash"
+                        item.trashBadgeLabel = rawLabel ~= "" and rawLabel or L("Trash")
                         item.bossBadge = nil
                         item.bossPortrait = nil
                         item.icon = nil
@@ -5716,7 +5717,7 @@ function Diar.RenderSceneItem(addon, pf, root, cw, ch, vc, minSize, item, itemIn
             w.text:SetFont(STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF", fontSize, "OUTLINE")
             w.text:SetTextColor(1, 1, 1, 1)
             if item.bossBadge == true then
-                w.text:SetText("Boss")
+        w.text:SetText(L("Boss"))
             else
                 w.text:SetText(tostring(item.trashBadgeLabel or "Trash"))
             end
@@ -6564,7 +6565,7 @@ function Diar:ShowPlannerViewer(opts)
         pf.closeBtn = closeBtn
         pf.compactMode = false
 
-        local modeToggleBtn = CreatePlannerIconBtn(pf, "Compact", 76, 22)
+        local modeToggleBtn = CreatePlannerIconBtn(pf, L("Compact"), 76, 22)
         modeToggleBtn:SetPoint("TOPRIGHT", closeBtn, "TOPLEFT", -2, 1)
         modeToggleBtn:SetScript("OnClick", function()
             Diar:TogglePlannerCompactMode()
@@ -6572,7 +6573,7 @@ function Diar:ShowPlannerViewer(opts)
         if SetPlannerBtnShadowHidden then SetPlannerBtnShadowHidden(modeToggleBtn) end
         pf.modeToggleBtn = modeToggleBtn
 
-        local discordBtn = CreatePlannerIconBtn(pf, "Discord", 76, 22)
+        local discordBtn = CreatePlannerIconBtn(pf, L("Discord"), 76, 22)
         discordBtn:SetPoint("TOPRIGHT", modeToggleBtn, "TOPLEFT", -2, 0)
         discordBtn:SetScript("OnClick", function()
             Diar:ShowPlannerDiscordPopup()
@@ -6592,7 +6593,7 @@ function Diar:ShowPlannerViewer(opts)
         pf.brandTitle = pf:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
         pf.brandTitle:SetJustifyH("CENTER")
         pf.brandTitle:SetTextColor(0.95, 0.95, 0.95)
-        pf.brandTitle:SetText(BRAND_TITLE_TEXT or "Raidstrats.gg - Raidplanner & Assignments")
+        pf.brandTitle:SetText(L("Raidstrats.gg - Raidplanner & Assignments"))
         PositionPlannerBrandTitle(pf.brandTitle, pf)
 
         pf.title = pf:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
@@ -6600,7 +6601,7 @@ function Diar:ShowPlannerViewer(opts)
         pf.title:SetJustifyH("LEFT")
         pf.title:SetTextColor(0.95, 0.95, 0.95)
 
-        local creditsBtn = CreatePlannerIconBtn(pf, "Credits", 72, 22)
+        local creditsBtn = CreatePlannerIconBtn(pf, L("Credits"), 72, 22)
         creditsBtn:SetPoint("TOPRIGHT", discordBtn, "TOPLEFT", -2, 0)
         creditsBtn:SetScript("OnClick", function()
             if Diar.ShowPlannerCreditsDialog then Diar:ShowPlannerCreditsDialog() end
@@ -6617,14 +6618,14 @@ function Diar:ShowPlannerViewer(opts)
         pf.toolbar = toolbar
 
         -- Link + Help buttons pinned to the right of the toolbar
-        local linkBtn = CreatePlannerIconBtn(toolbar, "Link", 52, SCENE_TAB_H + 4)
+        local linkBtn = CreatePlannerIconBtn(toolbar, L("Link"), 52, SCENE_TAB_H + 4)
         linkBtn:SetScript("OnClick", function()
             Diar:ShowPlannerPlanLinkPopup()
         end)
         if SetPlannerBtnShadowHidden then SetPlannerBtnShadowHidden(linkBtn) end
         pf.planLinkBtn = linkBtn
 
-        local helpBtn = CreatePlannerIconBtn(toolbar, "Help", 52, SCENE_TAB_H + 4)
+        local helpBtn = CreatePlannerIconBtn(toolbar, L("Help"), 52, SCENE_TAB_H + 4)
         helpBtn:SetScript("OnClick", function()
             if Diar.ShowPlannerHelpDialog then Diar:ShowPlannerHelpDialog() end
         end)
@@ -6659,15 +6660,15 @@ function Diar:ShowPlannerViewer(opts)
         controls:SetPoint("TOP", canvas, "BOTTOM", 0, -ROW_GAP)
         pf.controls = controls
 
-        local playPauseBtn = CreatePlannerIconBtn(controls, "Play", 110, CONTROLS_H)
+        local playPauseBtn = CreatePlannerIconBtn(controls, L("Play"), 110, CONTROLS_H)
         playPauseBtn:SetPoint("RIGHT", controls, "CENTER", -6, 0)
         pf.playPauseBtn = playPauseBtn
 
-        local stopBtn = CreatePlannerIconBtn(controls, "Stop", 110, CONTROLS_H)
+        local stopBtn = CreatePlannerIconBtn(controls, L("Stop"), 110, CONTROLS_H)
         stopBtn:SetPoint("LEFT", controls, "CENTER", 6, 0)
         pf.stopBtn = stopBtn
 
-        local settingsBtn = CreatePlannerIconBtn(controls, "Settings", 72, CONTROLS_H)
+        local settingsBtn = CreatePlannerIconBtn(controls, L("Settings"), 72, CONTROLS_H)
         settingsBtn:SetPoint("RIGHT", controls, "RIGHT", 0, 0)
         settingsBtn:SetScript("OnClick", function()
             Diar:ShowPlannerSettingsDialog()
@@ -6694,7 +6695,7 @@ function Diar:ShowPlannerViewer(opts)
             Diar:UpdatePlanSyncVersionLabel(pf)
         end
 
-        local nsrtExportBtn = CreatePlannerIconBtn(controls, "NSRT", 72, CONTROLS_H)
+        local nsrtExportBtn = CreatePlannerIconBtn(controls, L("NSRT"), 72, CONTROLS_H)
         nsrtExportBtn:SetPoint("RIGHT", settingsBtn, "LEFT", -6, 0)
         nsrtExportBtn:SetScript("OnClick", function()
             Diar:ShowPlannerNsrtExportDialog()
@@ -6716,7 +6717,7 @@ function Diar:ShowPlannerViewer(opts)
         local progStatus = importOverlay:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
         progStatus:SetPoint("CENTER", importOverlay, "CENTER", 0, 20)
         progStatus:SetTextColor(0.9, 0.9, 0.9)
-        progStatus:SetText("Requesting plan...")
+        progStatus:SetText(L("Requesting plan..."))
         importOverlay.statusText = progStatus
         local barBg = CreateFrame("Frame", nil, importOverlay, "BackdropTemplate")
         barBg:SetHeight(16)
@@ -6856,7 +6857,7 @@ function Diar:ShowPlannerViewer(opts)
         pf.patreonPanel = patreonPanel
         pf.patreonAnchoredToolbar = true
 
-        local patreonCopyBtn = CreatePlannerIconBtn(patreonPanel, "Copy", 54, 22)
+        local patreonCopyBtn = CreatePlannerIconBtn(patreonPanel, L("Copy"), 54, 22)
         patreonCopyBtn:SetPoint("RIGHT", patreonPanel, "RIGHT", -10, 0)
         patreonCopyBtn:SetScript("OnClick", function()
             Diar:ShowPlannerPatreonPopup()
@@ -6870,7 +6871,7 @@ function Diar:ShowPlannerViewer(opts)
         patreonLabel:SetJustifyH("LEFT")
         patreonLabel:SetJustifyV("MIDDLE")
         patreonLabel:SetWordWrap(true)
-        patreonLabel:SetText("Like raidstrats? Support us on Patreon at |cff4a9effjoin.raidstrats.gg|r")
+        patreonLabel:SetText(L("Like raidstrats? Support us on Patreon at |cff4a9effjoin.raidstrats.gg|r"))
         patreonLabel:SetTextColor(0.55, 0.58, 0.65)
         pf.patreonLabel = patreonLabel
 
@@ -6884,7 +6885,7 @@ function Diar:ShowPlannerViewer(opts)
         local savedTitle = rightPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         savedTitle:SetPoint("TOPLEFT", rightPanel, "TOPLEFT", 12, -12)
         savedTitle:SetTextColor(0.92, 0.92, 0.92)
-        savedTitle:SetText("Plan Library")
+        savedTitle:SetText(L("Plan Library"))
         pf.savedPlansTitle = savedTitle
 
         local savedCount = rightPanel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
@@ -6922,7 +6923,7 @@ function Diar:ShowPlannerViewer(opts)
         end)
         pf.savedPlansSearchBox = savedSearchBox
 
-        local savedRaidFilterBtn = CreatePlannerIconBtn(rightPanel, "Raid: All", 184, 22)
+        local savedRaidFilterBtn = CreatePlannerIconBtn(rightPanel, L("Raid: All"), 184, 22)
         savedRaidFilterBtn:SetPoint("TOPLEFT", savedSearchBoxWrap, "BOTTOMLEFT", 0, -6)
         savedRaidFilterBtn:SetPoint("RIGHT", savedSearchBoxWrap, "RIGHT", 0, 0)
         pf.savedPlansRaidFilterBtn = savedRaidFilterBtn
@@ -6952,13 +6953,13 @@ function Diar:ShowPlannerViewer(opts)
         pf.savedPlansScroll = scroll
         pf.savedPlansScrollChild = scrollChild
 
-        local importBtn = CreatePlannerIconBtn(footer, "Import Plan", 200, FOOTER_BTN_H)
+        local importBtn = CreatePlannerIconBtn(footer, L("Import Plan"), 200, FOOTER_BTN_H)
         pf.savedPlansImportBtn = importBtn
         importBtn:SetScript("OnClick", function()
             Diar:ShowImportPlanDialog()
         end)
 
-        local newBtn = CreatePlannerIconBtn(footer, "New Plan", 200, FOOTER_BTN_H)
+        local newBtn = CreatePlannerIconBtn(footer, L("New Plan"), 200, FOOTER_BTN_H)
         pf.savedPlansNewBtn = newBtn
         newBtn:SetScript("OnClick", function()
             if Diar.ShowCreatePlanDialog then
@@ -6966,13 +6967,13 @@ function Diar:ShowPlannerViewer(opts)
             end
         end)
 
-        local shareBtn = CreatePlannerIconBtn(footer, "Share to Group", 200, FOOTER_BTN_H)
+        local shareBtn = CreatePlannerIconBtn(footer, L("Share to Group"), 200, FOOTER_BTN_H)
         shareBtn:SetScript("OnClick", function()
             if Diar.SharePlanToGroup then Diar:SharePlanToGroup(Diar.plannerData) end
         end)
         pf.savedPlansShareBtn = shareBtn
 
-        local pushBtn = CreatePlannerIconBtn(footer, "Push Update", 200, FOOTER_BTN_H)
+        local pushBtn = CreatePlannerIconBtn(footer, L("Push Update"), 200, FOOTER_BTN_H)
         pushBtn:SetScript("OnClick", function()
             if Diar.HasActiveSavedPlan and not Diar:HasActiveSavedPlan() then return end
             if Diar.PushPlanUpdateToGroup then Diar:PushPlanUpdateToGroup() end
@@ -7020,7 +7021,7 @@ function Diar:ShowPlannerViewer(opts)
     if (not pf.pushUpdateBtn or not pf.savedPlansNewBtn) and pf.savedPlansShareBtn and pf.savedPlansFooter then
         local footer = pf.savedPlansFooter
         if not pf.savedPlansNewBtn then
-            local newBtn = CreatePlannerIconBtn(footer, "New Plan", 200, FOOTER_BTN_H)
+            local newBtn = CreatePlannerIconBtn(footer, L("New Plan"), 200, FOOTER_BTN_H)
             newBtn:SetScript("OnClick", function()
                 if Diar.ShowCreatePlanDialog then
                     Diar:ShowCreatePlanDialog()
@@ -7029,7 +7030,7 @@ function Diar:ShowPlannerViewer(opts)
             pf.savedPlansNewBtn = newBtn
         end
         if not pf.pushUpdateBtn then
-            local pushBtn = CreatePlannerIconBtn(footer, "Push Update", 200, FOOTER_BTN_H)
+            local pushBtn = CreatePlannerIconBtn(footer, L("Push Update"), 200, FOOTER_BTN_H)
             pushBtn:SetScript("OnClick", function()
                 if Diar.HasActiveSavedPlan and not Diar:HasActiveSavedPlan() then return end
                 if Diar.PushPlanUpdateToGroup then Diar:PushPlanUpdateToGroup() end
@@ -7041,7 +7042,7 @@ function Diar:ShowPlannerViewer(opts)
         LayoutSavedPlansFooter(pf)
     end
     if not pf.modeToggleBtn and pf.closeBtn then
-        local modeToggleBtn = CreatePlannerIconBtn(pf, "Compact", 76, 22)
+        local modeToggleBtn = CreatePlannerIconBtn(pf, L("Compact"), 76, 22)
         modeToggleBtn:SetPoint("TOPRIGHT", pf.closeBtn, "TOPLEFT", -2, 1)
         modeToggleBtn:SetScript("OnClick", function()
             Diar:TogglePlannerCompactMode()
@@ -7050,7 +7051,7 @@ function Diar:ShowPlannerViewer(opts)
         pf.modeToggleBtn = modeToggleBtn
     end
     if not pf.discordBtn and pf.modeToggleBtn then
-        local discordBtn = CreatePlannerIconBtn(pf, "Discord", 76, 22)
+        local discordBtn = CreatePlannerIconBtn(pf, L("Discord"), 76, 22)
         discordBtn:SetPoint("TOPRIGHT", pf.modeToggleBtn, "TOPLEFT", -2, 0)
         discordBtn:SetScript("OnClick", function()
             Diar:ShowPlannerDiscordPopup()
@@ -7133,8 +7134,8 @@ function Diar:ShowPlannerViewer(opts)
                 end
                 if s.leaderScene and GameTooltip then
                     GameTooltip:SetOwner(s, "ANCHOR_BOTTOM")
-                    GameTooltip:SetText("Raid leader scene", 0.55, 0.98, 0.62)
-                    GameTooltip:AddLine("Your leader is viewing this scene.", 0.78, 0.80, 0.84, true)
+                    GameTooltip:SetText(L("Raid leader scene"), 0.55, 0.98, 0.62)
+                    GameTooltip:AddLine(L("Your leader is viewing this scene."), 0.78, 0.80, 0.84, true)
                     GameTooltip:Show()
                 end
             end)
@@ -7291,14 +7292,14 @@ function Diar:ShowPlannerPlanLinkPopup()
         f.title = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
         f.title:SetPoint("TOP", 0, -18)
         f.title:SetTextColor(0.9, 0.9, 0.9)
-        f.title:SetText("Plan link")
-        local bc, b = CreateInput(f, "Copy link", false)
+        f.title:SetText(L("Plan link"))
+        local bc, b = CreateInput(f, L("Copy link"), false)
         bc:SetPoint("TOPLEFT", f, "TOPLEFT", 20, -52)
         bc:SetPoint("TOPRIGHT", f, "TOPRIGHT", -20, -52)
         bc:SetHeight(44)
         b:SetScript("OnEscapePressed", function() f:Hide() end)
         f.linkEdit = b
-        local btn = CreateButton(f, "CLOSE")
+        local btn = CreateButton(f, L("CLOSE"))
         btn:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 20, 16)
         btn:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -20, 16)
         btn:SetScript("OnClick", function() f:Hide() end)
@@ -7330,18 +7331,18 @@ function Diar:ShowPlannerDiscordPopup()
         f.title = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
         f.title:SetPoint("TOP", 0, -18)
         f.title:SetTextColor(0.9, 0.9, 0.9)
-        f.title:SetText("Raidstrats.gg Discord")
+        f.title:SetText(L("Raidstrats.gg Discord"))
         f.desc = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         f.desc:SetPoint("TOP", f.title, "BOTTOM", 0, -6)
         f.desc:SetTextColor(0.7, 0.72, 0.75)
-        f.desc:SetText("Copy the invite link below and open it in your browser.")
-        local bc, b = CreateInput(f, "Copy link", false)
+        f.desc:SetText(L("Copy the invite link below and open it in your browser."))
+        local bc, b = CreateInput(f, L("Copy link"), false)
         bc:SetPoint("TOPLEFT", f, "TOPLEFT", 20, -78)
         bc:SetPoint("TOPRIGHT", f, "TOPRIGHT", -20, -78)
         bc:SetHeight(44)
         b:SetScript("OnEscapePressed", function() f:Hide() end)
         f.linkEdit = b
-        local btn = CreateButton(f, "CLOSE")
+        local btn = CreateButton(f, L("CLOSE"))
         btn:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 20, 16)
         btn:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -20, 16)
         btn:SetScript("OnClick", function() f:Hide() end)
@@ -7373,18 +7374,18 @@ function Diar:ShowPlannerPatreonPopup()
         f.title = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
         f.title:SetPoint("TOP", 0, -18)
         f.title:SetTextColor(0.9, 0.9, 0.9)
-        f.title:SetText("Support Raidstrats.gg")
+        f.title:SetText(L("Support Raidstrats.gg"))
         f.desc = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         f.desc:SetPoint("TOP", f.title, "BOTTOM", 0, -6)
         f.desc:SetTextColor(0.7, 0.72, 0.75)
-        f.desc:SetText("Copy the Patreon link below and open it in your browser.")
-        local bc, b = CreateInput(f, "Copy link", false)
+        f.desc:SetText(L("Copy the Patreon link below and open it in your browser."))
+        local bc, b = CreateInput(f, L("Copy link"), false)
         bc:SetPoint("TOPLEFT", f, "TOPLEFT", 20, -78)
         bc:SetPoint("TOPRIGHT", f, "TOPRIGHT", -20, -78)
         bc:SetHeight(44)
         b:SetScript("OnEscapePressed", function() f:Hide() end)
         f.linkEdit = b
-        local btn = CreateButton(f, "CLOSE")
+        local btn = CreateButton(f, L("CLOSE"))
         btn:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 20, 16)
         btn:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -20, 16)
         btn:SetScript("OnClick", function() f:Hide() end)
@@ -7401,7 +7402,7 @@ function Diar:ShowPlannerPatreonPopup()
 end
 
 function Diar:GetPlannerCreditsText()
-    return tostring(PLANNER_CREDITS_TEXT or "")
+    return L("CREDITS_TEXT")
 end
 
 function Diar:ShowPlannerCreditsDialog()
@@ -7420,7 +7421,7 @@ function Diar:ShowPlannerCreditsDialog()
         f.title = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
         f.title:SetPoint("TOP", 0, -18)
         f.title:SetTextColor(0.9, 0.9, 0.9)
-        f.title:SetText("Planner Credits")
+        f.title:SetText(L("Planner Credits"))
 
         local scroll = CreateFrame("ScrollFrame", nil, f, "UIPanelScrollFrameTemplate")
         scroll:SetPoint("TOPLEFT", f, "TOPLEFT", 20, -52)
@@ -7453,7 +7454,7 @@ function Diar:ShowPlannerCreditsDialog()
         f.creditsContent = content
         f.creditsText = body
 
-        local closeBtn = CreateButton(f, "CLOSE")
+        local closeBtn = CreateButton(f, L("CLOSE"))
         closeBtn:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 20, 16)
         closeBtn:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -20, 16)
         closeBtn:SetScript("OnClick", function() f:Hide() end)

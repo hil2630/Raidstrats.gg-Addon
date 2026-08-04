@@ -6,6 +6,7 @@ local Addon =
     AceAddon:GetAddon("Raidstratsgg", true) or
     AceAddon:GetAddon("raidstratsgg", true)
 if not Addon then return end
+local function L(key) return RSGG_L(key) end
 local Diar = Addon
 local PUI = Diar.PlannerUI
 local SetPlannerBtnText = PUI.SetPlannerBtnText
@@ -98,7 +99,7 @@ function Diar:UpdatePlannerControlButtons()
         pf.animStart = nil
     end
 
-    SetPlannerBtnText(pf.playPauseBtn, pf.animPlaying and "Pause" or "Play")
+    SetPlannerBtnText(pf.playPauseBtn, pf.animPlaying and L("Pause") or L("Play"))
     SetPlannerBtnEnabled(pf.playPauseBtn, hasAnims)
     SetPlannerBtnEnabled(pf.stopBtn, hasAnims)
 

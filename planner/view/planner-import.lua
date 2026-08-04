@@ -6,6 +6,7 @@ local Addon =
     AceAddon:GetAddon("Raidstratsgg", true) or
     AceAddon:GetAddon("raidstratsgg", true)
 if not Addon then return end
+local function L(key) return RSGG_L(key) end
 local Diar = Addon
 local SetBackdrop = Diar.SetBackdrop
 local CreateButton = Diar.CreateButton
@@ -45,14 +46,17 @@ function Diar:ShowImportPlanDialog()
 
         local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
         title:SetPoint("TOP", 0, -18)
-        title:SetText("Import plan")
+        title:SetText(L("Import plan"))
         title:SetTextColor(0.9, 0.9, 0.9)
 
         local hint = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         hint:SetPoint("TOP", title, "BOTTOM", 0, -8)
         hint:SetWidth(500)
         hint:SetTextColor(0.55, 0.6, 0.65)
-        hint:SetText("Paste the export from raidstrats.gg (!raidstrats-addon-...)\nLarger plans may cause your client to lag for a few seconds, this is normal.")
+        hint:SetText(
+            L("Paste the export from raidstrats.gg (!raidstrats-addon-...)") .. "\n" ..
+            L("Larger plans may cause your client to lag for a few seconds, this is normal.")
+        )
 
         local btnRow = CreateFrame("Frame", nil, f)
         btnRow:SetHeight(40)
@@ -123,8 +127,8 @@ function Diar:ShowImportPlanDialog()
         f.inputFrame = inputFrame
         f.inputFrame = inputFrame
 
-        local importBtn = CreateButton and CreateButton(btnRow, "IMPORT") or CreateFrame("Button", nil, btnRow, "UIPanelButtonTemplate")
-        if importBtn.SetText then importBtn:SetText("IMPORT") end
+        local importBtn = CreateButton and CreateButton(btnRow, L("IMPORT")) or CreateFrame("Button", nil, btnRow, "UIPanelButtonTemplate")
+        if importBtn.SetText then importBtn:SetText(L("IMPORT")) end
         importBtn:SetPoint("LEFT", btnRow, "LEFT", 0, 0)
         importBtn:SetPoint("RIGHT", btnRow, "CENTER", -6, 0)
         importBtn:SetScript("OnClick", function()
@@ -134,8 +138,8 @@ function Diar:ShowImportPlanDialog()
             end
         end)
 
-        local cancelBtn = CreateButton and CreateButton(btnRow, "CANCEL") or CreateFrame("Button", nil, btnRow, "UIPanelButtonTemplate")
-        if cancelBtn.SetText then cancelBtn:SetText("CANCEL") end
+        local cancelBtn = CreateButton and CreateButton(btnRow, L("CANCEL")) or CreateFrame("Button", nil, btnRow, "UIPanelButtonTemplate")
+        if cancelBtn.SetText then cancelBtn:SetText(L("CANCEL")) end
         cancelBtn:SetPoint("LEFT", btnRow, "CENTER", 6, 0)
         cancelBtn:SetPoint("RIGHT", btnRow, "RIGHT", 0, 0)
         cancelBtn:SetScript("OnClick", function() f:Hide() end)
@@ -192,14 +196,14 @@ function Diar:ShowRosterExportDialog()
 
         local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
         title:SetPoint("TOP", 0, -18)
-        title:SetText("Export roster")
+        title:SetText(L("Export roster"))
         title:SetTextColor(0.9, 0.9, 0.9)
 
         local hint = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         hint:SetPoint("TOP", title, "BOTTOM", 0, -8)
         hint:SetWidth(500)
         hint:SetTextColor(0.55, 0.6, 0.65)
-        hint:SetText("Generate a roster string, then copy it and paste where needed.")
+        hint:SetText(L("Generate a roster string, then copy it and paste where needed."))
 
         local btnRow = CreateFrame("Frame", nil, f)
         btnRow:SetHeight(40)
@@ -267,7 +271,7 @@ function Diar:ShowRosterExportDialog()
             end
         end)
 
-        local includeSpecChk = CreateAnimatedCheckbox and CreateAnimatedCheckbox(f, "Include spec (slower)") or nil
+        local includeSpecChk = CreateAnimatedCheckbox and CreateAnimatedCheckbox(f, L("Include spec (slower)")) or nil
         if includeSpecChk then
             includeSpecChk:SetPoint("TOPLEFT", inputFrame, "BOTTOMLEFT", 0, -8)
             includeSpecChk:SetScript("OnClick", function(s)
@@ -276,19 +280,19 @@ function Diar:ShowRosterExportDialog()
             end)
         end
 
-        local generateBtn = CreateButton and CreateButton(btnRow, "GENERATE ROSTER") or CreateFrame("Button", nil, btnRow, "UIPanelButtonTemplate")
-        if generateBtn.SetText then generateBtn:SetText("GENERATE ROSTER") end
+        local generateBtn = CreateButton and CreateButton(btnRow, L("GENERATE ROSTER")) or CreateFrame("Button", nil, btnRow, "UIPanelButtonTemplate")
+        if generateBtn.SetText then generateBtn:SetText(L("GENERATE ROSTER")) end
         generateBtn:SetPoint("LEFT", btnRow, "LEFT", 0, 0)
         generateBtn:SetPoint("RIGHT", btnRow, "CENTER", -6, 0)
 
-        local closeActionBtn = CreateButton and CreateButton(btnRow, "CLOSE") or CreateFrame("Button", nil, btnRow, "UIPanelButtonTemplate")
-        if closeActionBtn.SetText then closeActionBtn:SetText("CLOSE") end
+        local closeActionBtn = CreateButton and CreateButton(btnRow, L("CLOSE")) or CreateFrame("Button", nil, btnRow, "UIPanelButtonTemplate")
+        if closeActionBtn.SetText then closeActionBtn:SetText(L("CLOSE")) end
         closeActionBtn:SetPoint("LEFT", btnRow, "CENTER", 6, 0)
         closeActionBtn:SetPoint("RIGHT", btnRow, "RIGHT", 0, 0)
         closeActionBtn:SetScript("OnClick", function() f:Hide() end)
 
-        local stopBtn = CreateButton and CreateButton(btnRow, "STOP") or CreateFrame("Button", nil, btnRow, "UIPanelButtonTemplate")
-        if stopBtn.SetText then stopBtn:SetText("STOP") end
+        local stopBtn = CreateButton and CreateButton(btnRow, L("STOP")) or CreateFrame("Button", nil, btnRow, "UIPanelButtonTemplate")
+        if stopBtn.SetText then stopBtn:SetText(L("STOP")) end
         stopBtn:SetSize(80, 28)
         stopBtn:SetPoint("RIGHT", generateBtn, "RIGHT", 0, 0)
         stopBtn:SetScript("OnClick", function()
@@ -355,13 +359,13 @@ function Diar:ShowImportProgress(visible, received, total, status)
     end
     overlay:Show()
     if overlay.statusText then
-        overlay.statusText:SetText(status or "Requesting plan...")
+        overlay.statusText:SetText(status or L("Requesting plan..."))
     end
     local pct = 0
     if total and total > 0 and received then
         pct = math.min(1, received / total)
         if overlay.statusText then
-            overlay.statusText:SetText(("Importing plan... %d%%"):format(math.floor(pct * 100)))
+            overlay.statusText:SetText(L("Importing plan... %d%%"):format(math.floor(pct * 100)))
         end
     end
     local w = (overlay.barWidth or 316) * pct
@@ -386,7 +390,7 @@ function Diar:UpdateImportProgress(received, total)
     overlay._lastProgressUpdateAt = now
     overlay._lastProgressPercent = pctInt
     if overlay.statusText then
-        overlay.statusText:SetText(("Importing plan... %d%%"):format(pctInt))
+        overlay.statusText:SetText(L("Importing plan... %d%%"):format(pctInt))
     end
     local w = (overlay.barWidth or 316) * pct
     if overlay.barFill then

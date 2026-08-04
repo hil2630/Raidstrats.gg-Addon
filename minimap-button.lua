@@ -8,6 +8,7 @@ local Addon =
 if not Addon then return end
 
 local MINIMAP_ICON = 1519351
+local function L(key) return RSGG_L(key) end
 
 local function GetSettings()
     RaidstratsggSettings = RaidstratsggSettings or {}
@@ -84,10 +85,10 @@ function Addon:InitMinimapButton()
 
     btn:SetScript("OnEnter", function(s)
         GameTooltip:SetOwner(s, "ANCHOR_LEFT")
-        GameTooltip:SetText("Raidstrats.gg", 1, 1, 1)
-        GameTooltip:AddLine("Left-click: open planner", 0.85, 0.88, 0.92)
-        GameTooltip:AddLine("Right-click: roster export", 0.65, 0.68, 0.72)
-        GameTooltip:AddLine("Drag to move", 0.55, 0.58, 0.62)
+        GameTooltip:SetText(L("Raidstrats.gg"), 1, 1, 1)
+        GameTooltip:AddLine(L("Left-click: open planner"), 0.85, 0.88, 0.92)
+        GameTooltip:AddLine(L("Right-click: roster export"), 0.65, 0.68, 0.72)
+        GameTooltip:AddLine(L("Drag to move"), 0.55, 0.58, 0.62)
         GameTooltip:Show()
     end)
     btn:SetScript("OnLeave", function()

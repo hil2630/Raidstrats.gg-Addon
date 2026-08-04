@@ -18,6 +18,12 @@ Libs\AceComm-3.0\AceComm-3.0.xml
 Libs\AceEvent-3.0\AceEvent-3.0.xml
 Libs\AceTimer-3.0\AceTimer-3.0.xml
 
+# Localization (custom loader — supports in-addon language override)
+locale\Locale.lua
+locale\enUS.lua
+locale\daDK.lua
+locale\zhTW.lua
+
 main.lua
 custom-renders.lua
 version-check.lua

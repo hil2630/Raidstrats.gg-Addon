@@ -8,6 +8,8 @@ local Raidstrats =
 
 if not Raidstrats then return end
 
+local function L(key) return RSGG_L(key) end
+
 local function IsRaidDifficulty()
     local diff = select(3, GetInstanceInfo()) or 0
     return (diff >= 14 and diff <= 17) or diff == 220
@@ -576,9 +578,9 @@ function Raidstrats:StopRsggTest(opts)
     end
     if not opts.silent then
         if wasRunning then
-            print("|cff00aaff[Raidstrats.gg]|r Stopped local /rsggtest run.")
+            print(L("|cff00aaff[Raidstrats.gg]|r Stopped local /rsggtest run."))
         else
-            print("|cffff9900[Raidstrats.gg]|r No /rsggtest run is currently active.")
+            print(L("|cffff9900[Raidstrats.gg]|r No /rsggtest run is currently active."))
         end
     end
     return wasRunning
@@ -632,7 +634,7 @@ function Raidstrats:ScheduleRsggCues(encID, phase, opts)
     local testMode = opts.testMode == true
     if self.IsNsrtPopupsEnabled and not self:IsNsrtPopupsEnabled() then
         if not testMode then return end
-        print("|cffff9900[Raidstrats.gg]|r NSRT popups are disabled in Settings — running test anyway.")
+        print(L("|cffff9900[Raidstrats.gg]|r NSRT popups are disabled in Settings — running test anyway."))
     end
 
     local byEnc = self.rsggCues and self.rsggCues[encID]
@@ -715,14 +717,14 @@ function Raidstrats:ScheduleRsggCues(encID, phase, opts)
                     })
                     if ok then
                         if testMode then
-                            print(("|cff00aaff[Raidstrats.gg]|r Test: scene %d (phase %d, show %ds→%ds, note cue %ds)."):format(
+                            print((L("|cff00aaff[Raidstrats.gg]|r Test: scene %d (phase %d, show %ds→%ds, note cue %ds).")):format(
                                 cue.sceneIndex, runPhase, showAt, hideAt, cue.time))
                         else
-                            print(("|cff00aaff[Raidstrats.gg]|r Showing scene %d (phase %d, cue %ds, −%ds until cue)."):format(
+                            print((L("|cff00aaff[Raidstrats.gg]|r Showing scene %d (phase %d, cue %ds, −%ds until cue).")):format(
                                 cue.sceneIndex, runPhase, cue.time, before))
                         end
                     else
-                        print(("|cffff6666[Raidstrats.gg]|r Failed to show scene %d — import a plan first (/rsimport)."):format(
+                        print((L("|cffff6666[Raidstrats.gg]|r Failed to show scene %d — import a plan first (/rsimport).")):format(
                             cue.sceneIndex))
                     end
                     if not keepCompactOpen then
@@ -743,7 +745,7 @@ function Raidstrats:ScheduleRsggCues(encID, phase, opts)
     end
 
     if testMode and scheduled == 0 then
-        print("|cffff6666[Raidstrats.gg]|r No cues matched your player (check NSRT tag/group names).")
+        print(L("|cffff6666[Raidstrats.gg]|r No cues matched your player (check NSRT tag/group names)."))
     end
 end
 
@@ -782,7 +784,7 @@ function Raidstrats:OnEncounterStart(encID)
         end
     end
     if cueCount > 0 then
-        print(("|cff00aaff[Raidstrats.gg]|r Loaded %d rsgg cue(s) across %d phase(s) for encounter %d."):format(
+        print((L("|cff00aaff[Raidstrats.gg]|r Loaded %d rsgg cue(s) across %d phase(s) for encounter %d.")):format(
             cueCount, phaseCount, encID))
     end
 
@@ -817,14 +819,14 @@ end
 function Raidstrats:RunRsggTest(encID, opts)
     opts = opts or {}
     if not C_AddOns.IsAddOnLoaded("NorthernSkyRaidTools") then
-        print("|cffff6666[Raidstrats.gg]|r Northern Sky Raid Tools is not loaded.")
+        print(L("|cffff6666[Raidstrats.gg]|r Northern Sky Raid Tools is not loaded."))
         return false
     end
     TryHookNSRT(self)
 
     local noteText = GetActiveNoteText(encID)
     if noteText == "" then
-        print("|cffff6666[Raidstrats.gg]|r No active NSRT note. Open NSRT, save your note, and click it so it shows as active.")
+        print(L("|cffff6666[Raidstrats.gg]|r No active NSRT note. Open NSRT, save your note, and click it so it shows as active."))
         return false
     end
 
@@ -832,7 +834,7 @@ function Raidstrats:RunRsggTest(encID, opts)
     noteEncID = noteEncID and tonumber(noteEncID) or nil
     encID = encID and tonumber(encID) or noteEncID
     if not encID then
-        print("|cffff6666[Raidstrats.gg]|r Note needs EncounterID:#### on the first line.")
+        print(L("|cffff6666[Raidstrats.gg]|r Note needs EncounterID:#### on the first line."))
         return false
     end
 
@@ -842,7 +844,7 @@ function Raidstrats:RunRsggTest(encID, opts)
     self.rsggPlanBinds = ParseRsggPlanBinds(noteText)
     encID = ResolveEncIdFromCues(self.rsggCues, encID, noteEncID)
     if not encID then
-        print("|cffff6666[Raidstrats.gg]|r No rsgg lines in active note. Add: time:5;ph:1;rsgg;scene:1")
+        print(L("|cffff6666[Raidstrats.gg]|r No rsgg lines in active note. Add: time:5;ph:1;rsgg;scene:1"))
         return false
     end
     self.rsggEncounterID = encID
@@ -852,7 +854,7 @@ function Raidstrats:RunRsggTest(encID, opts)
     local phaseCues = (phase and byEnc) and byEnc[phase] or nil
     if phase then
         if not phaseCues or #phaseCues == 0 then
-            print(("|cffff6666[Raidstrats.gg]|r No rsgg cues for encounter %d phase %d."):format(encID, phase))
+            print((L("|cffff6666[Raidstrats.gg]|r No rsgg cues for encounter %d phase %d.")):format(encID, phase))
             return false
         end
     else
@@ -867,23 +869,23 @@ function Raidstrats:RunRsggTest(encID, opts)
             end
         end
         if availablePhases == 0 then
-            print(("|cffff6666[Raidstrats.gg]|r No rsgg cues for encounter %d."):format(encID))
+            print((L("|cffff6666[Raidstrats.gg]|r No rsgg cues for encounter %d.")):format(encID))
             return false
         end
         phaseCues = { __allPhaseCount = availablePhases, __allCueCount = totalCues }
     end
 
     if not self.plannerData or not self.plannerData.scenes or #self.plannerData.scenes == 0 then
-        print("|cffff6666[Raidstrats.gg]|r No plan loaded — import one first (/rsimport).")
+        print(L("|cffff6666[Raidstrats.gg]|r No plan loaded — import one first (/rsimport)."))
     end
 
     -- Local-only test: never broadcast to group.
 
     if phase then
-        print(("|cff00aaff[Raidstrats.gg]|r Test started for encounter %d phase %d — %d cue(s), real cue timing."):format(
+        print((L("|cff00aaff[Raidstrats.gg]|r Test started for encounter %d phase %d — %d cue(s), real cue timing.")):format(
             encID, phase, #phaseCues))
     else
-        print(("|cff00aaff[Raidstrats.gg]|r Test started for encounter %d (all phases) — %d phase(s), %d cue(s), real cue timing."):format(
+        print((L("|cff00aaff[Raidstrats.gg]|r Test started for encounter %d (all phases) — %d phase(s), %d cue(s), real cue timing.")):format(
             encID, phaseCues.__allPhaseCount or 0, phaseCues.__allCueCount or 0))
     end
     self.rsggTestActive = true
@@ -897,18 +899,18 @@ end
 function Raidstrats:RunRsggPhaseDebug(phase, encID)
     phase = tonumber(phase)
     if not phase or phase < 1 then
-        print("|cffff6666[Raidstrats.gg]|r Usage: /rsggphase <phase> [encounterId]")
+        print(L("|cffff6666[Raidstrats.gg]|r Usage: /rsggphase <phase> [encounterId]"))
         return false
     end
     encID = encID and tonumber(encID) or self.rsggEncounterID
     if not encID then
-        print("|cffff6666[Raidstrats.gg]|r No active encounter id. Provide one: /rsggphase <phase> <encounterId>")
+        print(L("|cffff6666[Raidstrats.gg]|r No active encounter id. Provide one: /rsggphase <phase> <encounterId>"))
         return false
     end
 
     local noteText = GetActiveNoteText(encID)
     if noteText == "" then
-        print("|cffff6666[Raidstrats.gg]|r No active NSRT note.")
+        print(L("|cffff6666[Raidstrats.gg]|r No active NSRT note."))
         return false
     end
     self.rsggEncounterID = encID
@@ -919,7 +921,7 @@ function Raidstrats:RunRsggPhaseDebug(phase, encID)
     local byEnc = self.rsggCues and self.rsggCues[encID]
     local phaseCues = byEnc and byEnc[phase] or nil
     if not phaseCues or #phaseCues == 0 then
-        print(("|cffff6666[Raidstrats.gg]|r No rsgg cues for encounter %d phase %d."):format(encID, phase))
+        print((L("|cffff6666[Raidstrats.gg]|r No rsgg cues for encounter %d phase %d.")):format(encID, phase))
         return false
     end
 
@@ -930,7 +932,7 @@ function Raidstrats:RunRsggPhaseDebug(phase, encID)
     if self.RefreshPlannerNsrtAssignmentIfOpen then
         self:RefreshPlannerNsrtAssignmentIfOpen()
     end
-    print(("|cff00aaff[Raidstrats.gg]|r Forced phase %d for encounter %d (%d cue(s), local debug)."):format(
+    print((L("|cff00aaff[Raidstrats.gg]|r Forced phase %d for encounter %d (%d cue(s), local debug).")):format(
         phase, encID, #phaseCues))
     return true
 end
@@ -980,7 +982,7 @@ function Raidstrats:InitNSRTIntegration()
                         Raidstrats:OpenRaidCheckForReadyCheck()
                     end)
                     if not ok and Raidstrats.IsRsggDebug and Raidstrats:IsRsggDebug() then
-                        print("|cffff6666[Raidstrats.gg]|r Readycheck raidcheck error: " .. tostring(err))
+                        print((L("|cffff6666[Raidstrats.gg]|r Readycheck raidcheck error: %s")):format(tostring(err)))
                     end
                 end
                 if C_Timer and C_Timer.After then
@@ -1041,11 +1043,11 @@ function Raidstrats:InitNSRTIntegration()
 
     self:RegisterChatCommand("rsggrc", function()
         if not Raidstrats.IsReadyCheckAssignmentsEnabled or not Raidstrats:IsReadyCheckAssignmentsEnabled() then
-            print("|cffff9900[Raidstrats.gg]|r Enable \"Show assignments on readycheck\" in Settings first.")
+            print(L("|cffff9900[Raidstrats.gg]|r Enable \"Show assignments on readycheck\" in Settings first."))
             return
         end
         if Raidstrats.CanOpenReadyCheckAssignmentsInCurrentGroup and not Raidstrats:CanOpenReadyCheckAssignmentsInCurrentGroup() then
-            print("|cffff9900[Raidstrats.gg]|r Ready check assignments are raid-only while \"Show only readycheck in raid group\" is enabled.")
+            print(L("|cffff9900[Raidstrats.gg]|r Ready check assignments are raid-only while \"Show only readycheck in raid group\" is enabled."))
             return
         end
         if Raidstrats.CloseReadyCheckAssignments then

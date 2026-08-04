@@ -5,6 +5,7 @@ local Addon =
     AceAddon:GetAddon("Raidstratsgg", true) or
     AceAddon:GetAddon("raidstratsgg", true)
 if not Addon then return end
+local function L(key) return RSGG_L(key) end
 
 -- Temporary kill-switch: keep the feature code in place, but do not run any
 -- Encounter Journal overview behavior until we re-enable it.
@@ -188,7 +189,7 @@ local function EnsureOverviewWindow()
     title:SetPoint("TOPLEFT", win, "TOPLEFT", 24, -18)
     title:SetPoint("TOPRIGHT", win, "TOPRIGHT", -24, -18)
     title:SetJustifyH("LEFT")
-    title:SetText("Boss Overview")
+    title:SetText(L("Boss Overview"))
     title:SetTextColor(0.12, 0.12, 0.12, 1)
     if title.SetShadowOffset then title:SetShadowOffset(0, 0) end
     if title.SetShadowColor then title:SetShadowColor(0, 0, 0, 0) end
@@ -201,7 +202,7 @@ local function EnsureOverviewWindow()
     subtitle:SetTextColor(0.18, 0.18, 0.18, 1)
     if subtitle.SetShadowOffset then subtitle:SetShadowOffset(0, 0) end
     if subtitle.SetShadowColor then subtitle:SetShadowColor(0, 0, 0, 0) end
-    subtitle:SetText("Raidstrats quick boss notes")
+    subtitle:SetText(L("Raidstrats quick boss notes"))
     win.subtitle = subtitle
 
     local roleBar = CreateFrame("Frame", nil, win)
@@ -210,9 +211,9 @@ local function EnsureOverviewWindow()
     win.roleBar = roleBar
 
     local roles = {
-        { key = "tank", label = "Tank" },
-        { key = "healer", label = "Healer" },
-        { key = "dps", label = "DPS" },
+        { key = "tank", label = L("Tank") },
+        { key = "healer", label = L("Healer") },
+        { key = "dps", label = L("DPS") },
     }
     local roleButtons = {}
     local prev
@@ -472,7 +473,7 @@ local function CreateOverviewTriggerButton(parent)
     btn:SetScript("OnEnter", function(self)
         if self.texture then self.texture:SetAlpha(1.0) end
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:SetText("Raidstrats.gg overview", 1, 1, 1)
+        GameTooltip:SetText(L("Raidstrats.gg overview"), 1, 1, 1)
         GameTooltip:Show()
     end)
     btn:SetScript("OnLeave", function(self)
@@ -595,12 +596,12 @@ UpdateOverviewContents = function()
     local encounterID = EncounterJournal and EncounterJournal.encounterID
     local roleKey = NormalizeRoleKey(currentOverviewRole)
     local bossName, text = ResolveBossOverviewText(encounterID, roleKey)
-    win.title:SetText(("Boss Overview - %s"):format(bossName or "Unknown"))
+    win.title:SetText(L("Boss Overview - %s"):format(bossName or L("Unknown")))
     if win.subtitle then
-        local roleLabel = (roleKey == "tank" and "Tank")
-            or (roleKey == "healer" and "Healer")
-            or "DPS"
-        win.subtitle:SetText(("Raidstrats quick boss notes - %s"):format(roleLabel))
+        local roleLabel = (roleKey == "tank" and L("Tank"))
+            or (roleKey == "healer" and L("Healer"))
+            or L("DPS")
+        win.subtitle:SetText(L("Raidstrats quick boss notes - %s"):format(roleLabel))
     end
     win.body:SetText(text or "No overview available.")
     if win.UpdateRoleButtons then

@@ -6,6 +6,7 @@ local Addon =
     AceAddon:GetAddon("Raidstratsgg", true) or
     AceAddon:GetAddon("raidstratsgg", true)
 if not Addon then return end
+local function L(key) return RSGG_L(key) end
 local Diar = Addon
 local SetBackdrop = Diar.SetBackdrop
 local SkinScrollBar = Diar.SkinScrollBar
@@ -19,7 +20,7 @@ PUI.TITLE_TOP = 16
 PUI.TOOLBAR_TOP = 46
 PUI.TOOLBAR_H = 34
 PUI.CANVAS_TOP = 90
-PUI.BRAND_TITLE_TEXT = "Raidstrats.gg - Raidplanner & Assignments"
+PUI.BRAND_TITLE_TEXT = L("Raidstrats.gg - Raidplanner & Assignments")
 PUI.BRAND_TITLE_OFFSET_X = 20
 PUI.PLAN_TITLE_MAX_LEN = 50
 PUI.ROW_GAP = 10
@@ -47,7 +48,7 @@ end
 function PUI.TruncatePlannerPlanTitle(name, maxLen)
     maxLen = maxLen or PUI.PLAN_TITLE_MAX_LEN or 20
     name = strtrim(tostring(name or ""))
-    if name == "" then return "Raid plan" end
+    if name == "" then return L("Raid plan") end
     if #name <= maxLen then return name end
     if maxLen <= 3 then return name:sub(1, maxLen) end
     return name:sub(1, maxLen - 3) .. "..."

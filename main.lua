@@ -1,5 +1,6 @@
 local addonName, NS = ...
 local Raidstrats = LibStub("AceAddon-3.0"):NewAddon(addonName, "AceConsole-3.0", "AceComm-3.0", "AceEvent-3.0", "AceTimer-3.0")
+local function L(key) return RSGG_L(key) end
 
 local COMM_PREFIX = "RAIDSTRATS_LINK"
 local COMM_PLAN_PREFIX = "RAIDSTRATS_PLAN"
@@ -474,11 +475,11 @@ function Raidstrats:SaveImportedPlan(data)
             if hit then return hit end
         end
         if raid then return raid end
-        return "Other"
+        return L("Other")
     end
     data.expansion = inferExpansion(data)
-    data.raid = cleanMeta(data.raid) or "Other"
-    data.boss = cleanMeta(data.boss) or "Unknown"
+    data.raid = cleanMeta(data.raid) or L("Other")
+    data.boss = cleanMeta(data.boss) or L("Unknown")
     if type(data.instanceKey) == "string" and data.instanceKey ~= "" then
         for _, entry in ipairs(RaidstratsggSavedPlans.list) do
             if entry.data and entry.data.instanceKey == data.instanceKey then
@@ -488,9 +489,9 @@ function Raidstrats:SaveImportedPlan(data)
                 if type(data.planName) == "string" and data.planName ~= "" then
                     entry.planName = data.planName
                 end
-                entry.expansion = data.expansion or "Other"
-                entry.raid = data.raid or "Other"
-                entry.boss = data.boss or "Unknown"
+                entry.expansion = data.expansion or L("Other")
+                entry.raid = data.raid or L("Other")
+                entry.boss = data.boss or L("Unknown")
                 if self.SanitizePlanData and not importAlreadySanitized then
                     self:SanitizePlanData(entry.data)
                 end
@@ -503,10 +504,10 @@ function Raidstrats:SaveImportedPlan(data)
     end
     local entry = {
         id = RaidstratsggSavedPlans.nextId,
-        planName = (type(data.planName) == "string" and data.planName ~= "") and data.planName or "Imported plan",
-        expansion = data.expansion or "Other",
-        raid = data.raid or "Other",
-        boss = data.boss or "Unknown",
+        planName = (type(data.planName) == "string" and data.planName ~= "") and data.planName or L("Imported plan"),
+        expansion = data.expansion or L("Other"),
+        raid = data.raid or L("Other"),
+        boss = data.boss or L("Unknown"),
         data = CopyPlanData(data),
     }
     entry.data.__rsggImportedSanitized = nil
@@ -633,7 +634,7 @@ function Raidstrats:ShowGroupImportConflictDialog(groupName, existingCount)
 
         local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
         title:SetPoint("TOP", 0, -18)
-        title:SetText("Group Import Conflict")
+        title:SetText(L("Group Import Conflict"))
         title:SetTextColor(0.9, 0.9, 0.9)
 
         local body = f:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
@@ -645,7 +646,7 @@ function Raidstrats:ShowGroupImportConflictDialog(groupName, existingCount)
         body:SetTextColor(0.75, 0.80, 0.88)
         f.bodyText = body
 
-        local overrideBtn = self.CreateButton and self.CreateButton(f, "OVERRIDE GROUP") or CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+        local overrideBtn = self.CreateButton and self.CreateButton(f, L("OVERRIDE GROUP")) or CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
         overrideBtn:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 24, 20)
         overrideBtn:SetPoint("RIGHT", f, "CENTER", -8, 0)
         overrideBtn:SetScript("OnClick", function()
@@ -656,7 +657,7 @@ function Raidstrats:ShowGroupImportConflictDialog(groupName, existingCount)
             end
         end)
 
-        local dupBtn = self.CreateButton and self.CreateButton(f, "IMPORT DUPLICATES") or CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+        local dupBtn = self.CreateButton and self.CreateButton(f, L("IMPORT DUPLICATES")) or CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
         dupBtn:SetPoint("LEFT", f, "CENTER", 8, 0)
         dupBtn:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -24, 20)
         dupBtn:SetScript("OnClick", function()
@@ -674,7 +675,7 @@ function Raidstrats:ShowGroupImportConflictDialog(groupName, existingCount)
     dialog.pendingData = self._pendingGroupedImport
     if dialog.bodyText then
         dialog.bodyText:SetText(
-            ("Group \"%s\" already exists with %d plan(s).\n\nChoose how to import:\n- Override: replace existing plans in this group.\n- Import duplicates: keep current plans and add imported plans.")
+            L("Group \"%s\" already exists with %d plan(s).\n\nChoose how to import:\n- Override: replace existing plans in this group.\n- Import duplicates: keep current plans and add imported plans.")
                 :format(normalizedName, count)
         )
     end
@@ -688,10 +689,10 @@ function Raidstrats:ShowGroupImportConflictDialog(groupName, existingCount)
 end
 
 function Raidstrats:ShowPlanImportConflictDialog(existingEntry, incomingData)
-    local existingName = strtrim(tostring(existingEntry and existingEntry.planName or "Existing plan"))
-    if existingName == "" then existingName = "Existing plan" end
-    local incomingName = strtrim(tostring(incomingData and incomingData.planName or "Imported plan"))
-    if incomingName == "" then incomingName = "Imported plan" end
+    local existingName = strtrim(tostring(existingEntry and existingEntry.planName or L("Existing plan")))
+    if existingName == "" then existingName = L("Existing plan") end
+    local incomingName = strtrim(tostring(incomingData and incomingData.planName or L("Imported plan")))
+    if incomingName == "" then incomingName = L("Imported plan") end
 
     if not self.planImportConflictDialog then
         local f = CreateFrame("Frame", "RaidstratsPlanImportConflictDialog", UIParent, "BackdropTemplate")
@@ -718,7 +719,7 @@ function Raidstrats:ShowPlanImportConflictDialog(existingEntry, incomingData)
 
         local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
         title:SetPoint("TOP", 0, -18)
-        title:SetText("Plan UUID Conflict")
+        title:SetText(L("Plan UUID Conflict"))
         title:SetTextColor(0.9, 0.9, 0.9)
 
         local body = f:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
@@ -730,7 +731,7 @@ function Raidstrats:ShowPlanImportConflictDialog(existingEntry, incomingData)
         body:SetTextColor(0.75, 0.80, 0.88)
         f.bodyText = body
 
-        local overrideBtn = self.CreateButton and self.CreateButton(f, "OVERRIDE") or CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+        local overrideBtn = self.CreateButton and self.CreateButton(f, L("OVERRIDE")) or CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
         overrideBtn:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 24, 20)
         overrideBtn:SetPoint("RIGHT", f, "CENTER", -8, 0)
         overrideBtn:SetScript("OnClick", function()
@@ -741,7 +742,7 @@ function Raidstrats:ShowPlanImportConflictDialog(existingEntry, incomingData)
             end
         end)
 
-        local skipBtn = self.CreateButton and self.CreateButton(f, "SKIP IMPORT") or CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+        local skipBtn = self.CreateButton and self.CreateButton(f, L("SKIP IMPORT")) or CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
         skipBtn:SetPoint("LEFT", f, "CENTER", 8, 0)
         skipBtn:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -24, 20)
         skipBtn:SetScript("OnClick", function()
@@ -759,7 +760,7 @@ function Raidstrats:ShowPlanImportConflictDialog(existingEntry, incomingData)
     dialog.pendingData = self._pendingSingleImport
     if dialog.bodyText then
         dialog.bodyText:SetText(
-            ("A plan with this UUID already exists.\n\nExisting: \"%s\"\nIncoming: \"%s\"\n\nChoose:\n- Override: replace the existing plan.\n- Skip import: keep the current saved plan.")
+            L("A plan with this UUID already exists.\n\nExisting: \"%s\"\nIncoming: \"%s\"\n\nChoose:\n- Override: replace the existing plan.\n- Skip import: keep the current saved plan.")
                 :format(existingName, incomingName)
         )
     end
@@ -779,7 +780,7 @@ function Raidstrats:FinalizePendingSingleImport(mode, pendingData)
 
     if mode ~= "override" then
         self._pendingSingleImportUiOpts = nil
-        print("|cffffff66[Raidstrats.gg]|r Import skipped (existing UUID kept).")
+        print(L("|cffffff66[Raidstrats.gg]|r Import skipped (existing UUID kept)."))
         return true
     end
 
@@ -829,7 +830,7 @@ function Raidstrats:FinalizePendingSingleImport(mode, pendingData)
         end
     end
 
-    print("|cff00aaff[Raidstrats.gg]|r Plan imported.")
+    print(L("|cff00aaff[Raidstrats.gg]|r Plan imported."))
     return true
 end
 
@@ -944,18 +945,18 @@ function Raidstrats:FinalizePendingGroupedImport(mode, pendingData)
         self:ShowPlannerViewer({ reloadOnly = true })
     end
     if importedCount > 0 then
-        print(("|cff00aaff[Raidstrats.gg]|r Imported %d plan(s) to group \"%s\"."):format(
+        print(L("|cff00aaff[Raidstrats.gg]|r Imported %d plan(s) to group \"%s\"."):format(
             importedCount,
             groupName
         ))
     else
-        print(("|cffffff66[Raidstrats.gg]|r No new plans imported for group \"%s\"."):format(groupName))
+        print(L("|cffffff66[Raidstrats.gg]|r No new plans imported for group \"%s\"."):format(groupName))
     end
     if skippedExistingCount > 0 then
-        print(("|cffffff66[Raidstrats.gg]|r Skipped %d plan(s) already saved (same UUID/plan identity)."):format(skippedExistingCount))
+        print(L("|cffffff66[Raidstrats.gg]|r Skipped %d plan(s) already saved (same UUID/plan identity)."):format(skippedExistingCount))
     end
     if failedCount > 0 then
-        print(("|cffff6666[Raidstrats.gg]|r %d plan(s) could not be imported."):format(failedCount))
+        print(L("|cffff6666[Raidstrats.gg]|r %d plan(s) could not be imported."):format(failedCount))
     end
 
     local uiOpts = self._pendingGroupedImportUiOpts
@@ -987,7 +988,7 @@ function Raidstrats:FinalizePendingGroupedImport(mode, pendingData)
             self.importPlanDialog:Hide()
         end
         if importedCount > 0 then
-            print("|cff00aaff[Raidstrats.gg]|r Plan imported.")
+            print(L("|cff00aaff[Raidstrats.gg]|r Plan imported."))
         end
     end
     return importedCount > 0 or skippedExistingCount > 0
@@ -1790,7 +1791,7 @@ function Raidstrats:DecodePlanFromBase64(raw)
 end
 
 function Raidstrats:GetPlayerShareName()
-    local name = UnitName("player") or "Unknown"
+    local name = UnitName("player") or L("Unknown")
     local realm = GetNormalizedRealmName and GetNormalizedRealmName() or GetRealmName()
     if realm and realm ~= "" then return name .. "-" .. realm end
     return name
@@ -1982,9 +1983,9 @@ end
 local function EnsureShareToGuildPopup()
     if StaticPopupDialogs["RAIDSTRATSGG_SHARE_TO_GUILD"] then return end
     StaticPopupDialogs["RAIDSTRATSGG_SHARE_TO_GUILD"] = {
-        text = "You are not in a party or raid. Share \"%s\" to guild chat? Everyone in your guild will see this link.",
-        button1 = _G.YES or "Yes",
-        button2 = _G.CANCEL or "Cancel",
+        text = L("You are not in a party or raid. Share \"%s\" to guild chat? Everyone in your guild will see this link."),
+        button1 = _G.YES or L("Yes"),
+        button2 = _G.CANCEL or L("Cancel"),
         OnAccept = function(popup)
             local data = popup.data
             if data then
@@ -1998,18 +1999,18 @@ local function EnsureShareToGuildPopup()
 end
 
 local function ChannelLabel(chan)
-    if chan == "INSTANCE_CHAT" then return "instance" end
-    if chan == "RAID" then return "raid" end
-    if chan == "PARTY" then return "party" end
-    if chan == "SAY" then return "say" end
-    if chan == "GUILD" then return "guild" end
+    if chan == "INSTANCE_CHAT" then return L("instance") end
+    if chan == "RAID" then return L("raid") end
+    if chan == "PARTY" then return L("party") end
+    if chan == "SAY" then return L("say") end
+    if chan == "GUILD" then return L("guild") end
     return tostring(chan)
 end
 
 -- Strip characters that would break the chat token / hyperlink and cap length.
 local function SanitizeShareName(name)
     name = tostring(name or ""):gsub("[%[%]|%c:]", ""):gsub("^%s+", ""):gsub("%s+$", "")
-    if name == "" then name = "Raid plan" end
+    if name == "" then name = L("Raid plan") end
     if #name > 50 then name = name:sub(1, 50) end
     return name
 end
@@ -2049,7 +2050,7 @@ function Raidstrats:BuildPlanShareToken(data)
     if not payload or payload == "" then
         return nil
     end
-    local planName = SanitizeShareName((type(data.planName) == "string" and data.planName ~= "") and data.planName or "Raid plan")
+    local planName = SanitizeShareName((type(data.planName) == "string" and data.planName ~= "") and data.planName or L("Raid plan"))
     self._sharedPlans = self._sharedPlans or {}
     self._sharedPlans[planName] = { payload = payload, t = time() }
     return ("[Raidstrats: %s]"):format(planName)
@@ -2162,8 +2163,8 @@ function Raidstrats:ArmShareRequestTimeout(sender, planName, kind)
         end
         if self.HideImportProgress then self:HideImportProgress() end
         local short = Ambiguate and Ambiguate(sender, "short") or sender
-        print(("|cffff6666[Raidstrats.gg]|r Timed out %s \"%s\" from %s. Ask them to share again (both on latest addon)."):format(
-            kind or "requesting", tostring(planName), tostring(short)))
+        print(L("|cffff6666[Raidstrats.gg]|r Timed out %s \"%s\" from %s. Ask them to share again (both on latest addon)."):format(
+            kind or L("requesting"), tostring(planName), tostring(short)))
         self:ShareDebug(("Share request timeout: kind=%s plan=\"%s\" from=%s"):format(
             tostring(kind), tostring(planName), tostring(short)))
     end)
@@ -2176,7 +2177,7 @@ function Raidstrats:SharePlanToGroup(data, opts)
     opts = opts or {}
     data = data or self.plannerData
     if not data or type(data.scenes) ~= "table" or #data.scenes == 0 then
-        print("|cffff6666[Raidstrats.gg]|r No plan loaded to share.")
+        print(L("|cffff6666[Raidstrats.gg]|r No plan loaded to share."))
         return false
     end
 
@@ -2193,17 +2194,17 @@ function Raidstrats:SharePlanToGroup(data, opts)
         chan = "SAY"
     end
     if not chan then
-        print("|cffff6666[Raidstrats.gg]|r Couldn't resolve a chat channel for sharing.")
+        print(L("|cffff6666[Raidstrats.gg]|r Couldn't resolve a chat channel for sharing."))
         return false
     end
 
     local payload = self:BuildSharePayload(data)
     if not payload or payload == "" then
-        print("|cffff6666[Raidstrats.gg]|r Couldn't prepare the plan for sharing.")
+        print(L("|cffff6666[Raidstrats.gg]|r Couldn't prepare the plan for sharing."))
         return false
     end
 
-    local planName = SanitizeShareName((type(data.planName) == "string" and data.planName ~= "") and data.planName or "Raid plan")
+    local planName = SanitizeShareName((type(data.planName) == "string" and data.planName ~= "") and data.planName or L("Raid plan"))
 
     -- Cache the payload so we can answer whisper fallback requests from clickers.
     self._sharedPlans = self._sharedPlans or {}
@@ -2223,9 +2224,9 @@ function Raidstrats:SharePlanToGroup(data, opts)
     end
 
     if broadcasted then
-        print(("|cff00aaff[Raidstrats.gg]|r Shared \"%s\" to %s (preloaded to group). Others click the link to import."):format(planName, ChannelLabel(chan)))
+        print(L("|cff00aaff[Raidstrats.gg]|r Shared \"%s\" to %s (preloaded to group). Others click the link to import."):format(planName, ChannelLabel(chan)))
     else
-        print(("|cff00aaff[Raidstrats.gg]|r Shared \"%s\" to %s. Others click the link to import."):format(planName, ChannelLabel(chan)))
+        print(L("|cff00aaff[Raidstrats.gg]|r Shared \"%s\" to %s. Others click the link to import."):format(planName, ChannelLabel(chan)))
     end
     return true
 end
@@ -2247,12 +2248,12 @@ function Raidstrats:RequestSharedPlan(sender, planName)
     local groupEntry = self._sharedPlanGroups and self._sharedPlanGroups[planName]
     if groupEntry and groupEntry.payload and isSelf then
         self:OpenPlannerAfterShareImport()
-        if self.ShowImportProgress then self:ShowImportProgress(true, 0, nil, "Importing shared group...") end
+        if self.ShowImportProgress then self:ShowImportProgress(true, 0, nil, L("Importing shared group...")) end
         if self.ImportSharedPlanGroupPayload then
             self:ImportSharedPlanGroupPayload(groupEntry.payload, sender)
         else
             if self.HideImportProgress then self:HideImportProgress() end
-            print("|cffff6666[Raidstrats.gg]|r Couldn't import the cached plan group.")
+            print(L("|cffff6666[Raidstrats.gg]|r Couldn't import the cached plan group."))
         end
         return
     end
@@ -2265,7 +2266,7 @@ function Raidstrats:RequestSharedPlan(sender, planName)
         elseif ok == "pending" then
             -- Waiting on user conflict choice (override/skip).
         else
-            print("|cffff6666[Raidstrats.gg]|r Couldn't import the cached plan.")
+            print(L("|cffff6666[Raidstrats.gg]|r Couldn't import the cached plan."))
         end
         return
     end
@@ -2281,7 +2282,7 @@ function Raidstrats:RequestSharedPlan(sender, planName)
             self:ShareDebug(("Share click cache HIT (group): plan=\"%s\" from=%s"):format(planName, tostring(sender)))
             self:CancelShareRequestTimeout()
             self:OpenPlannerAfterShareImport()
-            if self.ShowImportProgress then self:ShowImportProgress(true, 0, nil, "Importing shared group...") end
+            if self.ShowImportProgress then self:ShowImportProgress(true, 0, nil, L("Importing shared group...")) end
             self:ImportSharedPlanGroupPayload(receivedGroup.payload, receivedGroup.sender or sender)
             return
         end
@@ -2291,16 +2292,16 @@ function Raidstrats:RequestSharedPlan(sender, planName)
         if received and received.payload then
             self:ShareDebug(("Share click cache HIT: plan=\"%s\" from=%s"):format(planName, tostring(sender)))
             self:CancelShareRequestTimeout()
-            if self.ShowImportProgress then self:ShowImportProgress(true, 0, nil, "Importing shared plan...") end
+            if self.ShowImportProgress then self:ShowImportProgress(true, 0, nil, L("Importing shared plan...")) end
             local ok = self:ImportPlanFromPasteString(PREFIX_PLANNER .. received.payload)
             if self.HideImportProgress then self:HideImportProgress() end
             if ok == true then
                 self:OpenPlannerAfterShareImport()
-                print("|cff00aaff[Raidstrats.gg]|r Plan imported!")
+                print(L("|cff00aaff[Raidstrats.gg]|r Plan imported!"))
             elseif ok == "pending" then
                 -- Waiting on user conflict choice (override/skip).
             else
-                print("|cffff6666[Raidstrats.gg]|r Couldn't import the cached plan.")
+                print(L("|cffff6666[Raidstrats.gg]|r Couldn't import the cached plan."))
             end
             return
         end
@@ -2312,17 +2313,17 @@ function Raidstrats:RequestSharedPlan(sender, planName)
         self._sharedPlanGroupsIncoming = self._sharedPlanGroupsIncoming or {}
         self._sharedPlanGroupsIncoming[planName] = { id = planName, chunks = {}, total = nil, t = GetTime(), sender = sender }
         self:OpenPlannerAfterShareImport()
-        if self.ShowImportProgress then self:ShowImportProgress(true, 0, nil, "Requesting group...") end
-        self:ArmShareRequestTimeout(sender, planName, "requesting group")
+        if self.ShowImportProgress then self:ShowImportProgress(true, 0, nil, L("Requesting group...")) end
+        self:ArmShareRequestTimeout(sender, planName, L("requesting group"))
         self:SendCommMessage(COMM_PLAN_PREFIX, "GREQ" .. string.char(31) .. planName, "WHISPER", whisperTo, SHARE_COMM_PRIO)
-        print(("|cff00aaff[Raidstrats.gg]|r Requesting \"%s\" from %s..."):format(planName, Ambiguate and Ambiguate(sender, "short") or sender))
+        print(L("|cff00aaff[Raidstrats.gg]|r Requesting \"%s\" from %s..."):format(planName, Ambiguate and Ambiguate(sender, "short") or sender))
         return
     end
     self._incomingPlan = { owner = sender, id = planName, chunks = {}, total = nil, t = GetTime() }
     self:OpenPlannerAfterShareImport()
-    if self.ShowImportProgress then self:ShowImportProgress(true, 0, nil, "Requesting plan...") end
-    self:ArmShareRequestTimeout(sender, planName, "requesting plan")
-    print(("|cff00aaff[Raidstrats.gg]|r Requesting \"%s\" from %s..."):format(planName, Ambiguate and Ambiguate(sender, "short") or sender))
+    if self.ShowImportProgress then self:ShowImportProgress(true, 0, nil, L("Requesting plan...")) end
+    self:ArmShareRequestTimeout(sender, planName, L("requesting plan"))
+    print(L("|cff00aaff[Raidstrats.gg]|r Requesting \"%s\" from %s..."):format(planName, Ambiguate and Ambiguate(sender, "short") or sender))
     self:SendCommMessage(COMM_PLAN_PREFIX, "REQ:" .. planName, "WHISPER", whisperTo, SHARE_COMM_PRIO)
 end
 
@@ -2506,7 +2507,7 @@ local function CreateLoaderButton(p, txt)
             self.dotCount = (self.dotCount % 3) + 1
             
             local dots = string.rep(".", self.dotCount)
-            self.Text:SetText(string.format("SCANNING %d/%d%s", self.scanProgress, self.scanTotal, dots))
+            self.Text:SetText(L("SCANNING %d/%d%s"):format(self.scanProgress, self.scanTotal, dots))
         end
     end)
     
@@ -2526,7 +2527,7 @@ local function CreateLoaderButton(p, txt)
             self:SetValue(self.scanProgress)
             
             local dots = string.rep(".", self.dotCount)
-            self.Text:SetText(string.format("SCANNING %d/%d%s", self.scanProgress, self.scanTotal, dots))
+            self.Text:SetText(L("SCANNING %d/%d%s"):format(self.scanProgress, self.scanTotal, dots))
             
             self:SetBackdropColor(unpack(C_BG))
             self:SetStatusBarColor(unpack(C_ACCENT))
@@ -2726,7 +2727,7 @@ function Raidstrats:ShowMultiImportConfirmDialog(raw, opts, count)
 
         local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
         title:SetPoint("TOP", 0, -18)
-        title:SetText("Import Multiple Plans")
+        title:SetText(L("Import Multiple Plans"))
         title:SetTextColor(0.9, 0.9, 0.9)
 
         local body = f:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
@@ -2738,7 +2739,7 @@ function Raidstrats:ShowMultiImportConfirmDialog(raw, opts, count)
         body:SetTextColor(0.75, 0.80, 0.88)
         f.bodyText = body
 
-        local importBtn = self.CreateButton and self.CreateButton(f, "IMPORT ALL") or CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+        local importBtn = self.CreateButton and self.CreateButton(f, L("IMPORT ALL")) or CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
         importBtn:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 24, 20)
         importBtn:SetPoint("RIGHT", f, "CENTER", -8, 0)
         importBtn:SetScript("OnClick", function()
@@ -2756,7 +2757,7 @@ function Raidstrats:ShowMultiImportConfirmDialog(raw, opts, count)
             Raidstrats:TryImportPlanFromText(pending.raw, copiedOpts)
         end)
 
-        local cancelBtn = self.CreateButton and self.CreateButton(f, "CANCEL") or CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+        local cancelBtn = self.CreateButton and self.CreateButton(f, L("CANCEL")) or CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
         cancelBtn:SetPoint("LEFT", f, "CENTER", 8, 0)
         cancelBtn:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -24, 20)
         cancelBtn:SetScript("OnClick", function()
@@ -2773,7 +2774,7 @@ function Raidstrats:ShowMultiImportConfirmDialog(raw, opts, count)
     dialog.pendingData = self._pendingMultiImport
     if dialog.bodyText then
         dialog.bodyText:SetText(
-            ("Found %d plan export strings in this paste.\n\nImport all of them now?"):format(total)
+            L("Found %d plan export strings in this paste.\n\nImport all of them now?"):format(total)
         )
     end
     if self.importPlanDialog and self.importPlanDialog:IsShown() then
@@ -2819,7 +2820,7 @@ function Raidstrats:ShowExistingImportConflictDialog(raw, opts, existingCount, t
 
         local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
         title:SetPoint("TOP", 0, -18)
-        title:SetText("Import UUID Conflicts")
+        title:SetText(L("Import UUID Conflicts"))
         title:SetTextColor(0.9, 0.9, 0.9)
 
         local body = f:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
@@ -2831,7 +2832,7 @@ function Raidstrats:ShowExistingImportConflictDialog(raw, opts, existingCount, t
         body:SetTextColor(0.75, 0.80, 0.88)
         f.bodyText = body
 
-        local overrideBtn = self.CreateButton and self.CreateButton(f, "OVERRIDE CONFLICTS") or CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+        local overrideBtn = self.CreateButton and self.CreateButton(f, L("OVERRIDE CONFLICTS")) or CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
         overrideBtn:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 24, 20)
         overrideBtn:SetPoint("RIGHT", f, "CENTER", -8, 0)
         overrideBtn:SetScript("OnClick", function()
@@ -2848,7 +2849,7 @@ function Raidstrats:ShowExistingImportConflictDialog(raw, opts, existingCount, t
             Raidstrats:TryImportPlanFromText(pending.raw, copiedOpts)
         end)
 
-        local skipBtn = self.CreateButton and self.CreateButton(f, "SKIP CONFLICTS") or CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+        local skipBtn = self.CreateButton and self.CreateButton(f, L("SKIP CONFLICTS")) or CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
         skipBtn:SetPoint("LEFT", f, "CENTER", 8, 0)
         skipBtn:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -24, 20)
         skipBtn:SetScript("OnClick", function()
@@ -2872,7 +2873,7 @@ function Raidstrats:ShowExistingImportConflictDialog(raw, opts, existingCount, t
     dialog.pendingData = self._pendingExistingImport
     if dialog.bodyText then
         dialog.bodyText:SetText(
-            ("%d out of %d plan(s) already exist (same UUID/plan identity).\n\nHow should conflicts be handled?\n- Override conflicts: replace existing plans with incoming versions.\n- Skip conflicts: keep existing plans and only import missing ones.")
+            L("%d out of %d plan(s) already exist (same UUID/plan identity).\n\nHow should conflicts be handled?\n- Override conflicts: replace existing plans with incoming versions.\n- Skip conflicts: keep existing plans and only import missing ones.")
                 :format(existing, total)
         )
     end
@@ -2888,13 +2889,13 @@ end
 function Raidstrats:TryImportPlanFromText(raw, opts)
     opts = opts or {}
     if not raw or raw:gsub("%s+", "") == "" then
-        print("|cffff6666[Raidstrats.gg]|r Paste a plan export string (starts with !raidstrats-addon-).")
+        print(L("|cffff6666[Raidstrats.gg]|r Paste a plan export string (starts with !raidstrats-addon-)."))
         return false
     end
 
     local importStrings = self.ExtractAddonImportStrings and self:ExtractAddonImportStrings(raw) or { raw }
     if type(importStrings) ~= "table" or #importStrings == 0 then
-        print("|cffff6666[Raidstrats.gg]|r Could not find a valid import string in your paste.")
+        print(L("|cffff6666[Raidstrats.gg]|r Could not find a valid import string in your paste."))
         return false
     end
 
@@ -3020,7 +3021,7 @@ function Raidstrats:TryImportPlanFromText(raw, opts)
     end
 
     if not importResult then
-        print("|cffff6666[Raidstrats.gg]|r Could not import plan. Check the string is complete and starts with !raidstrats-addon-.")
+        print(L("|cffff6666[Raidstrats.gg]|r Could not import plan. Check the string is complete and starts with !raidstrats-addon-."))
         return false
     end
     if importResult == "pending" then
@@ -3037,7 +3038,7 @@ function Raidstrats:TryImportPlanFromText(raw, opts)
             self._pendingSingleImportUiOpts = pendingOpts
         end
         if importedCount > 0 and #importStrings > 1 then
-            print(("|cff00aaff[Raidstrats.gg]|r Imported %d/%d plan(s). Resolve the conflict popup to continue."):format(importedCount, #importStrings))
+            print(L("|cff00aaff[Raidstrats.gg]|r Imported %d/%d plan(s). Resolve the conflict popup to continue."):format(importedCount, #importStrings))
         end
         return true
     end
@@ -3078,18 +3079,18 @@ function Raidstrats:TryImportPlanFromText(raw, opts)
         end
 
         if #importStrings > 1 then
-            print(("|cff00aaff[Raidstrats.gg]|r Imported %d/%d plan(s)."):format(importedCount, #importStrings))
+            print(L("|cff00aaff[Raidstrats.gg]|r Imported %d/%d plan(s)."):format(importedCount, #importStrings))
             if skippedExistingCount > 0 then
-                print(("|cffffff66[Raidstrats.gg]|r Skipped %d plan(s) already saved (same UUID/plan identity)."):format(skippedExistingCount))
+                print(L("|cffffff66[Raidstrats.gg]|r Skipped %d plan(s) already saved (same UUID/plan identity)."):format(skippedExistingCount))
             end
             if skippedDuplicatePasteCount > 0 then
-                print(("|cffffff66[Raidstrats.gg]|r Skipped %d duplicate plan(s) inside the same paste."):format(skippedDuplicatePasteCount))
+                print(L("|cffffff66[Raidstrats.gg]|r Skipped %d duplicate plan(s) inside the same paste."):format(skippedDuplicatePasteCount))
             end
             if failedCount > 0 then
-                print(("|cffffff66[Raidstrats.gg]|r %d plan(s) could not be imported."):format(failedCount))
+                print(L("|cffffff66[Raidstrats.gg]|r %d plan(s) could not be imported."):format(failedCount))
             end
         else
-            print("|cff00aaff[Raidstrats.gg]|r Plan imported.")
+            print(L("|cff00aaff[Raidstrats.gg]|r Plan imported."))
         end
     end
 
@@ -3315,19 +3316,19 @@ function Raidstrats:ShowReceiverPopup(sender, url)
         f.t = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
         f.t:SetPoint("TOP", 0, -18)
         f.t:SetTextColor(0.9, 0.9, 0.9)
-        local bc, b = CreateInput(f, "Web Link", false)
+        local bc, b = CreateInput(f, L("Web Link"), false)
         bc:SetPoint("TOPLEFT", f, "TOPLEFT", 20, -52)
         bc:SetPoint("TOPRIGHT", f, "TOPRIGHT", -20, -52)
         bc:SetHeight(44)
         b:SetScript("OnEscapePressed", function() f:Hide() end)
         f.eb = b
-        local btn = CreateButton(f, "CLOSE")
+        local btn = CreateButton(f, L("CLOSE"))
         btn:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 20, 16)
         btn:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -20, 16)
         btn:SetScript("OnClick", function() f:Hide() end)
         self.pf = f
     end
-    self.pf.t:SetText(("|cff00aaff%s|r sent a plan:"):format(sender))
+    self.pf.t:SetText(L("|cff00aaff%s|r sent a plan:"):format(sender))
     self.pf.eb:SetText(url)
     self.pf.eb:HighlightText()
     self:PrepareModal(self.pf, self.frame)
@@ -3338,16 +3339,16 @@ function Raidstrats:PrintRsHelp()
     local function line(cmd, desc)
         print("|cff00aaff[Raidstrats.gg]|r |cff78a0ff" .. cmd .. "|r " .. desc)
     end
-    print("|cff00aaff[Raidstrats.gg]|r Commands:")
-    line("/rs", "- Open the raid planner")
-    line("/rs plan", "- Open the raid planner")
-    line("/rs import", "- Import a plan string or share link")
-    line("/rs roster", "- Open the roster export window")
-    line("/rs test [id] [phase]", "- Test NSRT plan cues locally (optional encounter id and phase)")
-    line("/rs test stop", "- Stop an active local NSRT test run")
-    line("/rsggphase <phase> [id]", "- Force a local phase callback simulation")
-    line("/rs help", "- Show this list")
-    print("|cff00aaff[Raidstrats.gg]|r Aliases: /rsplan, /rsimport, /raidstrats, /rsgg, /rsggtest")
+    print(L("|cff00aaff[Raidstrats.gg]|r Commands:"))
+    line("/rs", L("- Open the raid planner"))
+    line("/rs plan", L("- Open the raid planner"))
+    line("/rs import", L("- Import a plan string or share link"))
+    line("/rs roster", L("- Open the roster export window"))
+    line("/rs test [id] [phase]", L("- Test NSRT plan cues locally (optional encounter id and phase)"))
+    line("/rs test stop", L("- Stop an active local NSRT test run"))
+    line("/rsggphase <phase> [id]", L("- Force a local phase callback simulation"))
+    line("/rs help", L("- Show this list"))
+    print(L("|cff00aaff[Raidstrats.gg]|r Aliases: /rsplan, /rsimport, /raidstrats, /rsgg, /rsggtest"))
 end
 
 function Raidstrats:HandleRsCommand(msg)
@@ -3392,7 +3393,7 @@ function Raidstrats:HandleRsCommand(msg)
                 if self.StopRsggTest then
                     self:StopRsggTest()
                 else
-                    print("|cffff6666[Raidstrats.gg]|r NSRT test stop is not available.")
+                    print(L("|cffff6666[Raidstrats.gg]|r NSRT test stop is not available."))
                 end
                 return
             end
@@ -3406,7 +3407,7 @@ function Raidstrats:HandleRsCommand(msg)
             end
             self:RunRsggTest(encID, { phase = phase })
         else
-            print("|cffff6666[Raidstrats.gg]|r NSRT integration is not available.")
+            print(L("|cffff6666[Raidstrats.gg]|r NSRT integration is not available."))
         end
         return
     end
@@ -3415,12 +3416,12 @@ function Raidstrats:HandleRsCommand(msg)
         if self.HandleRsggDebugCommand then
             self:HandleRsggDebugCommand(rest)
         else
-            print("|cffff6666[Raidstrats.gg]|r Debug commands are not available.")
+            print(L("|cffff6666[Raidstrats.gg]|r Debug commands are not available."))
         end
         return
     end
 
-    print("|cffff6666[Raidstrats.gg]|r Unknown /rs command. Type |cff78a0ff/rs help|r.")
+    print(L("|cffff6666[Raidstrats.gg]|r Unknown /rs command. Type |cff78a0ff/rs help|r."))
 end
 
 function Raidstrats:OnInitialize()
@@ -3551,16 +3552,16 @@ function Raidstrats:OnCommReceived(p, m, d, s)
         if not payload or payload == "" then return end
         self:CancelShareRequestTimeout()
         self._incomingPlan = nil
-        if self.ShowImportProgress then self:ShowImportProgress(true, 0, nil, "Importing shared plan...") end
+        if self.ShowImportProgress then self:ShowImportProgress(true, 0, nil, L("Importing shared plan...")) end
         local ok = self:ImportPlanFromPasteString(PREFIX_PLANNER .. payload)
         if self.HideImportProgress then self:HideImportProgress() end
         if ok == true then
             self:OpenPlannerAfterShareImport()
-            print(("|cff00aaff[Raidstrats.gg]|r Imported plan from %s!"):format(s or "Someone"))
+            print(L("|cff00aaff[Raidstrats.gg]|r Imported plan from %s!"):format(s or L("Someone")))
         elseif ok == "pending" then
             -- Waiting on user conflict choice (override/skip).
         else
-            print("|cffff6666[Raidstrats.gg]|r Received a shared plan but couldn't import it.")
+            print(L("|cffff6666[Raidstrats.gg]|r Received a shared plan but couldn't import it."))
         end
         return
     end
@@ -3572,10 +3573,10 @@ function Raidstrats:OnCommReceived(p, m, d, s)
         if not chan then return end
         self._incomingPlan = { owner = owner, id = id, chunks = {}, total = nil, t = GetTime() }
         self:SendCommMessage(COMM_PLAN_PREFIX, ("REQG:%s:%s"):format(id, owner), chan)
-        self.plannerData = { planName = "No plan", scenes = { { name = "Empty", items = {} } } }
+        self.plannerData = { planName = L("No plan"), scenes = { { name = L("Empty"), items = {} } } }
         self:OpenPlannerAfterShareImport()
-        if self.ShowImportProgress then self:ShowImportProgress(true, 0, nil, "Requesting plan...") end
-        print("|cff00aaff[Raidstrats.gg]|r " .. s .. " shared a plan — requesting...")
+        if self.ShowImportProgress then self:ShowImportProgress(true, 0, nil, L("Requesting plan...")) end
+        print(L("|cff00aaff[Raidstrats.gg]|r %s shared a plan — requesting..."):format(s))
         return
     end
 
@@ -3615,11 +3616,11 @@ function Raidstrats:OnCommReceived(p, m, d, s)
         local ok = self:ImportPlanFromPasteString(PREFIX_PLANNER .. b64)
         if ok == true then
             self:OpenPlannerAfterShareImport()
-            print("|cff00aaff[Raidstrats.gg]|r Plan imported!")
+            print(L("|cff00aaff[Raidstrats.gg]|r Plan imported!"))
         elseif ok == "pending" then
             -- Waiting on user conflict choice (override/skip).
         else
-            print("|cffff6666[Raidstrats.gg]|r Received a shared plan but couldn't import it.")
+            print(L("|cffff6666[Raidstrats.gg]|r Received a shared plan but couldn't import it."))
         end
         return
     end

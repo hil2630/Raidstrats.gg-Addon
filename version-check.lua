@@ -8,6 +8,8 @@ local Raidstrats =
 
 if not Raidstrats then return end
 
+local function L(key) return RSGG_L(key) end
+
 local VERSION_BROADCAST_COOLDOWN = 45
 local VERSION_COMM_TAG = "RSGGVER:"
 local FALLBACK_ADDON_VERSION = "0.0.2"
@@ -79,7 +81,7 @@ end
 
 local function PrintOutdatedAddonNotice(remoteVersion, _senderName)
     local ours = Raidstrats:GetAddonVersion()
-    print(("|cffff9900[Raidstrats.gg]|r There's a new version available, your current version is %s and newer version is %s. Please update on Wago or CurseForge."):format(
+    print((L("|cffff9900[Raidstrats.gg]|r There's a new version available, your current version is %s and newer version is %s. Please update on Wago or CurseForge.")):format(
         tostring(ours), tostring(remoteVersion)))
 end
 

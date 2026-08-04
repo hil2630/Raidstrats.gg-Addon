@@ -41,29 +41,6 @@ CheckboxIsChecked = PUI.CheckboxIsChecked
 FOOTER_BTN_H = 28
 FOOTER_BTN_GAP = 8
 FOOTER_HEIGHT = FOOTER_BTN_H * 2 + FOOTER_BTN_GAP
-PLANNER_CREDITS_TEXT = table.concat({
-    "Raidstrats.gg Addon Credits",
-    "",
-    "Every successful pull starts with a plan.",
-    "Every addon starts with people willing to build it.",
-    "",
-    "Raidstrats.gg:",
-    "- Created by Nairyana",
-    "",
-    "Addon Development:",
-    "- Bettiold for creating the original addon framework",
-    "- Nairyana for the madness of putting a raid planner inside WoW",
-    "",
-    "Special Thanks:",
-    "- Our Patreon supporters for keeping the project alive",
-    "- Raid Lead Exchange Discord for feedback, testing, and ideas",
-    "- Reloe, creator of NSRT, for paving the way for raid planning addons",
-    "- Viserio and Penkek from WowUtils for their help and support",
-    "",
-    "And thanks to everyone who tested things,",
-    "broke things, reported things, and helped us fix things."
-}, "\n")
-
 function LayoutSavedPlansFooter(pf)
     local footer = pf and pf.savedPlansFooter
     if not footer then return end

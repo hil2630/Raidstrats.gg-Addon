@@ -14,6 +14,279 @@ local UI = PUI.UI
 local CreatePlannerIconBtn = PUI.CreatePlannerIconBtn
 local CheckboxIsChecked = PUI.CheckboxIsChecked
 local SetColorSwatchTexture = PUI.SetColorSwatchTexture
+local function L(key) return RSGG_L(key) end
+
+local function GetLocaleOptionLabel(code)
+    local Locale = RaidstratsggLocale
+    if Locale and Locale.GetOptionLabel then
+        return Locale:GetOptionLabel(code, L)
+    end
+    return tostring(code or "auto")
+end
+
+local LOCALE_CACHED_FRAMES = {
+    "plannerSettingsDialog",
+    "plannerHelpDialog",
+    "plannerCreditsDialog",
+    "plannerNsrtExportDialog",
+    "planLinkPopup",
+    "discordPopup",
+    "patreonPopup",
+    "createPlanDialog",
+    "createPlanNameDialog",
+    "importPlanDialog",
+    "rosterExportDialog",
+    "groupImportConflictDialog",
+    "planImportConflictDialog",
+    "multiImportConfirmDialog",
+    "existingImportConflictDialog",
+    "_createPlanGroupDialog",
+    "_renamePlanDialog",
+    "_deletePlanGroupDialog",
+    "_planUpdatePopup",
+    "_raidCheckAutoSwitchPopup",
+    "_tourPopup",
+    "_tourHighlight",
+    "_firstTimePrompt",
+}
+
+local STATIC_POPUP_LOCALE_KEYS = {
+    RAIDSTRATSGG_DELETE_PLAN = { text = "Delete plan \"%s\"?" },
+    RAIDSTRATSGG_PLAN_SEARCH = { text = "Search plans (name / raid / boss):" },
+    RAIDSTRATSGG_CREATE_PLAN_GROUP = { text = "Create group:" },
+    RAIDSTRATSGG_DELETE_PLAN_GROUP = {
+        text = "Delete group \"%s\"?\nPlans will be moved to Ungrouped.",
+    },
+    RAIDSTRATSGG_DELETE_PLAN_GROUP_AND_PLANS = {
+        text = "Delete group \"%s\" and all plans in it?",
+    },
+    RAIDSTRATSGG_DELETE_SCENE = { text = "Delete scene %d?" },
+    RAIDSTRATSGG_NSRT_OVERRIDE_BLOCK = {
+        text = "Active NSRT note already has an rsggNote from another plan.\n\nOverride that block with this plan?",
+        button1 = "Yes, override",
+    },
+    RAIDSTRATSGG_PALETTE_TEXT = { text = "Enter label text:" },
+    RAIDSTRATSGG_DELETE_OBJECT = { text = "Delete this object?" },
+    RAIDSTRATSGG_CUSTOM_OBJECT_LABEL = { text = "Custom label:" },
+    RAIDSTRATSGG_CREATE_PLAN_NAME = { text = "Plan name:" },
+    RAIDSTRATSGG_SHARE_TO_GUILD = {
+        text = "You are not in a party or raid. Share \"%s\" to guild chat? Everyone in your guild will see this link.",
+    },
+}
+
+local function RefreshStaticPopupLocales()
+    for name, fields in pairs(STATIC_POPUP_LOCALE_KEYS) do
+        local dlg = StaticPopupDialogs and StaticPopupDialogs[name]
+        if dlg then
+            if fields.text then dlg.text = L(fields.text) end
+            if fields.button1 then dlg.button1 = L(fields.button1) end
+            if fields.button2 then dlg.button2 = L(fields.button2) end
+        end
+    end
+end
+
+local function WipeCachedLocaleFrame(owner, key)
+    local frame = owner and owner[key]
+    if not frame then return end
+    if frame.Hide then frame:Hide() end
+    -- Keep the old named frame orphaned/hidden; next create uses a unique name.
+    if frame.SetParent then
+        pcall(frame.SetParent, frame, nil)
+    end
+    owner[key] = nil
+end
+
+local function SetLocaleBtnText(btn, text)
+    if not btn then return end
+    if btn.SetText then
+        btn:SetText(text)
+    elseif btn.label and btn.label.SetText then
+        btn.label:SetText(text)
+    end
+end
+
+function Diar:RefreshPlannerLocaleLabels()
+    local pf = self.plannerFrame
+    if not pf then return end
+
+    if pf.brandTitle and pf.brandTitle.SetText then
+        pf.brandTitle:SetText(L("Raidstrats.gg - Raidplanner & Assignments"))
+    end
+    if pf.savedPlansTitle and pf.savedPlansTitle.SetText then
+        pf.savedPlansTitle:SetText(L("Plan Library"))
+    end
+
+    SetLocaleBtnText(pf.settingsBtn, L("Settings"))
+    SetLocaleBtnText(pf.nsrtExportBtn, L("NSRT"))
+    SetLocaleBtnText(pf.discordBtn, L("Discord"))
+    SetLocaleBtnText(pf.creditsBtn, L("Credits"))
+    SetLocaleBtnText(pf.planLinkBtn, L("Link"))
+    SetLocaleBtnText(pf.newSceneBtn, L("New Scene"))
+    SetLocaleBtnText(pf.planHelpBtn, L("Help"))
+    SetLocaleBtnText(pf.savedPlansNewBtn, L("New Plan"))
+    SetLocaleBtnText(pf.savedPlansImportBtn, L("Import Plan"))
+    SetLocaleBtnText(pf.savedPlansShareBtn, L("Share to Group"))
+    SetLocaleBtnText(pf.pushUpdateBtn, L("Push Update"))
+    SetLocaleBtnText(pf.stopBtn, L("Stop"))
+    SetLocaleBtnText(pf.resetBtn, L("Reset"))
+
+    if pf.modeToggleBtn then
+        local compact = pf.compactMode and true or false
+        SetLocaleBtnText(pf.modeToggleBtn, compact and L("Expand") or L("Compact"))
+    end
+    if self.UpdatePaletteToggleButton then
+        self:UpdatePaletteToggleButton(pf)
+    end
+    if self.UpdateCanvasLockButton then
+        self:UpdateCanvasLockButton(pf)
+    end
+    if pf.canvasLockedLabel and pf.canvasLockedLabel.SetText then
+        pf.canvasLockedLabel:SetText(L("Locked"))
+    end
+    if self.UpdatePreviewNamesButton then
+        self:UpdatePreviewNamesButton(pf)
+    end
+    if self.UpdatePreviewAssignmentsButton then
+        self:UpdatePreviewAssignmentsButton(pf)
+    end
+    if pf.spellTooltipChk and pf.spellTooltipChk.text and pf.spellTooltipChk.text.SetText then
+        pf.spellTooltipChk.text:SetText(L("Enable spell tooltips"))
+    end
+    if pf.savedRaidFilterBtn then
+        local raidLabel = self.GetSavedPlansRaidFilterLabel and self:GetSavedPlansRaidFilterLabel()
+        if raidLabel and raidLabel ~= "" then
+            SetLocaleBtnText(pf.savedRaidFilterBtn, L("Raid: %s"):format(raidLabel))
+        else
+            SetLocaleBtnText(pf.savedRaidFilterBtn, L("Raid: All"))
+        end
+    end
+
+    if self.EnsurePlannerHelpButton then
+        self:EnsurePlannerHelpButton(pf)
+    end
+    if self.UpdatePlannerControlButtons then
+        self:UpdatePlannerControlButtons()
+    end
+    if self.UpdatePlannerAssignmentButton then
+        self:UpdatePlannerAssignmentButton(pf)
+    end
+    if self.UpdatePushUpdateButton then
+        self:UpdatePushUpdateButton()
+    end
+    if self.RefreshSavedPlansList then
+        self:RefreshSavedPlansList()
+    end
+    if self.RefreshRaidLeadView and self.IsRaidLeadViewActive and self:IsRaidLeadViewActive() then
+        self:RefreshRaidLeadView(pf)
+    end
+    if self.UpdateInfoStrip then
+        self:UpdateInfoStrip(pf)
+    elseif pf.infoStrip and pf.infoStrip.SetText and self.GetPlannerInfoStripText then
+        pf.infoStrip:SetText(self:GetPlannerInfoStripText())
+    end
+end
+
+function Diar:ApplyLocaleChange(opts)
+    opts = opts or {}
+    if RaidstratsggLocale and RaidstratsggLocale.Invalidate then
+        RaidstratsggLocale:Invalidate()
+    end
+
+    if self.PlannerUI then
+        self.PlannerUI.BRAND_TITLE_TEXT = L("Raidstrats.gg - Raidplanner & Assignments")
+    end
+    if _G.BRAND_TITLE_TEXT ~= nil then
+        _G.BRAND_TITLE_TEXT = L("Raidstrats.gg - Raidplanner & Assignments")
+    end
+
+    RefreshStaticPopupLocales()
+
+    if self.EndPlannerTour then
+        self:EndPlannerTour(false)
+    end
+
+    -- Drop cached dialogs so the next open rebuilds copy in the new language.
+    for _, key in ipairs(LOCALE_CACHED_FRAMES) do
+        WipeCachedLocaleFrame(self, key)
+    end
+
+    -- Keep the live planner frame; just refresh its labels (recreating it
+    -- fights WoW's named-frame reuse and leaves stale widgets around).
+    if self.RefreshPlannerLocaleLabels then
+        self:RefreshPlannerLocaleLabels()
+    end
+
+    if opts.reopenSettings ~= false and self.ShowPlannerSettingsDialog then
+        self:ShowPlannerSettingsDialog()
+        if self.plannerSettingsDialog and self.plannerSettingsDialog.SetActiveTab then
+            self.plannerSettingsDialog.SetActiveTab(opts.settingsTab or "misc")
+        end
+    end
+end
+
+local function ShowLocaleDropdown(anchor, getSelected, onSelect)
+    local Locale = RaidstratsggLocale
+    local options = (Locale and Locale.OPTIONS) or {
+        { code = "auto", labelKey = "LANGUAGE_AUTO" },
+        { code = "enUS", labelKey = "LANGUAGE_ENUS" },
+        { code = "daDK", labelKey = "LANGUAGE_DADK" },
+    }
+    local selected = getSelected and getSelected() or "auto"
+    local menu = {}
+    for _, opt in ipairs(options) do
+        menu[#menu + 1] = {
+            text = GetLocaleOptionLabel(opt.code),
+            checked = opt.code == selected,
+            notCheckable = false,
+            keepShownOnClick = false,
+            func = function()
+                if onSelect then onSelect(opt.code) end
+            end,
+        }
+    end
+
+    if not Diar._localeDropDown then
+        Diar._localeDropDown = CreateFrame("Frame", "RaidstratsggLocaleDropDown", UIParent, "UIDropDownMenuTemplate")
+    end
+    local drop = Diar._localeDropDown
+
+    if type(EasyMenu) == "function" then
+        EasyMenu(menu, drop, anchor, 0, 0, "MENU")
+        return
+    end
+    if type(UIDropDownMenu_Initialize) == "function"
+        and type(UIDropDownMenu_CreateInfo) == "function"
+        and type(UIDropDownMenu_AddButton) == "function"
+        and type(ToggleDropDownMenu) == "function" then
+        UIDropDownMenu_Initialize(drop, function(_, level)
+            if level ~= 1 then return end
+            for _, item in ipairs(menu) do
+                local info = UIDropDownMenu_CreateInfo()
+                info.text = item.text
+                info.checked = item.checked
+                info.notCheckable = item.notCheckable
+                info.keepShownOnClick = item.keepShownOnClick
+                info.func = item.func
+                UIDropDownMenu_AddButton(info, level)
+            end
+        end, "MENU")
+        ToggleDropDownMenu(1, nil, drop, anchor, 0, 0)
+        return
+    end
+
+    -- Fallback: cycle if dropdown APIs are unavailable.
+    local idx = 1
+    for i, opt in ipairs(options) do
+        if opt.code == selected then
+            idx = i
+            break
+        end
+    end
+    local nextOpt = options[(idx % #options) + 1]
+    if onSelect and nextOpt then
+        onSelect(nextOpt.code)
+    end
+end
 
 local function SetPrimaryButtonStyle(btn)
     if not btn then return end
@@ -60,6 +333,7 @@ function Diar:GetPlannerSettings()
     if s.raidCheckExpanded == nil then s.raidCheckExpanded = true end
     if s.enableSpellTooltips == nil then s.enableSpellTooltips = false end
     if s.minimapHidden == nil then s.minimapHidden = false end
+    if s.locale == nil or s.locale == "" then s.locale = "auto" end
     if s.showEncounterOverviewTab == nil then s.showEncounterOverviewTab = true end
     if type(s.assignMineFill) ~= "table" then s.assignMineFill = nil end
     if type(s.assignOtherFill) ~= "table" then s.assignOtherFill = nil end
@@ -391,14 +665,23 @@ end
 function Diar:ShowPlannerSettingsDialog()
     local settings = self:GetPlannerSettings()
 
-    if self.plannerSettingsDialog and not self.plannerSettingsDialog.__settingsV14 then
+    local activeLocale = RaidstratsggLocale and RaidstratsggLocale:GetActiveCode() or "enUS"
+    local localePref = RaidstratsggLocale and RaidstratsggLocale:GetPreference() or (settings.locale or "auto")
+    if self.plannerSettingsDialog
+        and (not self.plannerSettingsDialog.__settingsV16
+            or self.plannerSettingsDialog.__localeCode ~= activeLocale
+            or self.plannerSettingsDialog.__localePref ~= localePref) then
         self.plannerSettingsDialog:Hide()
         self.plannerSettingsDialog = nil
     end
 
     if not self.plannerSettingsDialog then
-        local f = CreateFrame("Frame", "RaidstratsPlannerSettingsDialog", UIParent, "BackdropTemplate")
-        f.__settingsV14 = true
+        self._settingsDialogGen = (self._settingsDialogGen or 0) + 1
+        local dialogName = "RaidstratsPlannerSettingsDialog" .. tostring(self._settingsDialogGen)
+        local f = CreateFrame("Frame", dialogName, UIParent, "BackdropTemplate")
+        f.__settingsV16 = true
+        f.__localeCode = activeLocale
+        f.__localePref = localePref
         f:SetSize(600, 668)
         f:SetFrameStrata("FULLSCREEN_DIALOG")
         f:SetFrameLevel(500)
@@ -406,7 +689,7 @@ function Diar:ShowPlannerSettingsDialog()
         f:SetMovable(true)
         f:EnableMouse(true)
         SetBackdrop(f, UI.PANEL, UI.BORDER, 2)
-        tinsert(UISpecialFrames, "RaidstratsPlannerSettingsDialog")
+        tinsert(UISpecialFrames, dialogName)
         f:SetScript("OnMouseDown", function(s, b) if b == "LeftButton" then s:StartMoving() end end)
         f:SetScript("OnMouseUp", function(s) s:StopMovingOrSizing() end)
 
@@ -435,12 +718,12 @@ function Diar:ShowPlannerSettingsDialog()
 
         local title = header:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
         title:SetPoint("TOPLEFT", header, "TOPLEFT", 14, -12)
-        title:SetText("Planner Settings")
+        title:SetText(L("Planner Settings"))
         title:SetTextColor(0.98, 0.98, 0.98)
 
         local subtitle = header:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         subtitle:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -2)
-        subtitle:SetText("Compact, display, raider, raid lead, and misc options")
+        subtitle:SetText(L("Compact, display, raider, raid lead, and misc options"))
         subtitle:SetTextColor(0.82, 0.86, 0.93)
 
         local tabBar = CreateFrame("Frame", nil, body)
@@ -491,11 +774,11 @@ function Diar:ShowPlannerSettingsDialog()
             return btn
         end
 
-        local compactTabBtn = CreateTabButton(nil, "Compact", "compact", 90)
-        local displayTabBtn = CreateTabButton(compactTabBtn, "Display", "display", 90)
-        local raiderTabBtn = CreateTabButton(displayTabBtn, "Raider", "raider", 90)
-        local raidLeadTabBtn = CreateTabButton(raiderTabBtn, "Raid Lead", "raidlead", 96)
-        local miscTabBtn = CreateTabButton(raidLeadTabBtn, "Misc", "misc", 90)
+        local compactTabBtn = CreateTabButton(nil, L("Compact"), "compact", 90)
+        local displayTabBtn = CreateTabButton(compactTabBtn, L("Display"), "display", 90)
+        local raiderTabBtn = CreateTabButton(displayTabBtn, L("Raider"), "raider", 90)
+        local raidLeadTabBtn = CreateTabButton(raiderTabBtn, L("Raid Lead"), "raidlead", 96)
+        local miscTabBtn = CreateTabButton(raidLeadTabBtn, L("Misc"), "misc", 90)
         f.compactTabBtn = compactTabBtn
         f.displayTabBtn = displayTabBtn
         f.raiderTabBtn = raiderTabBtn
@@ -563,7 +846,7 @@ function Diar:ShowPlannerSettingsDialog()
 
             local unit = box:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
             unit:SetPoint("RIGHT", box, "RIGHT", -8, 0)
-            unit:SetText("sec")
+            unit:SetText(L("sec"))
             unit:SetTextColor(0.48, 0.52, 0.58)
 
             f[key] = eb
@@ -675,10 +958,10 @@ function Diar:ShowPlannerSettingsDialog()
         end
 
         local compactY = -18
-        compactY = AddSectionHeader(compactPage, "Compact view", compactY)
+        compactY = AddSectionHeader(compactPage, L("Compact view"), compactY)
         do
             local rowY = compactY
-            local chk = CreateAnimatedCheckbox and CreateAnimatedCheckbox(compactPage, "Show background in compact view")
+            local chk = CreateAnimatedCheckbox and CreateAnimatedCheckbox(compactPage, L("Show background in compact view"))
             if chk then
                 chk:SetPoint("TOPLEFT", compactPage, "TOPLEFT", 16, rowY)
                 if chk.label then
@@ -688,7 +971,7 @@ function Diar:ShowPlannerSettingsDialog()
                 f.compactBgChk = chk
             end
 
-            local previewBgBtn = CreatePlannerIconBtn(compactPage, "Preview", 90, 24)
+            local previewBgBtn = CreatePlannerIconBtn(compactPage, L("Preview"), 90, 24)
             previewBgBtn:SetPoint("TOPRIGHT", compactPage, "TOPRIGHT", -16, rowY + 2)
             previewBgBtn:SetScript("OnClick", function()
                 if Diar._compactBgPreviewActive and Diar._compactZoomPreviewState
@@ -709,7 +992,7 @@ function Diar:ShowPlannerSettingsDialog()
             opacityLabel:SetPoint("TOPLEFT", compactPage, "TOPLEFT", 36, rowY)
             opacityLabel:SetWidth(180)
             opacityLabel:SetJustifyH("LEFT")
-            opacityLabel:SetText("Background opacity")
+            opacityLabel:SetText(L("Background opacity"))
             opacityLabel:SetTextColor(0.72, 0.75, 0.80)
             f.compactBgOpacityLabel = opacityLabel
 
@@ -778,21 +1061,21 @@ function Diar:ShowPlannerSettingsDialog()
             end
             compactY = compactY - 30
         end
-        compactY = AddCheckbox(compactPage, compactY, "compactObjectsOnlyChk", "Objects only (hide compact opacity background)")
-        compactY = AddCheckbox(compactPage, compactY, "compactNsrtClickThroughChk", "Lock NSRT compact (click-through, no move/resize)")
-        compactY = AddCheckbox(compactPage, compactY, "compactSceneArrowsChk", "Show scene arrows in compact view")
-        compactY = AddCheckbox(compactPage, compactY, "compactZoomAssignChk", "Zoom to my assignment in compact mode")
+        compactY = AddCheckbox(compactPage, compactY, "compactObjectsOnlyChk", L("Objects only (hide compact opacity background)"))
+        compactY = AddCheckbox(compactPage, compactY, "compactNsrtClickThroughChk", L("Lock NSRT compact (click-through, no move/resize)"))
+        compactY = AddCheckbox(compactPage, compactY, "compactSceneArrowsChk", L("Show scene arrows in compact view"))
+        compactY = AddCheckbox(compactPage, compactY, "compactZoomAssignChk", L("Zoom to my assignment in compact mode"))
         do
             local rowY = compactY
             local zoomLabel = compactPage:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
             zoomLabel:SetPoint("TOPLEFT", compactPage, "TOPLEFT", 36, rowY)
             zoomLabel:SetWidth(180)
             zoomLabel:SetJustifyH("LEFT")
-            zoomLabel:SetText("Zoom level")
+            zoomLabel:SetText(L("Zoom level"))
             zoomLabel:SetTextColor(0.72, 0.75, 0.80)
             f.compactAssignZoomLabel = zoomLabel
 
-            local previewZoomBtn = CreatePlannerIconBtn(compactPage, "Preview zoom", 118, 24)
+            local previewZoomBtn = CreatePlannerIconBtn(compactPage, L("Preview zoom"), 118, 24)
             previewZoomBtn:SetPoint("TOPRIGHT", compactPage, "TOPRIGHT", -16, rowY + 2)
             previewZoomBtn:SetScript("OnClick", function()
                 Diar._compactBgPreviewActive = nil
@@ -838,10 +1121,10 @@ function Diar:ShowPlannerSettingsDialog()
             f.RefreshAssignZoomValue = RefreshAssignZoomValue
             compactY = compactY - 30
         end
-        compactY = AddCheckbox(compactPage, compactY, "compactLibraryChk", "Use compact plan library")
+        compactY = AddCheckbox(compactPage, compactY, "compactLibraryChk", L("Use compact plan library"))
 
         compactY = compactY - 8
-        compactY = AddSectionHeader(compactPage, "Compact position", compactY)
+        compactY = AddSectionHeader(compactPage, L("Compact position"), compactY)
 
         local compactStatus = compactPage:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         compactStatus:SetPoint("TOPLEFT", compactPage, "TOPLEFT", 16, compactY)
@@ -850,7 +1133,7 @@ function Diar:ShowPlannerSettingsDialog()
         compactStatus:SetTextColor(0.67, 0.70, 0.75)
         f.compactPosStatus = compactStatus
 
-        local previewBtn = CreatePlannerIconBtn(compactPage, "Open Edit Mode", 148, 30)
+        local previewBtn = CreatePlannerIconBtn(compactPage, L("Open Edit Mode"), 148, 30)
         previewBtn:SetPoint("TOPRIGHT", compactPage, "TOPRIGHT", -16, compactY - 2)
         SetPrimaryButtonStyle(previewBtn)
         previewBtn:SetScript("OnClick", function()
@@ -872,49 +1155,88 @@ function Diar:ShowPlannerSettingsDialog()
         f.compactPreviewBtn = previewBtn
 
         local displayY = -18
-        displayY = AddSectionHeader(displayPage, "Plan display", displayY)
-        displayY = AddCheckbox(displayPage, displayY, "highlightChk", "Highlight my name on the plan")
-        displayY = AddCheckbox(displayPage, displayY, "classSpecCircleChk", "Render class/spec icons as circles")
+        displayY = AddSectionHeader(displayPage, L("Plan display"), displayY)
+        displayY = AddCheckbox(displayPage, displayY, "highlightChk", L("Highlight my name on the plan"))
+        displayY = AddCheckbox(displayPage, displayY, "classSpecCircleChk", L("Render class/spec icons as circles"))
 
         displayY = displayY - 8
-        displayY = AddSectionHeader(displayPage, "Assignment colors", displayY)
-        displayY = AddAssignmentColorRow(displayPage, displayY, "My assignment spot", "assignMineColorBtn", DEFAULT_ASSIGN_MINE_FILL)
-        displayY = AddAssignmentColorRow(displayPage, displayY, "Other assignment spots", "assignOtherColorBtn", DEFAULT_ASSIGN_OTHER_FILL)
+        displayY = AddSectionHeader(displayPage, L("Assignment colors"), displayY)
+        displayY = AddAssignmentColorRow(displayPage, displayY, L("My assignment spot"), "assignMineColorBtn", DEFAULT_ASSIGN_MINE_FILL)
+        displayY = AddAssignmentColorRow(displayPage, displayY, L("Other assignment spots"), "assignOtherColorBtn", DEFAULT_ASSIGN_OTHER_FILL)
 
         local raiderY = -18
-        raiderY = AddSectionHeader(raiderPage, "Readycheck", raiderY)
-        raiderY = AddCheckbox(raiderPage, raiderY, "readyCheckAssignChk", "Show assignments on readycheck")
-        raiderY = AddCheckbox(raiderPage, raiderY, "readyCheckAutoNotReadyChk", "Auto Not Ready if missing note plans")
-        raiderY = AddCheckbox(raiderPage, raiderY, "readyCheckRaidOnlyChk", "Show only readycheck in raid group")
-        raiderY = AddSecondsRow(raiderPage, raiderY, "Readycheck grace period (after finished)", "readyCheckGraceEdit")
-        raiderY = AddNumberRow(raiderPage, raiderY, "Ready check phase filter (0 = all phases)", "readyCheckPhaseEdit")
+        raiderY = AddSectionHeader(raiderPage, L("Readycheck"), raiderY)
+        raiderY = AddCheckbox(raiderPage, raiderY, "readyCheckAssignChk", L("Show assignments on readycheck"))
+        raiderY = AddCheckbox(raiderPage, raiderY, "readyCheckAutoNotReadyChk", L("Auto Not Ready if missing note plans"))
+        raiderY = AddCheckbox(raiderPage, raiderY, "readyCheckRaidOnlyChk", L("Show only readycheck in raid group"))
+        raiderY = AddSecondsRow(raiderPage, raiderY, L("Readycheck grace period (after finished)"), "readyCheckGraceEdit")
+        raiderY = AddNumberRow(raiderPage, raiderY, L("Ready check phase filter (0 = all phases)"), "readyCheckPhaseEdit")
 
         raiderY = raiderY - 8
-        raiderY = AddSectionHeader(raiderPage, "Notifications", raiderY)
-        raiderY = AddCheckbox(raiderPage, raiderY, "raidCheckNotifChk", "Hide raidcheck notifications from raid leader")
+        raiderY = AddSectionHeader(raiderPage, L("Notifications"), raiderY)
+        raiderY = AddCheckbox(raiderPage, raiderY, "raidCheckNotifChk", L("Hide raidcheck notifications from raid leader"))
 
         local raidLeadY = -18
-        raidLeadY = AddSectionHeader(raidLeadPage, "Readycheck raidcheck", raidLeadY)
-        raidLeadY = AddCheckbox(raidLeadPage, raidLeadY, "readyCheckShowRaidCheckChk", "Show raidcheck on readycheck (raid leaders)")
-        raidLeadY = AddCheckbox(raidLeadPage, raidLeadY, "readyCheckCheckPlanVersionsChk", "Check plan versions on readycheck (raid leaders)")
+        raidLeadY = AddSectionHeader(raidLeadPage, L("Readycheck raidcheck"), raidLeadY)
+        raidLeadY = AddCheckbox(raidLeadPage, raidLeadY, "readyCheckShowRaidCheckChk", L("Show raidcheck on readycheck (raid leaders)"))
+        raidLeadY = AddCheckbox(raidLeadPage, raidLeadY, "readyCheckCheckPlanVersionsChk", L("Check plan versions on readycheck (raid leaders)"))
 
         raidLeadY = raidLeadY - 8
-        raidLeadY = AddSectionHeader(raidLeadPage, "Raidcheck panel", raidLeadY)
-        raidLeadY = AddCheckbox(raidLeadPage, raidLeadY, "raidCheckExpandedChk", "Raidcheck expanded (show right-side box)")
+        raidLeadY = AddSectionHeader(raidLeadPage, L("Raidcheck panel"), raidLeadY)
+        raidLeadY = AddCheckbox(raidLeadPage, raidLeadY, "raidCheckExpandedChk", L("Raidcheck expanded (show right-side box)"))
 
         local miscY = -18
-        miscY = AddSectionHeader(miscPage, "NSRT timing", miscY)
-        miscY = AddSecondsRow(miscPage, miscY, "Show plan before cue", "beforeEdit")
-        miscY = AddSecondsRow(miscPage, miscY, "Keep plan visible after cue", "afterEdit")
-        miscY = AddCheckbox(miscPage, miscY, "nsrtCompactAlwaysOpenChk", "Keep NSRT compact view open for the whole encounter")
-        miscY = AddCheckbox(miscPage, miscY, "hideRaidPlansCombatChk", "Hide raidplans during combat (no NSRT compact in combat)")
+        miscY = AddSectionHeader(miscPage, L("Language"), miscY)
+        do
+            local rowY = miscY
+            local langLabel = miscPage:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            langLabel:SetPoint("TOPLEFT", miscPage, "TOPLEFT", 16, rowY)
+            langLabel:SetWidth(200)
+            langLabel:SetJustifyH("LEFT")
+            langLabel:SetText(L("Language"))
+            langLabel:SetTextColor(0.82, 0.84, 0.88)
+
+            local langBtn = CreatePlannerIconBtn(miscPage, GetLocaleOptionLabel("auto"), 190, 24)
+            langBtn:SetPoint("TOPRIGHT", miscPage, "TOPRIGHT", -16, rowY + 2)
+            f.localePref = "auto"
+            f.localeBtn = langBtn
+            local function RefreshLocaleButton()
+                langBtn:SetText(GetLocaleOptionLabel(f.localePref or "auto"))
+            end
+            f.RefreshLocaleButton = RefreshLocaleButton
+            langBtn:SetScript("OnClick", function(selfBtn)
+                ShowLocaleDropdown(selfBtn, function()
+                    return f.localePref or "auto"
+                end, function(code)
+                    f.localePref = code or "auto"
+                    RefreshLocaleButton()
+                end)
+            end)
+            langBtn:SetScript("OnEnter", function(s)
+                GameTooltip:SetOwner(s, "ANCHOR_TOP")
+                GameTooltip:SetText(L("Language"), 1, 1, 1)
+                GameTooltip:AddLine(L("Language tip"), 0.85, 0.88, 0.92, true)
+                GameTooltip:Show()
+            end)
+            langBtn:SetScript("OnLeave", function()
+                GameTooltip:Hide()
+            end)
+            miscY = miscY - 34
+        end
+
+        miscY = miscY - 4
+        miscY = AddSectionHeader(miscPage, L("NSRT timing"), miscY)
+        miscY = AddSecondsRow(miscPage, miscY, L("Show plan before cue"), "beforeEdit")
+        miscY = AddSecondsRow(miscPage, miscY, L("Keep plan visible after cue"), "afterEdit")
+        miscY = AddCheckbox(miscPage, miscY, "nsrtCompactAlwaysOpenChk", L("Keep NSRT compact view open for the whole encounter"))
+        miscY = AddCheckbox(miscPage, miscY, "hideRaidPlansCombatChk", L("Hide raidplans during combat (no NSRT compact in combat)"))
 
         miscY = miscY - 8
-        miscY = AddSectionHeader(miscPage, "Notifications and tools", miscY)
-        miscY = AddCheckbox(miscPage, miscY, "hideMinimapIconChk", "Hide minimap icon")
-        miscY = AddCheckbox(miscPage, miscY, "nsrtPopupChk", "Hide plan popups (even if assigned)")
-        miscY = AddCheckbox(miscPage, miscY, "encounterOverviewTabChk", "Show Encounter Journal boss overview tab (WIP)")
-        miscY = AddCheckbox(miscPage, miscY, "plannerDebugChk", "Show planner debug panel")
+        miscY = AddSectionHeader(miscPage, L("Notifications and tools"), miscY)
+        miscY = AddCheckbox(miscPage, miscY, "hideMinimapIconChk", L("Hide minimap icon"))
+        miscY = AddCheckbox(miscPage, miscY, "nsrtPopupChk", L("Hide plan popups (even if assigned)"))
+        miscY = AddCheckbox(miscPage, miscY, "encounterOverviewTabChk", L("Show Encounter Journal boss overview tab (WIP)"))
+        miscY = AddCheckbox(miscPage, miscY, "plannerDebugChk", L("Show planner debug panel"))
 
         local btnRow = CreateFrame("Frame", nil, f)
         btnRow:SetHeight(30)
@@ -927,11 +1249,11 @@ function Diar:ShowPlannerSettingsDialog()
         footerLine:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -8, 46)
         footerLine:SetColorTexture(unpack(UI.BORDER))
 
-        local cancelBtn = CreatePlannerIconBtn(btnRow, "Cancel", 100, 28)
+        local cancelBtn = CreatePlannerIconBtn(btnRow, L("Cancel"), 100, 28)
         cancelBtn:SetPoint("RIGHT", btnRow, "CENTER", -6, 0)
         cancelBtn:SetScript("OnClick", function() f:Hide() end)
 
-        local saveBtn = CreatePlannerIconBtn(btnRow, "Save", 100, 28)
+        local saveBtn = CreatePlannerIconBtn(btnRow, L("Save"), 100, 28)
         saveBtn:SetPoint("LEFT", btnRow, "CENTER", 6, 0)
         SetPrimaryButtonStyle(saveBtn)
         saveBtn:SetScript("OnClick", function()
@@ -939,9 +1261,11 @@ function Diar:ShowPlannerSettingsDialog()
             local before = ParseSettingsSeconds(f.beforeEdit:GetText())
             local after = ParseSettingsSeconds(f.afterEdit:GetText())
             if before == nil or after == nil then
-                print("|cffff6666[Raidstrats.gg]|r Enter a number of seconds (0 or higher).")
+                print("|cffff6666[Raidstrats.gg]|r " .. L("Enter a number of seconds (0 or higher)."))
                 return
             end
+            local prevLocale = s.locale or "auto"
+            local newLocale = f.localePref or "auto"
             s.rsggShowBefore = before
             s.rsggShowAfter = after
             s.highlightMyName = CheckboxIsChecked(f.highlightChk)
@@ -967,16 +1291,20 @@ function Diar:ShowPlannerSettingsDialog()
             s.raidCheckExpanded = CheckboxIsChecked(f.raidCheckExpandedChk)
             local rcPhase = ParseSettingsSeconds(f.readyCheckPhaseEdit:GetText())
             if rcPhase == nil then
-                print("|cffff6666[Raidstrats.gg]|r Enter a phase number (0 = all phases).")
+                print("|cffff6666[Raidstrats.gg]|r " .. L("Enter a phase number (0 = all phases)."))
                 return
             end
             local rcGrace = ParseSettingsSeconds(f.readyCheckGraceEdit and f.readyCheckGraceEdit:GetText() or "")
             if rcGrace == nil then
-                print("|cffff6666[Raidstrats.gg]|r Enter readycheck grace in seconds (0 or higher).")
+                print("|cffff6666[Raidstrats.gg]|r " .. L("Enter readycheck grace in seconds (0 or higher)."))
                 return
             end
             s.readyCheckPhase = rcPhase
             s.readyCheckGrace = rcGrace
+            s.locale = newLocale
+            if RaidstratsggLocale and RaidstratsggLocale.Invalidate then
+                RaidstratsggLocale:Invalidate()
+            end
             s.showEncounterOverviewTab = CheckboxIsChecked(f.encounterOverviewTabChk)
             s.debugMode = CheckboxIsChecked(f.plannerDebugChk)
             if f.assignMineColorBtn and f.assignMineColorBtn.__color then
@@ -1033,9 +1361,15 @@ function Diar:ShowPlannerSettingsDialog()
                 Diar:UpdateEncounterJournalOverviewVisibility()
             end
             if s.debugMode and Diar.AppendPlannerDebugLine then
-                Diar:AppendPlannerDebugLine("Planner debug mode enabled")
+                Diar:AppendPlannerDebugLine(L("Planner debug mode enabled"))
             end
             f:Hide()
+            if prevLocale ~= newLocale then
+                print("|cff00aaff[Raidstrats.gg]|r " .. L("Language updated."))
+                if Diar.ApplyLocaleChange then
+                    Diar:ApplyLocaleChange({ reopenSettings = true, settingsTab = "misc" })
+                end
+            end
         end)
 
         if f.HookScript then
@@ -1133,6 +1467,14 @@ function Diar:ShowPlannerSettingsDialog()
     if dlg.plannerDebugChk then
         dlg.plannerDebugChk:SetChecked(settings.debugMode == true or settings.debugMode == 1)
     end
+    if dlg.localeBtn then
+        dlg.localePref = settings.locale or "auto"
+        if dlg.RefreshLocaleButton then
+            dlg.RefreshLocaleButton()
+        else
+            dlg.localeBtn:SetText(GetLocaleOptionLabel(dlg.localePref))
+        end
+    end
     if dlg.assignMineColorBtn then
         local c = NormalizeAssignColor(settings.assignMineFill, DEFAULT_ASSIGN_MINE_FILL)
         dlg.assignMineColorBtn.__color = { c[1], c[2], c[3], c[4] }
@@ -1145,9 +1487,9 @@ function Diar:ShowPlannerSettingsDialog()
     end
     if dlg.compactPosStatus then
         if self:HasSavedCompactPosition() then
-            dlg.compactPosStatus:SetText("Saved — used for NSRT compact scenes")
+            dlg.compactPosStatus:SetText(L("Saved — used for NSRT compact scenes"))
         else
-            dlg.compactPosStatus:SetText("Not set — uses default position")
+            dlg.compactPosStatus:SetText(L("Not set — uses default position"))
         end
     end
     local anchor = UIParent

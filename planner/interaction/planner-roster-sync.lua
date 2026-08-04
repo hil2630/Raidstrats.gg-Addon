@@ -6,6 +6,7 @@ local Addon =
     AceAddon:GetAddon("Raidstratsgg", true) or
     AceAddon:GetAddon("raidstratsgg", true)
 if not Addon then return end
+local function L(key) return RSGG_L(key) end
 local Diar = Addon
 
 local SEP = string.char(31)
@@ -57,9 +58,9 @@ end
 
 if not StaticPopupDialogs["RAIDSTRATSGG_CUSTOM_OBJECT_LABEL"] then
     StaticPopupDialogs["RAIDSTRATSGG_CUSTOM_OBJECT_LABEL"] = {
-        text = "Custom label:",
-        button1 = _G.OKAY or "OK",
-        button2 = _G.CANCEL or "Cancel",
+        text = L("Custom label:"),
+        button1 = _G.OKAY or L("OK"),
+        button2 = _G.CANCEL or L("Cancel"),
         hasEditBox = true,
         maxLetters = 64,
         timeout = 0,
@@ -69,7 +70,7 @@ if not StaticPopupDialogs["RAIDSTRATSGG_CUSTOM_OBJECT_LABEL"] then
             local eb = self.editBox or self.EditBox
             local current = self.data and self.data.currentLabel or ""
             if self.text then
-                self.text:SetText((current ~= "" and "Edit label:" or "Add custom label:"))
+                self.text:SetText((current ~= "" and L("Edit label:") or L("Add custom label:")))
             end
             if eb then
                 eb:SetText(current)
@@ -340,12 +341,37 @@ local CLASS_WOW_ICON = {
     demonhunter = "Interface\\Icons\\ClassIcon_DemonHunter",
     evoker = "Interface\\Icons\\ClassIcon_Evoker",
 }
+local ICON_KEY_DISPLAY_NAMES = {
+    warrior = L("Warrior"),
+    paladin = L("Paladin"),
+    hunter = L("Hunter"),
+    rogue = L("Rogue"),
+    priest = L("Priest"),
+    deathknight = L("Deathknight"),
+    shaman = L("Shaman"),
+    mage = L("Mage"),
+    warlock = L("Warlock"),
+    monk = L("Monk"),
+    druid = L("Druid"),
+    demonhunter = L("Demonhunter"),
+    evoker = L("Evoker"),
+}
 
 local RAID_MARKER_KEYS = {
     star = true, circle = true, diamond = true, triangle = true,
     moon = true, square = true, cross = true, skull = true,
 }
 local RAID_MARKER_ORDER = { "star", "circle", "diamond", "triangle", "moon", "square", "cross", "skull" }
+local RAID_MARKER_LABELS = {
+    star = L("Star"),
+    circle = L("Circle"),
+    diamond = L("Diamond"),
+    triangle = L("Triangle"),
+    moon = L("Moon"),
+    square = L("Square"),
+    cross = L("Cross"),
+    skull = L("Skull"),
+}
 local RAID_MARKER_TEXTURE_BY_INDEX = {
     [1] = "Interface\\TargetingFrame\\UI-RaidTargetingIcon_1",
     [2] = "Interface\\TargetingFrame\\UI-RaidTargetingIcon_2",
@@ -463,7 +489,7 @@ end
 local function IconKeyDisplayName(iconKey)
     if not iconKey then return nil end
     local key = iconKey:lower():gsub("^.*/", "")
-    return key:sub(1, 1):upper() .. key:sub(2)
+    return ICON_KEY_DISPLAY_NAMES[key] or (key:sub(1, 1):upper() .. key:sub(2))
 end
 
 local function LabelNameKey(label)
@@ -618,7 +644,7 @@ end
 function Diar:ShowDuplicateLabelWarning(name, usageScene, itemIndex, anchor, iconKey)
     self:HideDuplicateLabelWarning()
     local sceneLabel = self:GetSceneDisplayName(usageScene)
-    print(("|cffff9900[Raidstrats.gg]|r |cff00ff00%s|r is already on the plan (%s)."):format(name, sceneLabel))
+    print(L("|cffff9900[Raidstrats.gg]|r |cff00ff00%s|r is already on the plan (%s)."):format(name, sceneLabel))
 
     local pf = self.plannerFrame
     local f = CreateFrame("Frame", "RaidstratsDuplicateLabelWarn", UIParent, "BackdropTemplate")
@@ -630,14 +656,14 @@ function Diar:ShowDuplicateLabelWarning(name, usageScene, itemIndex, anchor, ico
 
     local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     title:SetPoint("TOP", 0, -14)
-    title:SetText("Player already assigned")
+    title:SetText(L("Player already assigned"))
     title:SetTextColor(1, 0.85, 0.35)
 
     local msg = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     msg:SetPoint("TOP", title, "BOTTOM", 0, -10)
     msg:SetWidth(280)
     msg:SetJustifyH("CENTER")
-    msg:SetText(("%s is already on this plan (%s).\nAssign them here anyway?"):format(name, sceneLabel))
+    msg:SetText(L("%s is already on this plan (%s).\nAssign them here anyway?"):format(name, sceneLabel))
     msg:SetTextColor(0.82, 0.82, 0.82)
 
     local function makeBtn(text, x, onClick)
@@ -661,10 +687,10 @@ function Diar:ShowDuplicateLabelWarning(name, usageScene, itemIndex, anchor, ico
         return b
     end
 
-    makeBtn("Cancel", -66, function()
+    makeBtn(L("Cancel"), -66, function()
         Diar:HideDuplicateLabelWarning()
     end)
-    makeBtn("Assign anyway", 66, function()
+    makeBtn(L("Assign anyway"), 66, function()
         Diar:HideDuplicateLabelWarning()
         Diar:HideMemberPicker()
         Diar:ApplyItemLabelRename(itemIndex, name, iconKey)
@@ -875,7 +901,7 @@ function Diar:RemovePlannerItemIndex(itemIndex)
         self:RefreshPlannerScene()
     end
     local saved = self.PersistCurrentPlanToSaved and self:PersistCurrentPlanToSaved()
-    print(("|cff00aaff[Raidstrats.gg]|r Index removed%s."):format(saved and " and saved locally" or ""))
+    print(L("|cff00aaff[Raidstrats.gg]|r Index removed%s."):format(saved and L(" and saved locally") or ""))
     return true
 end
 
@@ -943,7 +969,7 @@ function Diar:ShowWorldMarkerReplaceMenu(anchor, itemIndex, item)
         SetWorldMarkerTexture(icon, i)
         local lbl = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         lbl:SetPoint("LEFT", icon, "RIGHT", 8, 0)
-        lbl:SetText(key:sub(1, 1):upper() .. key:sub(2))
+        lbl:SetText(RAID_MARKER_LABELS[key] or key)
         lbl:SetTextColor(0.92, 0.92, 0.92)
         btn:SetScript("OnEnter", function(s)
             s:SetBackdropColor(unpack(UI.ROW_HOV))
@@ -1026,7 +1052,7 @@ function Diar:ShowPlannerContextMenu(anchor, itemIndex, item)
 
     local y = -6
     if canAssign then
-        makeMenuBtn("Assign member", y, function()
+        makeMenuBtn(L("Assign member"), y, function()
             Diar:HidePlannerContextMenu()
             Diar:ShowMemberPickerForItem(itemIndex)
         end)
@@ -1034,7 +1060,7 @@ function Diar:ShowPlannerContextMenu(anchor, itemIndex, item)
     end
     if canCustomLabel then
         local currentLabel = strtrim(tostring(item and item.label or ""))
-        local labelText = (currentLabel ~= "") and "Edit label" or "Add custom label"
+        local labelText = (currentLabel ~= "") and L("Edit label") or L("Add custom label")
         makeMenuBtn(labelText, y, function()
             Diar:HidePlannerContextMenu()
             Diar:PromptCustomItemLabel(itemIndex, item)
@@ -1042,20 +1068,20 @@ function Diar:ShowPlannerContextMenu(anchor, itemIndex, item)
         y = y - 30
     end
     if canRemoveIndex then
-        makeMenuBtn("Remove index", y, function()
+        makeMenuBtn(L("Remove index"), y, function()
             Diar:HidePlannerContextMenu()
             Diar:RemovePlannerItemIndex(itemIndex)
         end)
         y = y - 30
     end
     if canReplaceMarker then
-        makeMenuBtn("Replace marker", y, function()
+        makeMenuBtn(L("Replace marker"), y, function()
             Diar:ShowWorldMarkerReplaceMenu(menu, itemIndex, item)
         end)
         y = y - 30
     end
     if canDelete then
-        makeMenuBtn("Delete", y, function()
+        makeMenuBtn(L("Delete"), y, function()
             Diar:HidePlannerContextMenu()
             StaticPopup_Show("RAIDSTRATSGG_DELETE_OBJECT", nil, nil, itemIndex)
         end)
@@ -1110,7 +1136,7 @@ function Diar:ShowMemberPickerForItem(itemIndex)
 
     local members = self:GetGroupMemberRoster()
     if #members == 0 then
-        print("|cffff6666[Raidstrats.gg]|r No group members found.")
+        print(L("|cffff6666[Raidstrats.gg]|r No group members found."))
         return
     end
 
@@ -1141,7 +1167,7 @@ function Diar:ShowMemberPickerForItem(itemIndex)
 
     local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     title:SetPoint("TOP", 0, -16)
-    title:SetText("Assign raid member")
+    title:SetText(L("Assign raid member"))
     title:SetTextColor(0.92, 0.92, 0.92)
 
     local subY = -38
@@ -1150,9 +1176,9 @@ function Diar:ShowMemberPickerForItem(itemIndex)
         sub:SetPoint("TOP", title, "BOTTOM", 0, -6)
         local slotNum = tonumber(item and (item.slotIndex or item.embedIndex))
         if slotNum and slotNum >= 1 then
-            sub:SetText(("Current: |cffeadb5f%s|r (#%d)"):format(currentLabel, math.floor(slotNum)))
+            sub:SetText(L("Current: |cffeadb5f%s|r (#%d)"):format(currentLabel, math.floor(slotNum)))
         else
-            sub:SetText(("Current: |cffeadb5f%s|r"):format(currentLabel))
+            sub:SetText(L("Current: |cffeadb5f%s|r"):format(currentLabel))
         end
         sub:SetTextColor(0.65, 0.68, 0.72)
         subY = -52
@@ -1198,7 +1224,7 @@ function Diar:ShowMemberPickerForItem(itemIndex)
         end
         local rowLbl = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         rowLbl:SetPoint("LEFT", iconTex, "RIGHT", 6, 0)
-        rowLbl:SetText(isOnPlan and (name .. " (on plan)") or name)
+        rowLbl:SetText(isOnPlan and L("%s (on plan)"):format(name) or name)
         if isCurrent then
             rowLbl:SetTextColor(1.00, 0.92, 0.35)
         elseif isOnPlan then
@@ -1264,7 +1290,7 @@ function Diar:BroadcastLabelChange(sceneIndex, itemIndex, label, oldLabel, iconK
         if self:IsRsggDebug() then
             return
         end
-        print("|cffff6666[Raidstrats.gg]|r Join a party/raid to sync name changes.")
+        print(L("|cffff6666[Raidstrats.gg]|r Join a party/raid to sync name changes."))
         return
     end
     local planKey = self:GetPlanSyncKey()
@@ -1314,17 +1340,17 @@ function Diar:ApplyItemLabelRename(itemIndex, newName, iconKey)
     end
     local saved = self.PersistCurrentPlanToSaved and self:PersistCurrentPlanToSaved()
     self:BroadcastLabelChange(sceneIdx, itemIndex, newName, oldName, iconKey)
-    local sceneNote = count > 1 and (" (%d places)"):format(count) or ""
+    local sceneNote = count > 1 and L(" (%d places)"):format(count) or ""
     local classNote = iconKey and (" |cff9fd3ff%s|r"):format(IconKeyDisplayName(iconKey) or "") or ""
     if self:IsRsggDebug() and GetNumGroupMembers() == 0 then
         print(("|cff00aaff[Raidstrats.gg]|r [debug] Assigned |cff00ff00%s|r%s%s%s."):format(
             newName, classNote, sceneNote, saved and " (saved)" or ""))
     else
-        print(("|cff00aaff[Raidstrats.gg]|r Assigned |cff00ff00%s|r%s%s%s."):format(
+        print(L("|cff00aaff[Raidstrats.gg]|r Assigned |cff00ff00%s|r%s%s%s."):format(
             newName,
             classNote,
             sceneNote,
-            saved and " and saved locally" or (GetNumGroupMembers() > 0 and " and synced to group" or "")))
+            saved and L(" and saved locally") or (GetNumGroupMembers() > 0 and L(" and synced to group") or "")))
     end
 end
 
@@ -1361,11 +1387,11 @@ function Diar:ApplyCustomItemLabel(itemIndex, newLabel)
         self:BroadcastLabelChange(sceneIdx, itemIndex, normalized, nil, SanitizeIconKey(item.icon))
     end
     if normalized ~= "" then
-        print(("|cff00aaff[Raidstrats.gg]|r Label set to |cff00ff00%s|r%s."):format(
+        print(L("|cff00aaff[Raidstrats.gg]|r Label set to |cff00ff00%s|r%s."):format(
             normalized,
-            saved and " and saved locally" or ""))
+            saved and L(" and saved locally") or ""))
     else
-        print(("|cff00aaff[Raidstrats.gg]|r Label cleared%s."):format(saved and " and saved locally" or ""))
+        print(L("|cff00aaff[Raidstrats.gg]|r Label cleared%s."):format(saved and L(" and saved locally") or ""))
     end
 end
 
@@ -1464,10 +1490,10 @@ function Diar:ApplyActorLabelSyncFromComm(msg, sender)
         self:PersistCurrentPlanToSaved()
     end
 
-    local who = sender and (Ambiguate and Ambiguate(sender, "short") or sender) or "Raid leader"
-    local sceneNote = count > 1 and (" (%d places)"):format(count) or ""
+    local who = sender and (Ambiguate and Ambiguate(sender, "short") or sender) or L("Raid leader")
+    local sceneNote = count > 1 and L(" (%d places)"):format(count) or ""
     local classNote = parsed.icon and (" |cff9fd3ff%s|r"):format(IconKeyDisplayName(parsed.icon) or "") or ""
-    print(("|cff00aaff[Raidstrats.gg]|r %s assigned |cffeadb5f%s|r to |cff00ff00%s|r%s%s."):format(
+    print(L("|cff00aaff[Raidstrats.gg]|r %s assigned |cffeadb5f%s|r to |cff00ff00%s|r%s%s."):format(
         who, parsed.oldLabel, parsed.newLabel or "", classNote, sceneNote))
 end
 
@@ -1495,9 +1521,9 @@ function Diar:ApplyLabelSyncFromComm(msg, sender)
         self:PersistCurrentPlanToSaved()
     end
 
-    local who = sender and (Ambiguate and Ambiguate(sender, "short") or sender) or "Raid leader"
+    local who = sender and (Ambiguate and Ambiguate(sender, "short") or sender) or L("Raid leader")
     local classNote = parsed.icon and (" |cff9fd3ff%s|r"):format(IconKeyDisplayName(parsed.icon) or "") or ""
-    print(("|cff00aaff[Raidstrats.gg]|r %s assigned |cff00ff00%s|r%s."):format(who, parsed.label or "", classNote))
+    print(L("|cff00aaff[Raidstrats.gg]|r %s assigned |cff00ff00%s|r%s."):format(who, parsed.label or "", classNote))
 end
 
 function Diar:IsPlannerCompactMode()
