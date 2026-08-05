@@ -1311,18 +1311,81 @@ local function ConvertWebSceneObjects(scene, canvasW, canvasH)
                     local objType = strlower(tostring(obj.type or ""))
                     if objType == "image" then
                         local spellId = ResolveSpellIdFromWebObject(obj)
-                        local iconKey = ResolveIconKeyFromSrc(obj.src)
+                        local src = (type(obj.src) == "string" and obj.src ~= "") and obj.src
+                            or (type(obj["data-base-src"]) == "string" and obj["data-base-src"] or nil)
+                        local iconKey = ResolveIconKeyFromSrc(src)
                             or ResolveIconKeyFromSrc(type(obj.abilityData) == "table" and obj.abilityData.icon or nil)
-                        item = {
-                            kind = "icon",
-                            x = x,
-                            y = y,
-                            w = w,
-                            h = h,
-                            icon = iconKey,
-                            spellId = spellId,
-                            label = (type(obj.name) == "string" and obj.name ~= "") and obj.name or "",
-                        }
+                        local dataType = strlower(tostring(obj["data-type"] or ""))
+                        local dataSubtype = strlower(tostring(obj["data-subtype"] or ""))
+                        local srcLower = strlower(tostring(src or ""))
+                        local enemyByPath = srcLower:find("/icon/raids/", 1, true)
+                            or srcLower:find("/images/bosses/", 1, true)
+                            or srcLower:find("/images/trash/", 1, true)
+                            or srcLower:find("/bosses/", 1, true)
+                        local isEnemy = (dataType == "enemy")
+                            or CoerceBool(obj.__isEnemyFacingObject)
+                            or enemyByPath
+                        -- Real bosses only — trash also lives under /Bosses/<boss>/.
+                        local isBoss = isEnemy and (
+                            dataSubtype == "boss"
+                            or CoerceBool(obj.__isBossObject)
+                            or srcLower:find("/images/bosses/", 1, true)
+                        )
+                        local portraitKey = nil
+                        local portraitRaid, portraitBoss = nil, nil
+                        if type(src) == "string" and src ~= "" then
+                            local decoded = src:gsub("%%(%x%x)", function(hex)
+                                local n = tonumber(hex, 16)
+                                return n and string.char(n) or ("%" .. hex)
+                            end):gsub("[?#].*$", ""):gsub("\\", "/")
+                            local file = decoded:match("([^/]+)$") or ""
+                            portraitKey = file:gsub("%.[^%.]+$", "")
+                            if portraitKey == "" then portraitKey = nil end
+                            portraitRaid, portraitBoss = decoded:match("[Rr]aids/([^/]+)/[Bb]osses/([^/]+)/")
+                        end
+                        if isBoss then
+                            item = {
+                                kind = "boss",
+                                x = x,
+                                y = y,
+                                w = w,
+                                h = h,
+                                portrait = portraitKey,
+                                portraitRaid = portraitRaid,
+                                portraitBoss = portraitBoss,
+                                icon = iconKey,
+                                label = "BOSS",
+                                labelExplicit = true,
+                            }
+                        elseif isEnemy then
+                            local trashLabel = (type(obj.name) == "string" and obj.name ~= "") and obj.name
+                                or portraitKey
+                                or "Trash"
+                            item = {
+                                kind = "trash",
+                                x = x,
+                                y = y,
+                                w = w,
+                                h = h,
+                                portrait = portraitKey,
+                                portraitRaid = portraitRaid,
+                                portraitBoss = portraitBoss,
+                                icon = iconKey,
+                                label = trashLabel,
+                                labelExplicit = true,
+                            }
+                        else
+                            item = {
+                                kind = "icon",
+                                x = x,
+                                y = y,
+                                w = w,
+                                h = h,
+                                icon = iconKey,
+                                spellId = spellId,
+                                label = (type(obj.name) == "string" and obj.name ~= "") and obj.name or "",
+                            }
+                        end
                     elseif objType == "textbox" or objType == "text" or objType == "i-text" then
                         local slotIndex = ReadWebObjectSlotIndex(obj)
                         if slotIndex then
@@ -1566,7 +1629,12 @@ local function ConvertWebPlannerScenes(data)
     if type(data) ~= "table" or type(data.scenes) ~= "table" then return end
     local canvasW, canvasH = 1115, 627
     for sceneIndex, scene in ipairs(data.scenes) do
-        if type(scene) == "table" and (type(scene.objectsJSON) == "string" or type(scene.animationsJSON) == "string" or sceneIndex == 1) then
+        local hasObjectsJson = type(scene) == "table" and type(scene.objectsJSON) == "string" and scene.objectsJSON ~= ""
+        local hasAnimationsJson = type(scene) == "table" and type(scene.animationsJSON) == "string" and scene.animationsJSON ~= ""
+        local hasItems = type(scene) == "table" and type(scene.items) == "table" and #scene.items > 0
+        -- Only rebuild from objectsJSON. Never treat "scene 1" alone as a reason to
+        -- overwrite addon-export items (that wiped boss/trash on other paths).
+        if type(scene) == "table" and (hasObjectsJson or (hasAnimationsJson and not hasItems) or (sceneIndex == 1 and not hasItems)) then
             -- Prefer scene.objectsJSON: it usually contains full grouped actor circles.
             -- canvasData.objects can be a flattened/partial snapshot (missing group children).
             local items, idToIndex, pathByAnimId, objectById = ConvertWebSceneObjects(scene, canvasW, canvasH)

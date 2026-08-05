@@ -1,6 +1,12 @@
 # Changelog
 
-## [Alpha 0.0.50]
+## [Release 0.0.50]
+
+We are now out of alpha testing and went straight to release candidates.
+
+Added:
+
+- Tidebound Grotto added to the ingame plannner.
 
 New:
 
@@ -9,6 +15,14 @@ New:
   - Addon UI strings refresh live when you change language.
   - If you want to add your own translationn, please see the enUS.lua and follow the same steps and contact me on discord and we can add it.
     Currently looking for french, spanish, german, polish and such.
+- Imported boss and trash markers now use bundled portraits when a matching
+  image exists, with the existing labeled badge as a fallback.
+  - Raid admins can download an addon-ready TGA portrait ZIP from the website.
+
+Fixed:
+
+- Addon exports now include boss and trash objects from every scene, not only
+  the scene that was open when the plan was exported or saved.
 
 ## [Alpha 0.0.49-f]
 

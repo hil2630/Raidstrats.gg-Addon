@@ -2726,6 +2726,7 @@ Diar.UpdatePlannerModeToggleBtn = UpdatePlannerModeToggleBtn
 
 local BG_BASE_PATH = "Interface\\AddOns\\" .. tostring(addonName) .. "\\backgrounds\\"
 local ICON_BASE_PATH = "Interface\\AddOns\\" .. tostring(addonName) .. "\\icons\\"
+local PORTRAIT_BASE_PATH = "Interface\\AddOns\\" .. tostring(addonName) .. "\\portraits\\"
 local SHAPE_BASE_PATH = "Interface\\AddOns\\" .. tostring(addonName) .. "\\shapes\\"
 local BACKGROUND_KEY_ALIASES = {
     -- Legacy typo variants seen in imported plans.
@@ -2745,6 +2746,9 @@ local BACKGROUND_KEY_ALIASES = {
     tva_the_twin_fangs_wip = "Twin_Fangs_2",
     tva_the_bargained_crown_wip = "bargained_crown",
     tva_ula_tek_wip = "ulatek1",
+
+    -- Website UUID upload filename -> bundled TGA key.
+    ["ebb83c6f-b84b-4c30-8823-38379405ab06"] = "tidebound-grotto",
 }
 
 local function BuildBackgroundKeyCandidates(bgKey)
@@ -2877,6 +2881,113 @@ local function SetTextureFromCandidates(tex, candidates)
         if ok then return true end
     end
     return false
+end
+
+-- Keep portrait helpers on one local table — this file is near Lua's 200-local limit.
+local PortraitUtil = {}
+function PortraitUtil.UrlDecodePath(value)
+    if type(value) ~= "string" then return "" end
+    local decoded = value:gsub("%%(%x%x)", function(hex)
+        local n = tonumber(hex, 16)
+        return n and string.char(n) or ("%" .. hex)
+    end)
+    return decoded:gsub("%+", " ")
+end
+function PortraitUtil.Slug(value)
+    if type(value) ~= "string" then return nil end
+    local slug = strlower(strtrim(PortraitUtil.UrlDecodePath(value)))
+        :gsub("%.[^%.\\/]+$", "")
+        :gsub("[^a-z0-9]+", "-")
+        :gsub("^%-+", "")
+        :gsub("%-+$", "")
+    return slug ~= "" and slug or nil
+end
+-- Website icons: raids/<raid>/Bosses/<boss>/<file>
+function PortraitUtil.InferFoldersFromIcon(iconOrSrc)
+    if type(iconOrSrc) ~= "string" or iconOrSrc == "" then return nil, nil end
+    local path = PortraitUtil.UrlDecodePath(iconOrSrc):gsub("\\", "/")
+    local raid, boss = path:match("[Rr]aids/([^/]+)/[Bb]osses/([^/]+)/")
+    if not raid or not boss then return nil, nil end
+    return raid, boss
+end
+function PortraitUtil.InferBossFromBg(bg)
+    if type(bg) ~= "string" or bg == "" then return nil end
+    local cleaned = bg
+        :gsub("[\\/].*$", "")
+        :gsub("%.[^%.]+$", "")
+        :gsub("%-phase%-%d+.*$", "")
+        :gsub("%-p%d+.*$", "")
+    return cleaned ~= "" and cleaned or nil
+end
+function PortraitUtil.BuildCandidates(item)
+    if type(item) ~= "table" then return nil end
+    local raid = PortraitUtil.Slug(item.portraitRaid)
+    if not raid then return nil end
+
+    local bossKeys, bossSeen = {}, {}
+    local function addBoss(value)
+        local slug = PortraitUtil.Slug(value)
+        if not slug or bossSeen[slug] then return end
+        bossSeen[slug] = true
+        bossKeys[#bossKeys + 1] = slug
+        local underscored = slug:gsub("%-", "_")
+        if underscored ~= slug and not bossSeen[underscored] then
+            bossSeen[underscored] = true
+            bossKeys[#bossKeys + 1] = underscored
+        end
+        -- ZIP/icon folders sometimes drop separators (NymrissaWavecaller -> nymrissawavecaller).
+        local compact = slug:gsub("%-", ""):gsub("_", "")
+        if compact ~= slug and compact ~= "" and not bossSeen[compact] then
+            bossSeen[compact] = true
+            bossKeys[#bossKeys + 1] = compact
+        end
+    end
+    addBoss(item.portraitBoss)
+    if type(item.portraitBossAlts) == "table" then
+        for i = 1, #item.portraitBossAlts do
+            addBoss(item.portraitBossAlts[i])
+        end
+    end
+    if #bossKeys == 0 then return nil end
+
+    local nameKeys, seen = {}, {}
+    local function addName(value)
+        local slug = PortraitUtil.Slug(value)
+        if not slug or seen[slug] then return end
+        seen[slug] = true
+        nameKeys[#nameKeys + 1] = slug
+        local underscored = slug:gsub("%-", "_")
+        if underscored ~= slug and not seen[underscored] then
+            seen[underscored] = true
+            nameKeys[#nameKeys + 1] = underscored
+        end
+        local raw = strlower(strtrim(PortraitUtil.UrlDecodePath(tostring(value or ""))))
+            :gsub("%.[^%.\\/]+$", "")
+            :gsub("[\\/].*$", "")
+        if raw ~= "" and not seen[raw] then
+            seen[raw] = true
+            nameKeys[#nameKeys + 1] = raw
+        end
+    end
+    addName(item.portraitName)
+    addName(item.portrait)
+    addName(item.portraitKey)
+    addName(item.trashBadgeLabel)
+    addName(item.bossName)
+    addName(item.label)
+    addName(item.name)
+    if #nameKeys == 0 then return nil end
+
+    local out = {}
+    for b = 1, #bossKeys do
+        local boss = bossKeys[b]
+        for i = 1, #nameKeys do
+            local base = PORTRAIT_BASE_PATH .. raid .. "\\" .. boss .. "\\" .. nameKeys[i]
+            out[#out + 1] = base .. ".tga"
+            out[#out + 1] = base .. ".blp"
+        end
+    end
+    return out
 end
 
 function Diar.SplitPathParts(path)
@@ -4029,8 +4140,39 @@ local function ApplyCircleWidgetVisual(w, item, override)
     end
 end
 
+local function ApplyEnemyPortraitVisual(w, item)
+    if not w or not w.tex or item.enemyPortrait ~= true then return false end
+    if not SetTextureFromCandidates(w.tex, PortraitUtil.BuildCandidates(item)) then
+        return false
+    end
+    if not w.circleMask then
+        w.circleMask = w:CreateMaskTexture()
+        w.circleMask:SetTexture(CIRCLE_MASK, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+    end
+    w.tex:SetTexCoord(0, 1, 0, 1)
+    w.tex:SetVertexColor(1, 1, 1, 1)
+    w.tex:SetAlpha((type(item.opacity) == "number") and item.opacity or 1)
+    w.circleMask:SetAllPoints(w.tex)
+    if not w.__maskOn then
+        w.tex:AddMaskTexture(w.circleMask)
+        w.__maskOn = true
+    end
+    w.tex:Show()
+    return true
+end
+
 UpdateCircleWidgetStroke = function(w, item, vc, ch)
     if not w then return end
+    if item and item.enemyPortrait == true then
+        if w._ringLines then
+            for _, ln in ipairs(w._ringLines) do ln:Hide() end
+        end
+        w.__ringLayoutIw = nil
+        w.__ringLayoutIh = nil
+        w.__ringLayoutThick = nil
+        w.__ringLayoutColor = nil
+        return
+    end
     local override = w.__ringOverride
     local shp = tostring(item and item.shape or ""):lower()
     local useDefaultStroke = (not override) and (not HasStroke(item))
@@ -4845,7 +4987,16 @@ function Diar:SanitizePlanData(data)
         if type(rawBg) == "string" and rawBg ~= "" then
             local bgKeys = BuildBackgroundKeyCandidates(rawBg)
             if #bgKeys > 0 then
-                scene.bg = bgKeys[1]
+                -- Prefer bundled keys (e.g. website UUID upload -> tidebound-grotto).
+                local preferred = nil
+                for i = 1, #bgKeys do
+                    local mapped = BACKGROUND_KEY_ALIASES[bgKeys[i]]
+                    if mapped and mapped ~= "" then
+                        preferred = mapped
+                        break
+                    end
+                end
+                scene.bg = preferred or bgKeys[1]
             end
         end
         -- Imported payloads can carry stale scene viewport snapshots (scene.view /
@@ -4891,9 +5042,11 @@ function Diar:SanitizePlanData(data)
                         or (typeLower == "boss")
                         or (typeLower == "bossobject")
                         or (typeLower == "boss_icon")
+                        or (item.bossBadge == true)
                     local isTrashObject = (kindLower == "trash")
                         or (typeLower == "trash")
                         or (typeLower == "trash_icon")
+                        or (type(item.trashBadgeLabel) == "string" and item.trashBadgeLabel ~= "")
                     local itemSpellId = tonumber(item.spellId or item.spellID or item.spell_id)
                     if (not itemSpellId or itemSpellId <= 0) and Diar and type(Diar.ResolveCustomSpellIdFromSrc) == "function" then
                         local mappedSpell = Diar.ResolveCustomSpellIdFromSrc(item.icon)
@@ -4916,11 +5069,36 @@ function Diar:SanitizePlanData(data)
                             isBossObject = true
                         end
                     end
+                    if isBossObject or (isTrashObject and not (itemSpellId and itemSpellId > 0)) then
+                        local iconRaid, iconBoss = PortraitUtil.InferFoldersFromIcon(item.icon or item.src or item.portrait)
+                        local bgBoss = PortraitUtil.InferBossFromBg(scene and (scene.bg or scene.background))
+                        local portraitRaid = item.portraitRaid or iconRaid or data.raid
+                        local portraitBoss = item.portraitBoss or iconBoss or bgBoss or data.boss
+                        local bossAlts = {}
+                        local function pushAlt(v)
+                            if type(v) == "string" and v ~= "" then
+                                bossAlts[#bossAlts + 1] = v
+                            end
+                        end
+                        pushAlt(iconBoss)
+                        pushAlt(bgBoss)
+                        pushAlt(data.boss)
+                        item.portraitRaid = portraitRaid
+                        item.portraitBoss = portraitBoss
+                        item.portraitBossAlts = bossAlts
+                    end
                     if isBossObject then
+                        local portraitName = item.portraitName or item.portrait or item.portraitKey or item.bossName
+                        if type(portraitName) ~= "string" or portraitName == "" then
+                            portraitName = data.boss
+                        end
                         item.kind = "shape"
                         item.shape = "circle"
                         item.bossBadge = true
-                        item.bossPortrait = nil
+                        item.enemyPortrait = true
+                        item.portraitName = portraitName
+                        -- Keep icon long enough for portrait folder inference on re-sanitize;
+                        -- clear after folders are resolved above.
                         item.icon = nil
                         item.label = ""
                         item.labelAttached = nil
@@ -4946,12 +5124,15 @@ function Diar:SanitizePlanData(data)
                             rawLabel = item.label
                         elseif type(item.name) == "string" and item.name ~= "" then
                             rawLabel = item.name
+                        elseif type(item.trashBadgeLabel) == "string" and item.trashBadgeLabel ~= "" then
+                            rawLabel = item.trashBadgeLabel
                         end
                         item.kind = "shape"
                         item.shape = "circle"
                         item.trashBadgeLabel = rawLabel ~= "" and rawLabel or L("Trash")
                         item.bossBadge = nil
-                        item.bossPortrait = nil
+                        item.enemyPortrait = true
+                        item.portraitName = item.portraitName or item.portrait or item.portraitKey or item.trashBadgeLabel
                         item.icon = nil
                         item.label = ""
                         item.labelAttached = nil
@@ -5687,6 +5868,7 @@ function Diar.RenderSceneItem(addon, pf, root, cw, ch, vc, minSize, item, itemIn
             ClearNameHighlight(w, w.text, tr, tg, tb)
         end
     elseif k == "shape" then
+        local enemyPortraitLoaded = false
         if w.text then w.text:Hide() end
         if w.label then w.label:Hide() end
         if spotNum then
@@ -5695,7 +5877,10 @@ function Diar.RenderSceneItem(addon, pf, root, cw, ch, vc, minSize, item, itemIn
                 SetGroupSpotPreviewText(w, spotName, isMySpot, item)
             end
         elseif shp == "circle" or shp == "ellipse" then
-            ApplyCircleWidgetVisual(w, item)
+            enemyPortraitLoaded = ApplyEnemyPortraitVisual(w, item)
+            if not enemyPortraitLoaded then
+                ApplyCircleWidgetVisual(w, item)
+            end
             ClearBackdropStroke(w)
         elseif IsRectLikeShape(shp) then
             ApplyBoxShapeVisual(w, item, ch)
@@ -5705,7 +5890,7 @@ function Diar.RenderSceneItem(addon, pf, root, cw, ch, vc, minSize, item, itemIn
             w.tex:SetColorTexture(r, g, b, a)
             w.tex:Show()
         end
-        if item.bossBadge == true or item.trashBadgeLabel then
+        if (item.bossBadge == true or item.trashBadgeLabel) and not enemyPortraitLoaded then
             if not w.text then
                 w.text = w:CreateFontString(nil, "OVERLAY")
                 w.text:SetPoint("CENTER", w, "CENTER", 0, 0)

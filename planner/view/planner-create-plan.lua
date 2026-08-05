@@ -24,6 +24,7 @@ local RAID_SORT_ORDER = {
     "The Dreamrift",
     "March on Quel'Danas",
     "Sporefall",
+    "Tidebound Grotto",
     "Manaforge Omega",
     "The Venomous Abyss",
     "Liberation of Undermine",
@@ -71,6 +72,9 @@ local BACKGROUND_KEY_ALIASES = {
     tva_the_twin_fangs_wip = "Twin_Fangs_2",
     tva_the_bargained_crown_wip = "bargained_crown",
     tva_ula_tek_wip = "ulatek1",
+
+    -- Website UUID upload filename -> bundled TGA key.
+    ["ebb83c6f-b84b-4c30-8823-38379405ab06"] = "tidebound-grotto",
 }
 
 local ARENAS = {
@@ -104,6 +108,7 @@ local ARENAS = {
     { key = "vaelgor_ezzorak", label = "Vaelgor & Ezzorak", raid = "The Voidspire", boss = "Vaelgor & Ezzorak", expansion = "Midnight" },
     { key = "cosmos", label = "Crown of the Cosmos", raid = "The Voidspire", boss = "Crown of the Cosmos", expansion = "Midnight" },
     { key = "rotmire_arena", label = "Rotmire", raid = "Sporefall", boss = "Rotmire", expansion = "Midnight" },
+    { key = "tidebound-grotto", label = "Nymrissa Wavecaller", raid = "Tidebound Grotto", boss = "Nymrissa Wavecaller", expansion = "Midnight" },
 
     -- The Venomous Abyss
     { key = "Soulcoiler", label = "Nek'zali the Soulcoiler", raid = "The Venomous Abyss", boss = "Nek'zali the Soulcoiler", expansion = "Midnight" },
@@ -121,9 +126,10 @@ local function GetBackgroundLookupKeys(bgKey)
     if type(bgKey) ~= "string" or bgKey == "" then return {} end
     local clean = bgKey:gsub("^/+", ""):gsub("%.[^%.]+$", "")
     local out = { clean }
-    local alias = BACKGROUND_KEY_ALIASES[clean]
+    local alias = BACKGROUND_KEY_ALIASES[clean] or BACKGROUND_KEY_ALIASES[strlower(clean)]
     if alias and alias ~= clean then
-        out[#out + 1] = alias
+        -- Prefer the bundled TGA key first for preview/load.
+        out = { alias, clean }
     end
     return out
 end
