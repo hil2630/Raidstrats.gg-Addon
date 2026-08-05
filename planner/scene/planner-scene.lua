@@ -3143,7 +3143,7 @@ local function BuildPlannerInfoStripText()
     if Diar.GetAddonVersion then
         addonVer = "v" .. tostring(Diar:GetAddonVersion() or "0.0.2")
     end
-    return L("Raidstrats.gg - Raidplanner & Assignments   |   Author: Nairyana   |   Website: raidstrats.gg   |   %s (alpha build)"):format(addonVer)
+    return L("Raidstrats.gg - Raidplanner & Assignments   |   Author: Nairyana   |   Website: raidstrats.gg   |   %s"):format(addonVer)
 end
 
 local function EnsurePlannerInfoStrip(pf)

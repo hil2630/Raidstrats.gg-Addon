@@ -1,4 +1,15 @@
 # Changelog
+
+## [Alpha 0.0.50]
+
+New:
+
+- In-game language picker (Settings -> Misc).
+  - Choose Auto (client locale), English, Danish, or Traditional Chinese.
+  - Addon UI strings refresh live when you change language.
+  - If you want to add your own translationn, please see the enUS.lua and follow the same steps and contact me on discord and we can add it.
+    Currently looking for french, spanish, german, polish and such.
+
 ## [Alpha 0.0.49-f]
 
 New:
