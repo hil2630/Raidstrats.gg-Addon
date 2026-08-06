@@ -3412,6 +3412,8 @@ function Raidstrats:PrintRsHelp()
     line("/rs plan", L("- Open the raid planner"))
     line("/rs import", L("- Import a plan string or share link"))
     line("/rs roster", L("- Open the roster export window"))
+    line("/rs macro <name>", L("- Run a macro from the current plan"))
+    line("/rs macro reset [name]", L("- Reset plan macro assignments (group leader only)"))
     line("/rs test [id] [phase]", L("- Test NSRT plan cues locally (optional encounter id and phase)"))
     line("/rs test stop", L("- Stop an active local NSRT test run"))
     line("/rsggphase <phase> [id]", L("- Force a local phase callback simulation"))
@@ -3451,6 +3453,15 @@ function Raidstrats:HandleRsCommand(msg)
 
     if cmd == "roster" or cmd == "export" then
         self:CreateMainWindow()
+        return
+    end
+
+    if cmd == "macro" then
+        if self.HandlePlannerMacroCommand then
+            self:HandlePlannerMacroCommand(rest)
+        else
+            print(L("|cffff6666[Raidstrats.gg]|r Plan macros are not available."))
+        end
         return
     end
 
@@ -3713,6 +3724,14 @@ function Raidstrats:OnCommReceived(p, m, d, s)
     -- Group NSRT test broadcast (/rsggtest, /rs test).
     if m:sub(1, 9) == "RSGGTEST:" then
         -- /rsggtest is local-only; ignore remote test triggers.
+        return
+    end
+
+    -- Plan-scoped runtime macro requests, assignments, resets, and errors.
+    if m:sub(1, 4) == "MCRQ" or m:sub(1, 4) == "MCAS"
+        or m:sub(1, 4) == "MCRS" or m:sub(1, 4) == "MCSQ"
+        or m:sub(1, 4) == "MCSN" or m:sub(1, 4) == "MCER" then
+        if self.HandlePlannerMacroComm then self:HandlePlannerMacroComm(m, s, d) end
         return
     end
 

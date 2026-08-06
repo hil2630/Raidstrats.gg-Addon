@@ -306,7 +306,6 @@ function Diar:GetPlannerSettings()
     if s.compactBackgroundOpacity == nil then s.compactBackgroundOpacity = 1.0 end
     if s.compactObjectsOnly == nil then s.compactObjectsOnly = false end
     if s.compactNsrtClickThrough == nil then s.compactNsrtClickThrough = true end
-    if s.nsrtCompactUseZoneMap == nil then s.nsrtCompactUseZoneMap = false end
     if s.hideNsrtPlan == nil then
         if s.showNsrtPopups ~= nil then
             s.hideNsrtPlan = s.showNsrtPopups == false or s.showNsrtPopups == 0
@@ -512,12 +511,6 @@ function Diar:IsNsrtCompactClickThroughEnabled()
     local v = self:GetPlannerSettings().compactNsrtClickThrough
     if v == false or v == 0 then return false end
     return true
-end
-
-function Diar:IsNsrtCompactUseZoneMapEnabled()
-    local v = self:GetPlannerSettings().nsrtCompactUseZoneMap
-    if v == true or v == 1 then return true end
-    return false
 end
 
 function Diar:IsHighlightMyNameEnabled()
@@ -1070,7 +1063,6 @@ function Diar:ShowPlannerSettingsDialog()
         end
         compactY = AddCheckbox(compactPage, compactY, "compactObjectsOnlyChk", L("Objects only (hide compact opacity background)"))
         compactY = AddCheckbox(compactPage, compactY, "compactNsrtClickThroughChk", L("Lock NSRT compact (click-through, no move/resize)"))
-        compactY = AddCheckbox(compactPage, compactY, "compactNsrtZoneMapChk", L("Fit NSRT compact view over the open Zone Map"))
         compactY = AddCheckbox(compactPage, compactY, "compactSceneArrowsChk", L("Show scene arrows in compact view"))
         compactY = AddCheckbox(compactPage, compactY, "compactZoomAssignChk", L("Zoom to my assignment in compact mode"))
         do
@@ -1150,7 +1142,6 @@ function Diar:ShowPlannerSettingsDialog()
             s.compactBackgroundOpacity = ClampBgOpacity(f.compactBackgroundOpacity)
             s.compactObjectsOnly = CheckboxIsChecked(f.compactObjectsOnlyChk)
             s.compactNsrtClickThrough = CheckboxIsChecked(f.compactNsrtClickThroughChk)
-            s.nsrtCompactUseZoneMap = CheckboxIsChecked(f.compactNsrtZoneMapChk)
             s.compactSceneArrows = CheckboxIsChecked(f.compactSceneArrowsChk)
             s.compactZoomToAssignment = CheckboxIsChecked(f.compactZoomAssignChk)
             s.compactAssignZoom = ClampAssignZoom(f.compactAssignZoom)
@@ -1282,7 +1273,6 @@ function Diar:ShowPlannerSettingsDialog()
             s.compactBackgroundOpacity = ClampBgOpacity(f.compactBackgroundOpacity)
             s.compactObjectsOnly = CheckboxIsChecked(f.compactObjectsOnlyChk)
             s.compactNsrtClickThrough = CheckboxIsChecked(f.compactNsrtClickThroughChk)
-            s.nsrtCompactUseZoneMap = CheckboxIsChecked(f.compactNsrtZoneMapChk)
             s.classSpecCircleMode = CheckboxIsChecked(f.classSpecCircleChk)
             s.compactSceneArrows = CheckboxIsChecked(f.compactSceneArrowsChk)
             s.compactZoomToAssignment = CheckboxIsChecked(f.compactZoomAssignChk)
@@ -1415,9 +1405,6 @@ function Diar:ShowPlannerSettingsDialog()
     end
     if dlg.compactNsrtClickThroughChk then
         dlg.compactNsrtClickThroughChk:SetChecked(self:IsNsrtCompactClickThroughEnabled())
-    end
-    if dlg.compactNsrtZoneMapChk then
-        dlg.compactNsrtZoneMapChk:SetChecked(self:IsNsrtCompactUseZoneMapEnabled())
     end
     if dlg.classSpecCircleChk then
         dlg.classSpecCircleChk:SetChecked(self:IsClassSpecCircleModeEnabled())

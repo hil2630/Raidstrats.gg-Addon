@@ -956,6 +956,15 @@ function Diar:EnsurePlannerControlsButtons(pf)
         SetPlannerBtnText(pf.nsrtExportBtn, L("NSRT"))
         pf.nsrtExportBtn:SetWidth(72)
     end
+    if not pf.macrosBtn then
+        pf.macrosBtn = CreatePlannerIconBtn(pf.controls, L("Macros"), 72, CONTROLS_H)
+        pf.macrosBtn:SetScript("OnClick", function()
+            if Diar.ShowPlannerMacrosDialog then Diar:ShowPlannerMacrosDialog() end
+        end)
+    else
+        SetPlannerBtnText(pf.macrosBtn, L("Macros"))
+        pf.macrosBtn:SetWidth(72)
+    end
     self:UpdatePreviewIndexButton(pf)
 end
 
@@ -1096,6 +1105,7 @@ function Diar:PositionPlannerControlsBar(pf)
         if pf.settingsBtn then pf.settingsBtn:Hide() end
         if pf.previewIndexBtn then pf.previewIndexBtn:Hide() end
         if pf.nsrtExportBtn then pf.nsrtExportBtn:Hide() end
+        if pf.macrosBtn then pf.macrosBtn:Hide() end
         if pf.paletteToggleBtn then pf.paletteToggleBtn:Hide() end
         if pf.canvasLockBtn then pf.canvasLockBtn:Hide() end
         if pf.previewNamesBtn then pf.previewNamesBtn:Hide() end
@@ -1134,6 +1144,12 @@ function Diar:PositionPlannerControlsBar(pf)
         pf.settingsBtn:SetPoint("RIGHT", pf.controls, "RIGHT", 0, 0)
         pf.settingsBtn:SetHeight(CONTROLS_H)
     end
+    if pf.macrosBtn then
+        pf.macrosBtn:Show()
+        pf.macrosBtn:ClearAllPoints()
+        pf.macrosBtn:SetPoint("RIGHT", pf.settingsBtn, "LEFT", -6, 0)
+        pf.macrosBtn:SetHeight(CONTROLS_H)
+    end
     if pf.previewIndexBtn then
         pf.previewIndexBtn:Show()
         pf.previewIndexBtn:ClearAllPoints()
@@ -1148,7 +1164,7 @@ function Diar:PositionPlannerControlsBar(pf)
         if CanShowNsrtToolbarButton() then
             pf.nsrtExportBtn:Show()
             pf.nsrtExportBtn:ClearAllPoints()
-            pf.nsrtExportBtn:SetPoint("RIGHT", pf.settingsBtn, "LEFT", -6, 0)
+            pf.nsrtExportBtn:SetPoint("RIGHT", pf.macrosBtn or pf.settingsBtn, "LEFT", -6, 0)
             pf.nsrtExportBtn:SetHeight(CONTROLS_H)
         else
             pf.nsrtExportBtn:Hide()
@@ -5613,7 +5629,7 @@ function Diar.ApplyWidgetLabel(w, item, label, hasSelfOnPlan, playerKey, isNames
     end
 end
 
-function Diar.RenderIconWidget(addon, w, item, label, hasSelfOnPlan, playerKey, spotNum, isMySpot, ch)
+function Diar.RenderIconWidget(addon, w, item, label, hasSelfOnPlan, playerKey, spotNum, isMySpot, ch, forceLabel, suppressGroupVisual)
     HideWidgetStroke(w)
     ClearBackdropStroke(w)
     local spellId = ResolveItemSpellId(item)
@@ -5674,7 +5690,7 @@ function Diar.RenderIconWidget(addon, w, item, label, hasSelfOnPlan, playerKey, 
         if w.text then w.text:Hide() end
     end
     w.__tooltipText = (label and label ~= "") and label or nil
-    Diar.ApplyWidgetLabel(w, item, label, hasSelfOnPlan, playerKey, addon:IsPlannerPreviewNamesVisible())
+    Diar.ApplyWidgetLabel(w, item, label, hasSelfOnPlan, playerKey, forceLabel or addon:IsPlannerPreviewNamesVisible())
     w:SetScript("OnEnter", function(f)
         local hoverSpellId = ResolveItemSpellId(item)
         local spellTooltipsOn = addon and addon.IsSpellTooltipsEnabled and addon:IsSpellTooltipsEnabled()
@@ -5704,12 +5720,14 @@ function Diar.RenderIconWidget(addon, w, item, label, hasSelfOnPlan, playerKey, 
         end
     end)
     w:SetScript("OnLeave", function() GameTooltip:Hide() end)
-    if spotNum then
+    if spotNum and not suppressGroupVisual then
         ApplyGroupSpotIcon(w, isMySpot, ch, item)
     end
 end
 
 function Diar.RenderSceneItem(addon, pf, root, cw, ch, vc, minSize, item, itemIndex, sceneCtx)
+    local sourceItem = item
+    local macroOverride = sceneCtx and sceneCtx.macroOverride
     local k = item.kind
     local shp = tostring(item.shape or ""):lower()
     item.currentX = nil
@@ -5775,7 +5793,7 @@ function Diar.RenderSceneItem(addon, pf, root, cw, ch, vc, minSize, item, itemIn
             item.currentX = anchorXp
             item.currentY = anchorYp
             if addon.AttachPlannerItemContextMenu then
-                addon:AttachPlannerItemContextMenu(w, itemIndex, item)
+                addon:AttachPlannerItemContextMenu(w, itemIndex, sourceItem)
             end
             if w.slotBadge then
                 w.slotBadge:Hide()
@@ -5844,12 +5862,14 @@ function Diar.RenderSceneItem(addon, pf, root, cw, ch, vc, minSize, item, itemIn
     local spotNum = sceneCtx.groupSpots and sceneCtx.groupSpots[itemIndex]
     local isMySpot = spotNum and sceneCtx.activeGroup and sceneCtx.activeGroup.mySpots and sceneCtx.activeGroup.mySpots[spotNum]
     local spotName = spotNum and sceneCtx.previewNamesOn and sceneCtx.groupSpotNames and sceneCtx.groupSpotNames[spotNum] or nil
+    local macroHasLabel = macroOverride and macroOverride.label ~= nil
+    local macroHasVisual = macroOverride and (macroOverride.fill ~= nil or macroOverride.stroke ~= nil)
     -- Temporary NSRT-driven label override: render-only, never mutates/saves plan data.
     local renderLabel = label
-    if spotName and spotName ~= "" then
+    if not macroHasLabel and spotName and spotName ~= "" then
         renderLabel = spotName
     end
-    w.__renderLabelOverride = (spotName and spotName ~= "") and renderLabel or nil
+    w.__renderLabelOverride = ((macroHasLabel or (spotName and spotName ~= "")) and renderLabel ~= "") and renderLabel or nil
     if sceneCtx.debugMineHits and spotNum and isMySpot then
         sceneCtx.debugMineHits[#sceneCtx.debugMineHits + 1] = ("%d@item%d:%s"):format(spotNum, itemIndex, k)
     end
@@ -5871,10 +5891,10 @@ function Diar.RenderSceneItem(addon, pf, root, cw, ch, vc, minSize, item, itemIn
         local enemyPortraitLoaded = false
         if w.text then w.text:Hide() end
         if w.label then w.label:Hide() end
-        if spotNum then
+        if spotNum and not macroHasVisual then
             ApplyGroupSpotShape(w, item, isMySpot, shp, ch)
-            if spotName and (shp == "circle" or shp == "ellipse") then
-                SetGroupSpotPreviewText(w, spotName, isMySpot, item)
+            if (macroHasLabel or spotName) and (shp == "circle" or shp == "ellipse") then
+                SetGroupSpotPreviewText(w, renderLabel, isMySpot, item)
             end
         elseif shp == "circle" or shp == "ellipse" then
             enemyPortraitLoaded = ApplyEnemyPortraitVisual(w, item)
@@ -5908,10 +5928,16 @@ function Diar.RenderSceneItem(addon, pf, root, cw, ch, vc, minSize, item, itemIn
             end
             w.text:Show()
         else
-            Diar.ApplyWidgetLabel(w, item, renderLabel, sceneCtx.hasSelfOnPlan, sceneCtx.playerKey, addon:IsPlannerPreviewNamesVisible())
+            Diar.ApplyWidgetLabel(
+                w, item, renderLabel, sceneCtx.hasSelfOnPlan, sceneCtx.playerKey,
+                macroHasLabel or addon:IsPlannerPreviewNamesVisible()
+            )
         end
     else
-        Diar.RenderIconWidget(addon, w, item, renderLabel, sceneCtx.hasSelfOnPlan, sceneCtx.playerKey, spotNum, isMySpot, ch)
+        Diar.RenderIconWidget(
+            addon, w, item, renderLabel, sceneCtx.hasSelfOnPlan, sceneCtx.playerKey,
+            spotNum, isMySpot, ch, macroHasLabel, macroHasVisual
+        )
     end
 
     w.itemIndex = itemIndex
@@ -5920,7 +5946,7 @@ function Diar.RenderSceneItem(addon, pf, root, cw, ch, vc, minSize, item, itemIn
     item.currentX = xp
     item.currentY = yp
     if addon.AttachPlannerItemContextMenu and not w.__suppressed then
-        addon:AttachPlannerItemContextMenu(w, itemIndex, item)
+        addon:AttachPlannerItemContextMenu(w, itemIndex, sourceItem)
     end
     if not w.__suppressed then
         if addon:IsPlannerPreviewIndexVisible() then
@@ -7701,6 +7727,7 @@ function Diar:RefreshPlannerScene()
     local pf = self.plannerFrame
     local data = self.plannerData
     if not pf or not data or not data.scenes then return end
+    if self.SyncPlannerMacroActivePlan then self:SyncPlannerMacroActivePlan() end
     local noPlanLoaded = IsNoPlanLoaded(data)
 
     local idx = pf.selectedSceneIndex or 1
@@ -7808,6 +7835,7 @@ function Diar:RefreshPlannerScene()
     -- are drawn separately (pf.frontalBeamWidgets / pooled static shapes) and have no widget.
     local minSize = 2
     local sceneCtx = {
+        sceneIndex = idx,
         hasSelfOnPlan = hasSelfOnPlan,
         playerKey = playerKey,
         groupSpots = groupSpots,
@@ -7823,7 +7851,11 @@ function Diar:RefreshPlannerScene()
         self:DebugLogSceneRingSizes(debugSceneReason or "refresh", scene, idx, cw, ch, vc)
     end
     for i, item in ipairs(scene.items) do
-        Diar.RenderSceneItem(self, pf, root, cw, ch, vc, minSize, item, i, sceneCtx)
+        if self.RenderPlannerItemWithMacroOverrides then
+            self:RenderPlannerItemWithMacroOverrides(pf, root, cw, ch, vc, minSize, item, i, sceneCtx, idx)
+        else
+            Diar.RenderSceneItem(self, pf, root, cw, ch, vc, minSize, item, i, sceneCtx)
+        end
     end
 
     BuildFrontalBeamWidgets(pf, scene, root, cw, ch)

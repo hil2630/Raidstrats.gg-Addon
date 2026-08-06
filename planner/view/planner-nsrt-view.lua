@@ -638,115 +638,6 @@ function Diar:LoadPlanByRef(planRef)
     return false
 end
 
-function Diar:GetVisibleZoneMapFrame()
-    local zoneMap = _G.BattlefieldMapFrame or _G.ZoneMapFrame
-    if not zoneMap or not zoneMap.IsShown or not zoneMap:IsShown() then
-        return nil
-    end
-    local width, height = zoneMap:GetSize()
-    if not width or not height or width <= 1 or height <= 1 then
-        return nil
-    end
-    return zoneMap
-end
-
-function Diar:RestoreZoneMapMouseState(pf)
-    local states = pf and pf.__nsrtZoneMapMouseStates
-    if type(states) ~= "table" then return end
-    for i = #states, 1, -1 do
-        local state = states[i]
-        local frame = state and state.frame
-        if frame then
-            if frame.EnableMouse and state.mouseEnabled ~= nil then
-                pcall(frame.EnableMouse, frame, state.mouseEnabled)
-            end
-            if frame.EnableMouseWheel and state.mouseWheelEnabled ~= nil then
-                pcall(frame.EnableMouseWheel, frame, state.mouseWheelEnabled)
-            end
-        end
-    end
-    pf.__nsrtZoneMapMouseStates = nil
-end
-
-function Diar:SetZoneMapTemporaryClickThrough(pf, zoneMap)
-    if not pf or not zoneMap then return end
-    self:RestoreZoneMapMouseState(pf)
-    local states = {}
-    local visited = {}
-
-    local function disableFrame(frame)
-        if not frame or visited[frame] then return end
-        visited[frame] = true
-        local protected = frame.IsProtected and frame:IsProtected()
-        if not protected then
-            local state = { frame = frame }
-            if frame.IsMouseEnabled then
-                state.mouseEnabled = frame:IsMouseEnabled()
-            end
-            if frame.IsMouseWheelEnabled then
-                state.mouseWheelEnabled = frame:IsMouseWheelEnabled()
-            end
-            states[#states + 1] = state
-            if frame.EnableMouse then
-                pcall(frame.EnableMouse, frame, false)
-            end
-            if frame.EnableMouseWheel then
-                pcall(frame.EnableMouseWheel, frame, false)
-            end
-        end
-        if frame.GetChildren then
-            for _, child in ipairs({ frame:GetChildren() }) do
-                disableFrame(child)
-            end
-        end
-    end
-
-    disableFrame(zoneMap)
-    pf.__nsrtZoneMapMouseStates = states
-end
-
-function Diar:ApplyNsrtCompactZoneMapLayout(pf)
-    if not pf or not pf.compactMode or not pf.nsrtSceneActive or pf.readyCheckActive then return false end
-    if not self.IsNsrtCompactUseZoneMapEnabled or not self:IsNsrtCompactUseZoneMapEnabled() then
-        return false
-    end
-    local zoneMap = self:GetVisibleZoneMapFrame()
-    if not zoneMap then return false end
-
-    -- This placement is temporary and must never replace the user's saved
-    -- compact position/scale.
-    local left, top = zoneMap:GetLeft(), zoneMap:GetTop()
-    if not left or not top then return false end
-    local mapScale = zoneMap:GetEffectiveScale() or 1
-    local uiScale = UIParent:GetEffectiveScale() or 1
-    local ratio = mapScale / uiScale
-    local width = zoneMap:GetWidth() * ratio
-    local height = zoneMap:GetHeight() * ratio
-    if width <= 1 or height <= 1 then return false end
-
-    pf.__suspendPositionSave = true
-    pf.__nsrtZoneMapLayout = true
-    if not pf.__nsrtZoneMapOldStrata then
-        pf.__nsrtZoneMapOldStrata = pf:GetFrameStrata()
-        pf.__nsrtZoneMapOldLevel = pf:GetFrameLevel()
-    end
-    -- Stay inside the Zone Map's own draw stack. The plan sits just above the
-    -- map background while Blizzard's higher-level pins (including the player
-    -- arrow) remain visible above the plan objects.
-    pf:SetFrameStrata(zoneMap:GetFrameStrata() or "LOW")
-    pf:SetFrameLevel((zoneMap:GetFrameLevel() or 1) + 1)
-    pf:ClearAllPoints()
-    -- Copy the map's screen rectangle instead of anchoring to the Blizzard
-    -- frame directly. Direct anchors can be blocked by protected UI in combat.
-    pf:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left * ratio, top * ratio)
-    pf:SetSize(width, height)
-    if self.ApplyPlannerCompactLayout then
-        self.ApplyPlannerCompactLayout(pf, true, false)
-    end
-    self:SetZoneMapTemporaryClickThrough(pf, zoneMap)
-    return true
-end
-
 function Diar:ShowRaidPlanScene(sceneIndex, opts)
     opts = opts or {}
     if not opts.forceShow and not opts.readyCheckMode and not self:IsNsrtPopupsEnabled() then
@@ -814,7 +705,6 @@ function Diar:ShowRaidPlanScene(sceneIndex, opts)
     self:UpdateSceneTabHighlight()
     self:StopPlannerAnimation()
     self:SetPlannerCompactMode(opts.compact ~= false, true)
-    self:ApplyNsrtCompactZoneMapLayout(pf)
     self:RefreshPlannerScene()
     if self.OnPlannerSceneChanged then self:OnPlannerSceneChanged() end
     Diar.ApplyPlannerChromeTransparent(pf)
@@ -1035,19 +925,6 @@ function Diar:HideRaidPlanScene()
     local closedNsrtPopup = pf and pf.nsrtSceneActive
     if closedNsrtPopup then
         local wasCompact = pf.compactMode == true
-        local usedZoneMapLayout = pf.__nsrtZoneMapLayout == true
-        self:RestoreZoneMapMouseState(pf)
-        pf.__nsrtZoneMapLayout = nil
-        pf.__suspendPositionSave = nil
-        if usedZoneMapLayout and pf.__nsrtZoneMapOldStrata then
-            pf:SetFrameStrata(pf.__nsrtZoneMapOldStrata)
-            pf:SetFrameLevel(pf.__nsrtZoneMapOldLevel or 1)
-        end
-        pf.__nsrtZoneMapOldStrata = nil
-        pf.__nsrtZoneMapOldLevel = nil
-        if usedZoneMapLayout and self.ApplyPlannerFramePosition then
-            self:ApplyPlannerFramePosition(pf)
-        end
         pf.nsrtSceneActive = nil
         pf.readyCheckActive = nil
         pf.__forceExpandedOnNextShow = true

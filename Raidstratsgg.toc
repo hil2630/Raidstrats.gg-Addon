@@ -40,8 +40,10 @@ planner\anim\planner-tether.lua
 planner\ui\planner-palette.lua
 planner\data\planner-plan-push.lua
 planner\interaction\planner-roster-sync.lua
+planner\interaction\planner-macros.lua
 planner\view\planner-raid-lead-view.lua
 planner\data\planner-settings.lua
+planner\view\planner-macros.lua
 planner\data\planner-saved-plans.lua
 planner\view\planner-import.lua
 planner\view\planner-create-plan.lua

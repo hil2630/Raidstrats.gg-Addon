@@ -962,9 +962,15 @@ function Raidstrats:InitNSRTIntegration()
                 TryHookNSRT(Raidstrats)
             end
         elseif event == "ENCOUNTER_START" then
+            if Raidstrats.OnPlannerMacroEncounterStart then
+                Raidstrats:OnPlannerMacroEncounterStart(...)
+            end
             if not ShouldHandleEncounter() then return end
             Raidstrats:OnEncounterStart(...)
         elseif event == "ENCOUNTER_END" then
+            if Raidstrats.OnPlannerMacroEncounterEnd then
+                Raidstrats:OnPlannerMacroEncounterEnd(...)
+            end
             Raidstrats:OnEncounterEnd()
         elseif event == "READY_CHECK" then
             -- Assignments first so the compact viewer always gets a chance to open.
