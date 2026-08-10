@@ -956,14 +956,9 @@ function Diar:EnsurePlannerControlsButtons(pf)
         SetPlannerBtnText(pf.nsrtExportBtn, L("NSRT"))
         pf.nsrtExportBtn:SetWidth(72)
     end
-    if not pf.macrosBtn then
-        pf.macrosBtn = CreatePlannerIconBtn(pf.controls, L("Macros"), 72, CONTROLS_H)
-        pf.macrosBtn:SetScript("OnClick", function()
-            if Diar.ShowPlannerMacrosDialog then Diar:ShowPlannerMacrosDialog() end
-        end)
-    else
-        SetPlannerBtnText(pf.macrosBtn, L("Macros"))
-        pf.macrosBtn:SetWidth(72)
+    -- Macro editor UI is hidden for now; runtime /rs macro support remains loaded.
+    if pf.macrosBtn then
+        pf.macrosBtn:Hide()
     end
     self:UpdatePreviewIndexButton(pf)
 end
@@ -1105,7 +1100,6 @@ function Diar:PositionPlannerControlsBar(pf)
         if pf.settingsBtn then pf.settingsBtn:Hide() end
         if pf.previewIndexBtn then pf.previewIndexBtn:Hide() end
         if pf.nsrtExportBtn then pf.nsrtExportBtn:Hide() end
-        if pf.macrosBtn then pf.macrosBtn:Hide() end
         if pf.paletteToggleBtn then pf.paletteToggleBtn:Hide() end
         if pf.canvasLockBtn then pf.canvasLockBtn:Hide() end
         if pf.previewNamesBtn then pf.previewNamesBtn:Hide() end
@@ -1145,10 +1139,7 @@ function Diar:PositionPlannerControlsBar(pf)
         pf.settingsBtn:SetHeight(CONTROLS_H)
     end
     if pf.macrosBtn then
-        pf.macrosBtn:Show()
-        pf.macrosBtn:ClearAllPoints()
-        pf.macrosBtn:SetPoint("RIGHT", pf.settingsBtn, "LEFT", -6, 0)
-        pf.macrosBtn:SetHeight(CONTROLS_H)
+        pf.macrosBtn:Hide()
     end
     if pf.previewIndexBtn then
         pf.previewIndexBtn:Show()
@@ -1164,7 +1155,7 @@ function Diar:PositionPlannerControlsBar(pf)
         if CanShowNsrtToolbarButton() then
             pf.nsrtExportBtn:Show()
             pf.nsrtExportBtn:ClearAllPoints()
-            pf.nsrtExportBtn:SetPoint("RIGHT", pf.macrosBtn or pf.settingsBtn, "LEFT", -6, 0)
+            pf.nsrtExportBtn:SetPoint("RIGHT", pf.settingsBtn, "LEFT", -6, 0)
             pf.nsrtExportBtn:SetHeight(CONTROLS_H)
         else
             pf.nsrtExportBtn:Hide()

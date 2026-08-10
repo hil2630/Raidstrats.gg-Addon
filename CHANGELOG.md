@@ -1,6 +1,12 @@
 # Changelog
 
-## [Release 0.0.50]
+## [Release 1.0.4]
+
+Upped to 12.1.0 for Season 2 of midnight. lets goooo
+
+- Initial macro implemenetation made (Not yet useable)
+
+## [Release 1.0.3]
 
 We are now out of alpha testing and went straight to release candidates.
 
