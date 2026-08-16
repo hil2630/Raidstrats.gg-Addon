@@ -1,5 +1,13 @@
 # Changelog
 
+## [Release 1.0.5]
+
+Fixed:
+
+- Push Update no longer says "No changes to push" after you edit a plan.
+  Local edits were overwriting the last shared/pushed snapshot, so the next
+  push had nothing left to diff against.
+
 ## [Release 1.0.4]
 
 Upped to 12.1.0 for Season 2 of midnight. lets goooo
