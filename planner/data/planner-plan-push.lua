@@ -1329,8 +1329,11 @@ end
 local function BuildPushBaselineData(self, data)
     if not data then return nil end
     local prepared = self and self.PreparePlanDataForShare and self:PreparePlanDataForShare(data) or nil
-    if prepared then return prepared end
-    return CopyPlanData(data)
+    local result = prepared or CopyPlanData(data)
+    if self and self.StripPlanAnimations then
+        self:StripPlanAnimations(result)
+    end
+    return result
 end
 
 -- Persisted per-plan sync state so delta push survives /reload:
@@ -1487,6 +1490,9 @@ function Diar:EnsurePlanSyncVersionMatchesContent(data)
         return self:GetPlanSyncVersion(planKey)
     end
     shareData.syncVersion = nil
+    if self.StripPlanAnimations then
+        self:StripPlanAnimations(shareData)
+    end
 
     local pushedVersion = self:GetPlanPushBaseVersion(planKey)
     local baseline = self:GetPlanPushBaseline(planKey)
@@ -1519,6 +1525,9 @@ function Diar:StampShareSyncVersion(shareData, opts)
     if type(shareData) ~= "table" then return end
     if type(shareData.instanceKey) ~= "string" or shareData.instanceKey == "" then
         return
+    end
+    if self.StripPlanAnimations then
+        self:StripPlanAnimations(shareData)
     end
     local planKey = "inst:" .. shareData.instanceKey
     local pushedVersion = self:GetPlanPushBaseVersion(planKey)

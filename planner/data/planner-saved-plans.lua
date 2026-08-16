@@ -1173,16 +1173,10 @@ function Diar:ShareSavedPlanGroupToGroup(groupId)
         groupName = groupName,
         count = #plans,
     }
-    -- Preload once to the group so many simultaneous clicks don't each whisper-download.
+    -- Preload to the group. Post the chat link immediately — early clickers wait on
+    -- the incoming cache instead of hanging on a whisper REQ.
     local broadcasted = self.SendSharedPlanGroupBroadcast and self:SendSharedPlanGroupBroadcast(linkLabel, json)
-    local function postChatToken()
-        SendChatMessage(("[Raidstrats: %s]"):format(linkLabel), chan)
-    end
-    if broadcasted and C_Timer and C_Timer.After then
-        C_Timer.After(0.4, postChatToken)
-    else
-        postChatToken()
-    end
+    SendChatMessage(("[Raidstrats: %s]"):format(linkLabel), chan)
     if broadcasted then
         print(L("|cff00aaff[Raidstrats.gg]|r Shared \"%s\" to %s (preloaded to group). Others click the link to import."):format(
             linkLabel, tostring(chan):lower()))
@@ -1411,17 +1405,37 @@ function Diar:SendSharedPlanGroupWhisper(target, linkLabel, payloadJson)
 end
 
 -- Push a multi-plan bundle once to party/raid/instance (cache on receive; import on click).
-function Diar:SendSharedPlanGroupBroadcast(linkLabel, payloadJson)
+function Diar:SendSharedPlanGroupBroadcast(linkLabel, payloadJson, onComplete)
     local chan = self.GetPlanShareCommChannel and self:GetPlanShareCommChannel() or nil
     if not chan or not linkLabel or not payloadJson or payloadJson == "" then return false end
     local prefix = self.COMM_PLAN_PREFIX or "RAIDSTRATS_PLAN"
+    local finished = false
+    local function complete()
+        if finished then return end
+        finished = true
+        self._planShareBroadcastBusy = nil
+        if self.EndShareThrottleBoost then self:EndShareThrottleBoost() end
+        if onComplete then onComplete() end
+    end
+    self._planShareBroadcastBusy = true
+    self._lastShareBroadcastAt = GetTime()
+    if self.BeginShareThrottleBoost then self:BeginShareThrottleBoost() end
     self:SendCommMessage(
         prefix,
         table.concat({ "GBPL", linkLabel, payloadJson }, SEP),
         chan,
         nil,
-        "NORMAL"
+        "ALERT",
+        function(_, sent, total)
+            if type(sent) == "number" and type(total) == "number" and sent >= total then
+                complete()
+            end
+        end
     )
+    local fallback = math.max(3, math.min(20, 1.2 + (#payloadJson / 500)))
+    if C_Timer and C_Timer.After then
+        C_Timer.After(fallback, complete)
+    end
     if self.ShareDebug then
         self:ShareDebug(("Broadcast group send: chan=%s group=\"%s\" bytes=%d"):format(
             tostring(chan), tostring(linkLabel), #payloadJson))
@@ -1636,7 +1650,15 @@ function Diar:HandleSharedPlanGroupComm(msg, sender)
             self._sharedPlanGroups[linkLabel] = nil
             return true
         end
-        self:SendSharedPlanGroupWhisper(sender, linkLabel, shared.payload)
+        if self.HadRecentShareBroadcast and self:HadRecentShareBroadcast() then
+            return true
+        end
+        local groupChan = self.GetPlanShareCommChannel and self:GetPlanShareCommChannel() or nil
+        if groupChan then
+            self:SendSharedPlanGroupBroadcast(linkLabel, shared.payload)
+        else
+            self:SendSharedPlanGroupWhisper(sender, linkLabel, shared.payload)
+        end
         return true
     elseif tag == "GALL" then
         -- Fast full-group whisper (single AceComm message).

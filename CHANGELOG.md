@@ -1,5 +1,21 @@
 # Changelog
 
+## [Release 1.0.6]
+
+- Share to Group no longer hangs on "Requesting plan..." in small groups
+  (especially 2-player parties). Early clicks wait for the party preload
+  instead of a whisper that often fails across factions.
+- Share no longer asks to override / errors "Couldn't import the cached plan"
+  after a successful import (it was receiving the same plan a second time).
+- Share transfers are faster: one copy over party chat, addon-safe compressed
+  transport, a higher send rate, and redundant web-import source data is removed
+  once native scene objects are available.
+- Animation data is temporarily omitted from shared/imported plans to keep
+  transfers fast; scenes and objects are unaffected.
+- The "Requesting plan..." overlay now shows live chunk progress.
+- Active downloads no longer hit the fixed 45-second timeout; the timer now
+  expires only after chunk delivery has actually stalled.
+
 ## [Release 1.0.5]
 
 Fixed:

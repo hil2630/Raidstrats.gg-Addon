@@ -276,11 +276,46 @@ function Raidstrats:MigrateSavedPlanInstanceKeys()
     end
 end
 
+-- Imported web plans can retain their original JSON/canvas source alongside the
+-- native scene items built from it. Once native items exist those blobs are
+-- redundant and can be much larger than the actual plan.
+function Raidstrats:PrunePlanDataForShare(data)
+    if type(data) ~= "table" then return end
+    data.savedEntryId = nil
+    data.__rsggImportedSanitized = nil
+    data.__rsggSharedVersion = nil
+    data.planLink = nil
+    data.objectsJSON = nil
+    data.animationsJSON = nil
+
+    local firstSceneHasItems = false
+    if type(data.scenes) == "table" then
+        for sceneIndex, scene in ipairs(data.scenes) do
+            if type(scene) == "table" then
+                local hasNativeItems = type(scene.items) == "table" and #scene.items > 0
+                if sceneIndex == 1 then firstSceneHasItems = hasNativeItems end
+                if hasNativeItems then
+                    scene.objectsJSON = nil
+                end
+                -- Shared animations are currently disabled, including their
+                -- original web-import representation.
+                scene.animationsJSON = nil
+                if scene.bg ~= nil then
+                    scene.background = nil
+                end
+            end
+        end
+    end
+    if firstSceneHasItems then
+        data.canvasData = nil
+    end
+end
+
 function Raidstrats:PreparePlanDataForShare(data)
     if not data then return nil end
     local copy = CopyPlanData(data)
     if self.SanitizePlanData then self:SanitizePlanData(copy) end
-    copy.savedEntryId = nil
+    self:PrunePlanDataForShare(copy)
     return copy
 end
 
@@ -1075,6 +1110,11 @@ function Raidstrats:ImportPlanFromPasteStringWithOpts(raw, opts)
     self:EnsurePlanInstanceKey(data)
     local existingEntry = self:FindSavedPlanEntryByImportIdentity(data)
     if existingEntry then
+        -- A share click often receives the same plan twice (party preload + whisper).
+        -- Don't ask to override what we just imported from this share.
+        if opts.fromShare and self._lastImportedShareAt and (GetTime() - self._lastImportedShareAt) < 20 then
+            return true
+        end
         self._pendingSingleImport = {
             data = CopyPlanData(data),
             existingEntryId = existingEntry.id,
@@ -1804,7 +1844,14 @@ function Raidstrats:DecodeAddonImportPayload(raw)
         if not inflated or inflated == "" then return nil end
         json = inflated
     end
-    return DecodeJSON(json)
+    local decodedData = DecodeJSON(json)
+    if decodedData and self.UnpackShareAnimationPaths then
+        self:UnpackShareAnimationPaths(decodedData)
+    end
+    if decodedData and self.StripPlanAnimations then
+        self:StripPlanAnimations(decodedData)
+    end
+    return decodedData
 end
 
 function Raidstrats:ExtractAddonImportStrings(raw)
@@ -1952,6 +1999,11 @@ function Raidstrats:CacheReceivedSharedPlan(sender, planName, payload)
         end
         print("|cff66ccff[Raidstrats.gg Debug]|r " .. msg)
     end
+    -- Clickers in a 2-player group often click before multipart finishes; import
+    -- as soon as the preload lands instead of sitting on "Requesting plan...".
+    if self.TryImportPendingSharedPlan then
+        self:TryImportPendingSharedPlan(sender, planName)
+    end
 end
 
 function Raidstrats:GetReceivedSharedPlan(sender, planName)
@@ -2000,6 +2052,9 @@ function Raidstrats:CacheReceivedSharedPlanGroup(sender, linkLabel, payload)
             self:AppendPlannerDebugLine(msg)
         end
         print("|cff66ccff[Raidstrats.gg Debug]|r " .. msg)
+    end
+    if self.TryImportPendingSharedPlanGroup then
+        self:TryImportPendingSharedPlanGroup(sender, linkLabel)
     end
 end
 
@@ -2083,9 +2138,111 @@ local function SanitizeShareName(name)
     return name
 end
 
--- Build the base64 plan payload, compressed (0x01 marker) when LibDeflate is available.
--- Matches ImportPlanFromPasteString, which inflates a 0x01-prefixed deflate stream.
-function Raidstrats:BuildSharePayload(data, opts)
+local function AnimationPathScale(path)
+    local scales = { 1, 10, 100, 1000, 10000, 100000, 1000000 }
+    for _, scale in ipairs(scales) do
+        local exact = true
+        for _, point in ipairs(path) do
+            if type(point) ~= "table" then return nil end
+            for axis = 1, 2 do
+                local value = tonumber(point[axis])
+                if not value then return nil end
+                local scaled = value * scale
+                if math.abs(scaled - math.floor(scaled + 0.5)) > 0.000001 then
+                    exact = false
+                    break
+                end
+            end
+            if not exact then break end
+        end
+        if exact then return scale end
+    end
+    return nil
+end
+
+-- Animation transfer is temporarily disabled. Strip it from a copied share/import
+-- payload only; the sharer's locally saved plan remains unchanged.
+function Raidstrats:StripPlanAnimations(data)
+    if type(data) ~= "table" then return end
+    if type(data.scenes) == "table" then
+        for _, scene in ipairs(data.scenes) do
+            if type(scene) == "table" then
+                scene.animations = nil
+            end
+        end
+    end
+    if type(data.plans) == "table" then
+        for _, plan in ipairs(data.plans) do
+            if type(plan) == "table" then
+                self:StripPlanAnimations(plan.data or plan.payload or plan)
+            end
+        end
+    end
+end
+
+-- Animation paths dominate large plans. Pack [x,y] points as exact scaled integer
+-- deltas before JSON/deflate; the receiver expands them before normal import.
+function Raidstrats:PackShareAnimationPaths(data)
+    if type(data) ~= "table" or type(data.scenes) ~= "table" then return end
+    for _, scene in ipairs(data.scenes) do
+        for _, animation in ipairs(type(scene.animations) == "table" and scene.animations or {}) do
+            local path = animation and animation.path
+            if type(path) == "table" and #path > 0 then
+                local scale = AnimationPathScale(path)
+                if scale then
+                    local packed = {}
+                    local previousX, previousY = 0, 0
+                    for index, point in ipairs(path) do
+                        local x = math.floor((tonumber(point[1]) or 0) * scale + 0.5)
+                        local y = math.floor((tonumber(point[2]) or 0) * scale + 0.5)
+                        packed[#packed + 1] = index == 1 and x or (x - previousX)
+                        packed[#packed + 1] = index == 1 and y or (y - previousY)
+                        previousX, previousY = x, y
+                    end
+                    animation.path = packed
+                    animation.pathEncoding = "delta"
+                    animation.pathScale = scale
+                end
+            end
+        end
+    end
+end
+
+function Raidstrats:UnpackShareAnimationPaths(data)
+    if type(data) ~= "table" or type(data.scenes) ~= "table" then return end
+    for _, scene in ipairs(data.scenes) do
+        for _, animation in ipairs(type(scene.animations) == "table" and scene.animations or {}) do
+            if animation and animation.pathEncoding == "delta" then
+                local packed = animation.path
+                local scale = tonumber(animation.pathScale)
+                if type(packed) == "table" and scale and scale > 0 and #packed % 2 == 0 then
+                    local path = {}
+                    local x, y = 0, 0
+                    for index = 1, #packed, 2 do
+                        local dx, dy = tonumber(packed[index]), tonumber(packed[index + 1])
+                        if not dx or not dy then
+                            path = nil
+                            break
+                        end
+                        x = (index == 1) and dx or (x + dx)
+                        y = (index == 1) and dy or (y + dy)
+                        path[#path + 1] = { x / scale, y / scale }
+                    end
+                    if path then
+                        animation.path = path
+                        animation.pathEncoding = nil
+                        animation.pathScale = nil
+                    end
+                end
+            end
+        end
+    end
+end
+
+-- Build the compressed plan body (0x01 + deflate when smaller). Paste/share links
+-- wrap this in base64. AceComm must encode this binary body with LibDeflate's
+-- addon-channel codec because raw deflate can contain NUL/control bytes.
+function Raidstrats:BuildShareBody(data, opts)
     -- Ensure a stable team identity before sharing so sync versions line up on import.
     if data then self:EnsurePlanInstanceKey(data) end
     data = self:PreparePlanDataForShare(data)
@@ -2096,17 +2253,48 @@ function Raidstrats:BuildSharePayload(data, opts)
     if self.StampShareSyncVersion and not (opts and opts.skipSyncVersionStamp) then
         self:StampShareSyncVersion(data, opts)
     end
+    self:StripPlanAnimations(data)
+    if opts and opts.compactAnimations then
+        self:PackShareAnimationPaths(data)
+    end
     local json = EncodeJSON(data)
     if not json or json == "" then return nil end
     local body = json
     local LibDeflate = LibStub("LibDeflate", true)
     if LibDeflate and LibDeflate.CompressDeflate then
-        -- Use a slightly lower level for better send-time responsiveness.
-        local ok, compressed = pcall(function() return LibDeflate:CompressDeflate(json, { level = 6 }) end)
+        local ok, compressed = pcall(function() return LibDeflate:CompressDeflate(json, { level = 9 }) end)
         if ok and compressed and (#compressed + 1) < #json then
             body = string.char(0x01) .. compressed
         end
     end
+    return body
+end
+
+function Raidstrats:EncodeShareBodyForAddonChannel(body)
+    if type(body) ~= "string" or body == "" then return nil end
+    local LibDeflate = LibStub("LibDeflate", true)
+    if not LibDeflate or not LibDeflate.EncodeForWoWAddonChannel then return nil end
+    local ok, encoded = pcall(function()
+        return LibDeflate:EncodeForWoWAddonChannel(body)
+    end)
+    if not ok or type(encoded) ~= "string" or encoded == "" then return nil end
+    return encoded
+end
+
+function Raidstrats:DecodeShareBodyFromAddonChannel(encoded)
+    if type(encoded) ~= "string" or encoded == "" then return nil end
+    local LibDeflate = LibStub("LibDeflate", true)
+    if not LibDeflate or not LibDeflate.DecodeForWoWAddonChannel then return nil end
+    local ok, body = pcall(function()
+        return LibDeflate:DecodeForWoWAddonChannel(encoded)
+    end)
+    if not ok or type(body) ~= "string" or body == "" then return nil end
+    return body
+end
+
+function Raidstrats:BuildSharePayload(data, opts)
+    local body = self:BuildShareBody(data, opts)
+    if not body or body == "" then return nil end
     return EncodeBase64(body)
 end
 
@@ -2160,8 +2348,187 @@ end
 -- Legacy tiny-chunk path (kept for receiving old clients only). New sends use one
 -- AceComm message so ChatThrottle isn't flooded with hundreds of BULK packets.
 local SHARE_PLAN_BATCH = 180
-local SHARE_COMM_PRIO = "NORMAL"
+local SHARE_COMM_PRIO = "ALERT"
 local SHARE_REQUEST_TIMEOUT = 45
+local SHARE_REQUEST_RETRY = 0.25
+local SHARE_PRELOAD_CHUNK = 220
+local SHARE_REQUEST_IDLE_TIMEOUT = 20
+-- Wait for the party preload before whispering a second full copy. Early REQ was
+-- doubling transfer time and re-importing the plan we just received.
+local SHARE_REQUEST_FALLBACK_REQ = 12
+
+function Raidstrats:BeginShareThrottleBoost()
+    local ctl = _G.ChatThrottleLib
+    if not ctl then return end
+    self._shareThrottleBoosts = (self._shareThrottleBoosts or 0) + 1
+    if self._shareThrottleBoosts == 1 and type(ctl.MAX_CPS) == "number" and ctl.MAX_CPS < 2000 then
+        self._ctlMaxCpsSaved = ctl.MAX_CPS
+        ctl.MAX_CPS = 2000
+    end
+end
+
+function Raidstrats:EndShareThrottleBoost()
+    local ctl = _G.ChatThrottleLib
+    self._shareThrottleBoosts = math.max(0, (self._shareThrottleBoosts or 1) - 1)
+    if self._shareThrottleBoosts == 0 and ctl and self._ctlMaxCpsSaved then
+        ctl.MAX_CPS = self._ctlMaxCpsSaved
+        self._ctlMaxCpsSaved = nil
+    end
+end
+
+function Raidstrats:HadRecentShareBroadcast()
+    if self._planShareBroadcastBusy then return true end
+    local t = self._lastShareBroadcastAt
+    return t and (GetTime() - t) < 60
+end
+
+function Raidstrats:FinishPendingShareWait()
+    self:CancelShareRequestTimeout()
+    self._incomingPlan = nil
+    if self.HideImportProgress then self:HideImportProgress() end
+end
+
+function Raidstrats:ShareImportAlreadyDone(payload)
+    if self._shareImportLock then return true end
+    if payload and self._lastImportedSharePayload == payload
+        and (GetTime() - (self._lastImportedShareAt or 0)) < 20 then
+        return true
+    end
+    return false
+end
+
+function Raidstrats:ImportReceivedPlanPayload(payload, sender)
+    if type(payload) ~= "string" or payload == "" then return false end
+    if self:ShareImportAlreadyDone(payload) then
+        self:FinishPendingShareWait()
+        return true
+    end
+    self._shareImportLock = true
+    self:CancelShareRequestTimeout()
+    self._incomingPlan = nil
+    if self.ShowImportProgress then self:ShowImportProgress(true, 0, nil, L("Importing shared plan...")) end
+    local ok
+    local first = payload:byte(1)
+    if first == 0x01 or first == 123 then -- compressed body or raw JSON '{'
+        ok = self:ImportPlanFromPasteStringWithOpts(PREFIX_PLANNER .. EncodeBase64(payload), { fromShare = true })
+    else
+        ok = self:ImportPlanFromPasteStringWithOpts(PREFIX_PLANNER .. payload, { fromShare = true })
+    end
+    self._shareImportLock = nil
+    if self.HideImportProgress then self:HideImportProgress() end
+    if ok == true then
+        self._lastImportedSharePayload = payload
+        self._lastImportedShareAt = GetTime()
+        self:OpenPlannerAfterShareImport()
+        local who = sender and (Ambiguate and Ambiguate(sender, "short") or sender) or nil
+        if who and who ~= "" then
+            print(L("|cff00aaff[Raidstrats.gg]|r Imported plan from %s!"):format(who))
+        else
+            print(L("|cff00aaff[Raidstrats.gg]|r Plan imported!"))
+        end
+        return true
+    elseif ok == "pending" then
+        return true
+    end
+    -- Second copy of a plan we already imported — stay quiet.
+    if self._lastImportedShareAt and (GetTime() - self._lastImportedShareAt) < 20 then
+        return true
+    end
+    print(L("|cffff6666[Raidstrats.gg]|r Couldn't import the cached plan."))
+    return false
+end
+
+function Raidstrats:TryImportPendingSharedPlan(sender, planName)
+    local incoming = self._incomingPlan
+    if not incoming or incoming.id ~= planName then return false end
+    local received = self:GetReceivedSharedPlan(sender or incoming.owner, planName)
+        or self:GetReceivedSharedPlan(incoming.owner, planName)
+    if not received or not received.payload then return false end
+    self:ShareDebug(("Share pending import from cache: plan=\"%s\""):format(tostring(planName)))
+    return self:ImportReceivedPlanPayload(received.payload, received.sender or sender)
+end
+
+function Raidstrats:TryImportPendingSharedPlanGroup(sender, linkLabel)
+    local waiting = self._sharedPlanGroupsIncoming and self._sharedPlanGroupsIncoming[linkLabel]
+    if not waiting then return false end
+    local received = self.GetReceivedSharedPlanGroup
+        and (self:GetReceivedSharedPlanGroup(sender or waiting.sender, linkLabel)
+            or self:GetReceivedSharedPlanGroup(waiting.sender, linkLabel))
+    if not received or not received.payload then return false end
+    self._sharedPlanGroupsIncoming[linkLabel] = nil
+    if self.CancelShareRequestTimeout then self:CancelShareRequestTimeout() end
+    self:ShareDebug(("Share pending group import from cache: group=\"%s\""):format(tostring(linkLabel)))
+    if self.ImportSharedPlanGroupPayload then
+        self:ImportSharedPlanGroupPayload(received.payload, received.sender or sender)
+        return true
+    end
+    return false
+end
+
+function Raidstrats:HasPendingSharePreload(sender, planName)
+    local map = self._broadcastPlanIncoming
+    if not map or not planName then return false end
+    local normalizedSender = self:NormalizeShareSender(sender)
+    for _, entry in pairs(map) do
+        if entry and entry.planName == planName
+            and (normalizedSender == "" or self:NormalizeShareSender(entry.sender) == normalizedSender) then
+            return true
+        end
+    end
+    return false
+end
+
+function Raidstrats:WatchPendingShareCache(sender, planName, isGroup, whisperTo)
+    local serial = self._shareRequestSerial or 0
+    local started = GetTime()
+    local reqSent = false
+    local function tick()
+        if (self._shareRequestSerial or 0) ~= serial then return end
+        if isGroup then
+            if self:TryImportPendingSharedPlanGroup(sender, planName) then return end
+        else
+            if self:TryImportPendingSharedPlan(sender, planName) then return end
+        end
+        local elapsed = GetTime() - started
+        if not reqSent and elapsed >= SHARE_REQUEST_FALLBACK_REQ then
+            -- A received header proves the original preload is underway. Never
+            -- request a second copy while it exists; that request could cross the
+            -- final chunk and start a redundant transfer after import succeeds.
+            local preloadPending = not isGroup and self:HasPendingSharePreload(sender, planName)
+            if not preloadPending then
+                reqSent = true
+                local groupChan = self.GetPlanShareCommChannel and self:GetPlanShareCommChannel() or nil
+                if isGroup then
+                    if groupChan then
+                        self:SendCommMessage(COMM_PLAN_PREFIX, "GREQ" .. string.char(31) .. planName, groupChan, nil, SHARE_COMM_PRIO)
+                    end
+                    if whisperTo then
+                        self:SendCommMessage(COMM_PLAN_PREFIX, "GREQ" .. string.char(31) .. planName, "WHISPER", whisperTo, SHARE_COMM_PRIO)
+                    end
+                else
+                    -- REQZ is used only when no preload header arrived at all.
+                    if groupChan then
+                        self:SendCommMessage(COMM_PLAN_PREFIX, "REQZ:" .. planName, groupChan, nil, SHARE_COMM_PRIO)
+                    elseif whisperTo then
+                        self:SendCommMessage(COMM_PLAN_PREFIX, "REQZ:" .. planName, "WHISPER", whisperTo, SHARE_COMM_PRIO)
+                    end
+                end
+                self:ShareDebug(("Share click missing preload — sent %s request plan=\"%s\" channel=%s"):format(
+                    isGroup and "group" or "plan",
+                    tostring(planName),
+                    tostring(groupChan or (whisperTo and "WHISPER") or "-")))
+            end
+        end
+        if elapsed < SHARE_REQUEST_TIMEOUT and C_Timer and C_Timer.After then
+            C_Timer.After(SHARE_REQUEST_RETRY, tick)
+        end
+    end
+    if C_Timer and C_Timer.After then
+        C_Timer.After(SHARE_REQUEST_RETRY, tick)
+    else
+        tick()
+    end
+end
 
 function Raidstrats:SendSharedPlanWhisper(target, planName, payload)
     if not target or not payload or payload == "" then return false end
@@ -2175,19 +2542,64 @@ function Raidstrats:SendSharedPlanWhisper(target, planName, payload)
 end
 
 -- Push the full plan once to party/raid/instance so clickers can import locally.
--- Whisper REQ remains the fallback for late joiners / missed broadcasts.
-function Raidstrats:SendSharedPlanBroadcast(planName, payload)
+-- Whisper/group REQ remains the fallback for late joiners / missed broadcasts.
+function Raidstrats:SendSharedPlanBroadcast(planName, payload, body)
     local chan = self.GetPlanShareCommChannel and self:GetPlanShareCommChannel() or nil
-    if not chan or not planName or not payload or payload == "" then return false end
+    if not chan or not planName then return false end
+    local encodedBody = self:EncodeShareBodyForAddonChannel(body)
+    local wire = encodedBody or payload
+    if type(wire) ~= "string" or wire == "" then return false end
+    local encoding = encodedBody and "Z" or "B"
+    local transferId = string.format("%x%x", time(), math.random(0, 0xFFFFFF))
+    local total = math.ceil(#wire / SHARE_PRELOAD_CHUNK)
+    local finished = false
+    local function complete()
+        if finished then return end
+        finished = true
+        self._planShareBroadcastBusy = nil
+        self:EndShareThrottleBoost()
+    end
+    self._planShareBroadcastBusy = true
+    self._lastShareBroadcastAt = GetTime()
+    self:BeginShareThrottleBoost()
+
+    -- Explicit small messages provide real receiver progress and avoid AceComm's
+    -- single multipart spool per prefix/sender being overwritten by another
+    -- concurrent RAIDSTRATS_PLAN message.
     self:SendCommMessage(
         COMM_PLAN_PREFIX,
-        ("BPLN:%s:%s"):format(planName, payload),
+        ("BPLH:%s:%s:%d:%s"):format(transferId, encoding, total, planName),
         chan,
         nil,
         SHARE_COMM_PRIO
     )
-    self:ShareDebug(("Broadcast plan send: chan=%s plan=\"%s\" bytes=%d"):format(
-        tostring(chan), tostring(planName), #payload))
+    for index = 1, total do
+        local first = (index - 1) * SHARE_PRELOAD_CHUNK + 1
+        local chunk = wire:sub(first, first + SHARE_PRELOAD_CHUNK - 1)
+        local callback = nil
+        if index == total then
+            callback = function()
+                complete()
+            end
+        end
+        self:SendCommMessage(
+            COMM_PLAN_PREFIX,
+            ("BPLC:%s:%d:%d:%s"):format(transferId, index, total, chunk),
+            chan,
+            nil,
+            SHARE_COMM_PRIO,
+            callback
+        )
+    end
+    -- Keep the temporary rate boost until the send callback completes. This
+    -- fallback is only a guard for a missing callback, so allow enough time for
+    -- very animation-heavy plans.
+    local fallback = math.max(5, math.min(45, 3 + (#wire / 1500)))
+    if C_Timer and C_Timer.After then
+        C_Timer.After(fallback, complete)
+    end
+    self:ShareDebug(("Broadcast plan send: chan=%s plan=\"%s\" encoding=%s chunks=%d bytes=%d"):format(
+        tostring(chan), tostring(planName), encoding, total, #wire))
     return true
 end
 
@@ -2211,6 +2623,100 @@ function Raidstrats:HandleSharedPlanBroadcastChunk(sender, planName, index, tota
     self:CacheReceivedSharedPlan(sender, planName, payload)
 end
 
+function Raidstrats:HandleSharedPlanPreloadHeader(sender, transferId, encoding, total, planName)
+    total = tonumber(total)
+    if not sender or not transferId or transferId == "" or not planName or planName == ""
+        or (encoding ~= "Z" and encoding ~= "B") or not total or total < 1 then
+        return
+    end
+    self._broadcastPlanIncoming = self._broadcastPlanIncoming or {}
+    local now = GetTime()
+    for key, old in pairs(self._broadcastPlanIncoming) do
+        if not old or (now - (old.t or 0)) > SHARE_REQUEST_TIMEOUT then
+            self._broadcastPlanIncoming[key] = nil
+        end
+    end
+    local key = self:MakeReceivedShareKey(sender, "transfer:" .. transferId)
+    self._broadcastPlanIncoming[key] = {
+        id = transferId,
+        encoding = encoding,
+        planName = planName,
+        sender = sender,
+        chunks = {},
+        count = 0,
+        total = total,
+        t = now,
+    }
+
+    local waiting = self._incomingPlan
+    if waiting and waiting.id == planName then
+        if self.ShowImportProgress then
+            self:ShowImportProgress(true, 0, total, L("Requesting plan..."))
+        end
+        if self.UpdateImportProgress then self:UpdateImportProgress(0, total) end
+    end
+    self:ShareDebug(("Share preload started: plan=\"%s\" chunks=%d encoding=%s"):format(
+        tostring(planName), total, encoding))
+end
+
+function Raidstrats:HandleSharedPlanPreloadChunk(sender, transferId, index, total, chunk)
+    index, total = tonumber(index), tonumber(total)
+    if not sender or not transferId or not index or not total or type(chunk) ~= "string" then return end
+    local key = self:MakeReceivedShareKey(sender, "transfer:" .. transferId)
+    local entry = self._broadcastPlanIncoming and self._broadcastPlanIncoming[key]
+    if not entry or entry.total ~= total or index < 1 or index > total then return end
+    if not entry.chunks[index] then
+        entry.chunks[index] = chunk
+        entry.count = (entry.count or 0) + 1
+    end
+    entry.t = GetTime()
+
+    local waiting = self._incomingPlan
+    if waiting and waiting.id == entry.planName and self.UpdateImportProgress then
+        self:UpdateImportProgress(entry.count, entry.total)
+    end
+    if entry.count < entry.total then return end
+    for part = 1, entry.total do
+        if not entry.chunks[part] then return end
+    end
+
+    local wire = table.concat(entry.chunks, "")
+    self._broadcastPlanIncoming[key] = nil
+    local payload = wire
+    if entry.encoding == "Z" then
+        payload = self:DecodeShareBodyFromAddonChannel(wire)
+    end
+    if not payload or payload == "" then
+        if waiting and waiting.id == entry.planName then
+            self:CancelShareRequestTimeout()
+            self._incomingPlan = nil
+            if self.HideImportProgress then self:HideImportProgress() end
+            print(L("|cffff6666[Raidstrats.gg]|r Received a shared plan but couldn't import it."))
+        end
+        self:ShareDebug(("Share preload decode failed: plan=\"%s\" encoding=%s"):format(
+            tostring(entry.planName), tostring(entry.encoding)))
+        return
+    end
+    self:ShareDebug(("Share preload complete: plan=\"%s\" chunks=%d bytes=%d"):format(
+        tostring(entry.planName), entry.total, #wire))
+    self:CacheReceivedSharedPlan(sender, entry.planName, payload)
+end
+
+function Raidstrats:UpdatePendingShareProgress(sender, planName)
+    local map = self._broadcastPlanIncoming
+    if not map or not planName then return end
+    local normalizedSender = self:NormalizeShareSender(sender)
+    for _, entry in pairs(map) do
+        if entry and entry.planName == planName
+            and (normalizedSender == "" or self:NormalizeShareSender(entry.sender) == normalizedSender) then
+            if self.UpdateImportProgress then
+                self:UpdateImportProgress(entry.count or 0, entry.total)
+            end
+            return
+        end
+    end
+end
+
 function Raidstrats:CancelShareRequestTimeout()
     self._shareRequestSerial = (self._shareRequestSerial or 0) + 1
 end
@@ -2219,12 +2725,40 @@ function Raidstrats:ArmShareRequestTimeout(sender, planName, kind)
     local serial = (self._shareRequestSerial or 0) + 1
     self._shareRequestSerial = serial
     if not (C_Timer and C_Timer.After) then return end
-    C_Timer.After(SHARE_REQUEST_TIMEOUT, function()
+
+    local function hasActiveTransfer()
+        local map = self._broadcastPlanIncoming
+        if not map then return false end
+        local normalizedSender = self:NormalizeShareSender(sender)
+        local now = GetTime()
+        for _, entry in pairs(map) do
+            if entry and entry.planName == planName
+                and (normalizedSender == "" or self:NormalizeShareSender(entry.sender) == normalizedSender)
+                and (now - (entry.t or 0)) < SHARE_REQUEST_IDLE_TIMEOUT then
+                return true
+            end
+        end
+        return false
+    end
+
+    local function checkTimeout()
         if self._shareRequestSerial ~= serial then return end
         local incoming = self._incomingPlan
         local waiting = incoming and incoming.id == planName
         local groupWaiting = self._sharedPlanGroupsIncoming and self._sharedPlanGroupsIncoming[planName]
         if not waiting and not groupWaiting then return end
+
+        -- A large plan may legitimately take longer than the original 45-second
+        -- wall-clock limit. As long as chunks are still arriving, keep waiting.
+        if waiting and hasActiveTransfer() then
+            self:ShareDebug(("Share request still receiving: plan=\"%s\" — extending timeout"):format(
+                tostring(planName)))
+            C_Timer.After(SHARE_REQUEST_IDLE_TIMEOUT, checkTimeout)
+            return
+        end
+
+        -- Stop the cache watcher as well as this timeout callback.
+        self._shareRequestSerial = serial + 1
         self._incomingPlan = nil
         if self._sharedPlanGroupsIncoming then
             self._sharedPlanGroupsIncoming[planName] = nil
@@ -2235,7 +2769,9 @@ function Raidstrats:ArmShareRequestTimeout(sender, planName, kind)
             kind or L("requesting"), tostring(planName), tostring(short)))
         self:ShareDebug(("Share request timeout: kind=%s plan=\"%s\" from=%s"):format(
             tostring(kind), tostring(planName), tostring(short)))
-    end)
+    end
+
+    C_Timer.After(SHARE_REQUEST_TIMEOUT, checkTimeout)
 end
 
 -- Share the current plan to chat, WeakAuras-style: post a plain-text token that each
@@ -2266,6 +2802,13 @@ function Raidstrats:SharePlanToGroup(data, opts)
         return false
     end
 
+    -- Animation data is temporarily omitted from imports to keep large plans fast.
+    -- Keep a regular base64 payload cached for compatibility with older requesters.
+    local body = self:BuildShareBody(data)
+    if not body or body == "" then
+        print(L("|cffff6666[Raidstrats.gg]|r Couldn't prepare the plan for sharing."))
+        return false
+    end
     local payload = self:BuildSharePayload(data)
     if not payload or payload == "" then
         print(L("|cffff6666[Raidstrats.gg]|r Couldn't prepare the plan for sharing."))
@@ -2276,20 +2819,12 @@ function Raidstrats:SharePlanToGroup(data, opts)
 
     -- Cache the payload so we can answer whisper fallback requests from clickers.
     self._sharedPlans = self._sharedPlans or {}
-    self._sharedPlans[planName] = { payload = payload, t = time() }
+    self._sharedPlans[planName] = { payload = payload, body = body, t = time() }
 
-    -- Preload once to the group; clickers import from this cache when available.
-    local broadcasted = self:SendSharedPlanBroadcast(planName, payload)
-
-    local function postChatToken()
-        SendChatMessage(("[Raidstrats: %s]"):format(planName), chan)
-    end
-    -- Slight delay so the AceComm preload can land before people click the link.
-    if broadcasted and C_Timer and C_Timer.After then
-        C_Timer.After(0.4, postChatToken)
-    else
-        postChatToken()
-    end
+    -- Preload to the group. Post the chat link immediately — early clickers wait on
+    -- the incoming cache instead of hanging on a whisper REQ.
+    local broadcasted = self:SendSharedPlanBroadcast(planName, payload, body)
+    SendChatMessage(("[Raidstrats: %s]"):format(planName), chan)
 
     if broadcasted then
         print(L("|cff00aaff[Raidstrats.gg]|r Shared \"%s\" to %s (preloaded to group). Others click the link to import."):format(planName, ChannelLabel(chan)))
@@ -2354,26 +2889,15 @@ function Raidstrats:RequestSharedPlan(sender, planName)
             self:ImportSharedPlanGroupPayload(receivedGroup.payload, receivedGroup.sender or sender)
             return
         end
-        self:ShareDebug(("Share click cache MISS (group): plan=\"%s\" from=%s — whispering REQ"):format(planName, tostring(sender)))
+        self:ShareDebug(("Share click cache MISS (group): plan=\"%s\" from=%s — waiting for preload"):format(planName, tostring(sender)))
     else
         local received = self.GetReceivedSharedPlan and self:GetReceivedSharedPlan(sender, planName)
         if received and received.payload then
             self:ShareDebug(("Share click cache HIT: plan=\"%s\" from=%s"):format(planName, tostring(sender)))
-            self:CancelShareRequestTimeout()
-            if self.ShowImportProgress then self:ShowImportProgress(true, 0, nil, L("Importing shared plan...")) end
-            local ok = self:ImportPlanFromPasteString(PREFIX_PLANNER .. received.payload)
-            if self.HideImportProgress then self:HideImportProgress() end
-            if ok == true then
-                self:OpenPlannerAfterShareImport()
-                print(L("|cff00aaff[Raidstrats.gg]|r Plan imported!"))
-            elseif ok == "pending" then
-                -- Waiting on user conflict choice (override/skip).
-            else
-                print(L("|cffff6666[Raidstrats.gg]|r Couldn't import the cached plan."))
-            end
+            self:ImportReceivedPlanPayload(received.payload, received.sender or sender)
             return
         end
-        self:ShareDebug(("Share click cache MISS: plan=\"%s\" from=%s — whispering REQ"):format(planName, tostring(sender)))
+        self:ShareDebug(("Share click cache MISS: plan=\"%s\" from=%s — waiting for preload"):format(planName, tostring(sender)))
     end
 
     local whisperTo = self:ResolveWhisperTarget(sender) or sender
@@ -2383,16 +2907,17 @@ function Raidstrats:RequestSharedPlan(sender, planName)
         self:OpenPlannerAfterShareImport()
         if self.ShowImportProgress then self:ShowImportProgress(true, 0, nil, L("Requesting group...")) end
         self:ArmShareRequestTimeout(sender, planName, L("requesting group"))
-        self:SendCommMessage(COMM_PLAN_PREFIX, "GREQ" .. string.char(31) .. planName, "WHISPER", whisperTo, SHARE_COMM_PRIO)
         print(L("|cff00aaff[Raidstrats.gg]|r Requesting \"%s\" from %s..."):format(planName, Ambiguate and Ambiguate(sender, "short") or sender))
+        self:WatchPendingShareCache(sender, planName, true, whisperTo)
         return
     end
     self._incomingPlan = { owner = sender, id = planName, chunks = {}, total = nil, t = GetTime() }
     self:OpenPlannerAfterShareImport()
     if self.ShowImportProgress then self:ShowImportProgress(true, 0, nil, L("Requesting plan...")) end
+    self:UpdatePendingShareProgress(sender, planName)
     self:ArmShareRequestTimeout(sender, planName, L("requesting plan"))
     print(L("|cff00aaff[Raidstrats.gg]|r Requesting \"%s\" from %s..."):format(planName, Ambiguate and Ambiguate(sender, "short") or sender))
-    self:SendCommMessage(COMM_PLAN_PREFIX, "REQ:" .. planName, "WHISPER", whisperTo, SHARE_COMM_PRIO)
+    self:WatchPendingShareCache(sender, planName, false, whisperTo)
 end
 
 function Raidstrats:SetupSharedPlanLinks()
@@ -3585,7 +4110,48 @@ function Raidstrats:OnCommReceived(p, m, d, s)
         return
     end
 
-    -- A clicker asked us for one of our shared plans: whisper them the payload.
+    -- Chunked preload with receiver-side progress.
+    if m:sub(1, 5) == "BPLH:" then
+        local transferId, encoding, total, planName =
+            m:sub(6):match("^([^:]+):([ZB]):(%d+):(.*)$")
+        if transferId and planName then
+            self:HandleSharedPlanPreloadHeader(s, transferId, encoding, total, planName)
+        end
+        return
+    end
+
+    if m:sub(1, 5) == "BPLC:" then
+        local transferId, index, total, chunk =
+            m:sub(6):match("^([^:]+):(%d+):(%d+):(.*)$")
+        if transferId and chunk then
+            self:HandleSharedPlanPreloadChunk(s, transferId, index, total, chunk)
+        end
+        return
+    end
+
+    -- A current client missed the addon-safe preload and requests one resend.
+    if m:sub(1, 5) == "REQZ:" then
+        local planName = m:sub(6)
+        if not planName or planName == "" then return end
+        local entry = self._sharedPlans and self._sharedPlans[planName]
+        if not entry or not entry.payload or entry.payload == "" then return end
+        if (time() - (entry.t or 0)) > SHARED_PLAN_TTL then
+            self._sharedPlans[planName] = nil
+            return
+        end
+        if self._planShareBroadcastBusy then
+            self:ShareDebug(("REQZ waiting on active preload: plan=\"%s\" from=%s"):format(
+                tostring(planName), tostring(s)))
+            return
+        end
+        self:ShareDebug(("REQZ resend: plan=\"%s\" to group for=%s"):format(
+            tostring(planName), tostring(s)))
+        self:SendSharedPlanBroadcast(planName, entry.payload, entry.body)
+        return
+    end
+
+    -- A legacy clicker asked us for one of our shared plans. Legacy clients do
+    -- not understand BPLZ, so answer with the compatible base64 whisper.
     if m:sub(1, 4) == "REQ:" then
         local planName = m:sub(5)
         if not planName or planName == "" then return end
@@ -3599,17 +4165,29 @@ function Raidstrats:OnCommReceived(p, m, d, s)
             self:ShareDebug(("REQ miss: expired share for plan=\"%s\" from=%s"):format(tostring(planName), tostring(s)))
             return
         end
-        self:ShareDebug(("REQ hit: sending plan=\"%s\" to=%s bytes=%d"):format(
-            tostring(planName), tostring(s), #(entry.payload or "")))
+        self:ShareDebug(("REQ hit: sending plan=\"%s\" to=%s dist=%s bytes=%d"):format(
+            tostring(planName), tostring(s), tostring(d), #(entry.payload or "")))
         self:SendSharedPlanWhisper(s, planName, entry.payload)
         return
     end
 
-    -- Fast preload (single AceComm message). Cache only — import on chat-link click.
-    if m:sub(1, 5) == "BPLN:" then
-        local planName, payload = m:sub(6):match("^([^:]+):(.*)$")
-        if planName and payload and payload ~= "" then
-            self:CacheReceivedSharedPlan(s, planName, payload)
+    -- Fast preload. BPLZ uses LibDeflate's addon-safe binary encoding;
+    -- BPLN is the legacy base64 format.
+    if m:sub(1, 5) == "BPLZ:" or m:sub(1, 5) == "BPLN:" then
+        local tag = m:sub(1, 4)
+        local rest = m:sub(6)
+        local colon = rest:find(":", 1, true)
+        if colon then
+            local planName = rest:sub(1, colon - 1)
+            local payload = rest:sub(colon + 1)
+            if planName ~= "" and payload ~= "" then
+                if tag == "BPLZ" then
+                    payload = self:DecodeShareBodyFromAddonChannel(payload)
+                end
+                if payload and payload ~= "" then
+                    self:CacheReceivedSharedPlan(s, planName, payload)
+                end
+            end
         end
         return
     end
@@ -3629,19 +4207,7 @@ function Raidstrats:OnCommReceived(p, m, d, s)
     if m:sub(1, 5) == "PLAN:" then
         local payload = m:sub(6)
         if not payload or payload == "" then return end
-        self:CancelShareRequestTimeout()
-        self._incomingPlan = nil
-        if self.ShowImportProgress then self:ShowImportProgress(true, 0, nil, L("Importing shared plan...")) end
-        local ok = self:ImportPlanFromPasteString(PREFIX_PLANNER .. payload)
-        if self.HideImportProgress then self:HideImportProgress() end
-        if ok == true then
-            self:OpenPlannerAfterShareImport()
-            print(L("|cff00aaff[Raidstrats.gg]|r Imported plan from %s!"):format(s or L("Someone")))
-        elseif ok == "pending" then
-            -- Waiting on user conflict choice (override/skip).
-        else
-            print(L("|cffff6666[Raidstrats.gg]|r Received a shared plan but couldn't import it."))
-        end
+        self:ImportReceivedPlanPayload(payload, s)
         return
     end
 
