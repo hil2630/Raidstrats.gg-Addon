@@ -1334,8 +1334,15 @@ local function BuildPushBaselineData(self, data)
 end
 
 -- Persisted per-plan sync state so delta push survives /reload:
---   store[planKey] = { version = <number>, data = <baseline plan>, t = <time> }
--- Leaders keep `data` (needed to diff); receivers only need `version`.
+--   store[planKey] = {
+--     version      = last shared/pushed version (what the group has),
+--     data         = last shared/pushed snapshot (delta base for Push Update),
+--     localVersion = current local content version (canvas label / readycheck),
+--     t            = time
+--   }
+-- Leaders keep `data` (needed to diff). Receivers only need `version`.
+-- Local edits may bump `localVersion` but must NEVER overwrite `data`/`version`,
+-- or Push Update will see "no changes" against a baseline that was never sent.
 function Diar:GetPlanSyncStore()
     RaidstratsggSettings = RaidstratsggSettings or {}
     RaidstratsggSettings.planPushSync = RaidstratsggSettings.planPushSync or {}
@@ -1345,7 +1352,16 @@ end
 function Diar:GetPlanSyncVersion(planKey)
     if not planKey or planKey == "" then return nil end
     local rec = self:GetPlanSyncStore()[planKey]
-    return rec and tonumber(rec.version) or nil
+    if type(rec) ~= "table" then return nil end
+    return tonumber(rec.localVersion) or tonumber(rec.version) or nil
+end
+
+-- Last version that was actually shared or pushed to the group.
+function Diar:GetPlanPushBaseVersion(planKey)
+    if not planKey or planKey == "" then return nil end
+    local rec = self:GetPlanSyncStore()[planKey]
+    if type(rec) ~= "table" then return nil end
+    return tonumber(rec.version)
 end
 
 function Diar:EnsurePlanSyncVersionLabel(pf)
@@ -1405,9 +1421,13 @@ function Diar:SetPlanPushBaseline(planKey, data, version)
     local rec = store[planKey] or {}
     if type(data) == "table" then
         rec.data = CopyPlanData(data)
+        if type(rec.data) == "table" then
+            rec.data.syncVersion = nil
+        end
     end
     if version ~= nil then
         rec.version = tonumber(version)
+        rec.localVersion = rec.version
     end
     rec.t = time()
     store[planKey] = rec
@@ -1419,6 +1439,7 @@ function Diar:SetPlanSyncVersion(planKey, version)
     local store = self:GetPlanSyncStore()
     local rec = store[planKey] or {}
     rec.version = tonumber(version)
+    rec.localVersion = rec.version
     rec.t = time()
     store[planKey] = rec
     if self.UpdatePlanSyncVersionLabel then
@@ -1449,10 +1470,11 @@ function Diar:SchedulePlanSyncVersionCommit()
     end
 end
 
--- If the current plan content differs from the last stamped sync baseline, bump the
--- sync version once and refresh the baseline. Called from readycheck/share/push and
--- (debounced) after plan edits persist so the canvas Version label stays live.
--- Returns the current sync version for the plan, or nil.
+-- If the current plan content differs from the last shared/pushed snapshot, bump
+-- the local (UI/readycheck) version only. Do not replace the push baseline — Push
+-- Update diffs against that snapshot, which is what the group actually has.
+-- Called from readycheck and (debounced) after plan edits persist.
+-- Returns the current local sync version for the plan, or nil.
 function Diar:EnsurePlanSyncVersionMatchesContent(data)
     if type(data) ~= "table" then return nil end
     if self.EnsurePlanInstanceKey then self:EnsurePlanInstanceKey(data) end
@@ -1466,18 +1488,27 @@ function Diar:EnsurePlanSyncVersionMatchesContent(data)
     end
     shareData.syncVersion = nil
 
-    local existing = self:GetPlanSyncVersion(planKey)
+    local pushedVersion = self:GetPlanPushBaseVersion(planKey)
     local baseline = self:GetPlanPushBaseline(planKey)
-    if existing and baseline and TableDeepEqual(baseline, shareData) then
-        return existing
+    local store = self:GetPlanSyncStore()
+    local rec = store[planKey] or {}
+
+    -- No group snapshot yet (e.g. imported copy). Don't invent a baseline from
+    -- current edits — that would make the next Push Update look empty.
+    if not baseline then
+        return self:GetPlanSyncVersion(planKey)
     end
 
-    local version = (tonumber(existing) or 0) + 1
-    self:SetPlanPushBaseline(planKey, shareData, version)
+    local inSync = TableDeepEqual(baseline, shareData)
+    local localVersion = inSync and pushedVersion or ((tonumber(pushedVersion) or 0) + 1)
+    rec.localVersion = localVersion
+    if pushedVersion then rec.version = pushedVersion end
+    rec.t = time()
+    store[planKey] = rec
     if self.UpdatePlanSyncVersionLabel then
         self:UpdatePlanSyncVersionLabel(self.plannerFrame)
     end
-    return version
+    return localVersion
 end
 
 -- Called when building a share payload. Ensures the plan has a sync version + baseline and
@@ -1490,6 +1521,7 @@ function Diar:StampShareSyncVersion(shareData, opts)
         return
     end
     local planKey = "inst:" .. shareData.instanceKey
+    local pushedVersion = self:GetPlanPushBaseVersion(planKey)
     local existing = self:GetPlanSyncVersion(planKey)
     local baseline = self:GetPlanPushBaseline(planKey)
     local version
@@ -1504,11 +1536,16 @@ function Diar:StampShareSyncVersion(shareData, opts)
             version = 1
             self:SetPlanPushBaseline(planKey, shareData, version)
         end
-    elseif existing and baseline and TableDeepEqual(baseline, shareData) then
-        -- Already in sync with what we last pushed/shared; reuse the version.
-        version = existing
+    elseif baseline and TableDeepEqual(baseline, shareData) then
+        -- Already in sync with what we last pushed/shared; reuse the group version.
+        version = pushedVersion or existing
     else
-        version = (tonumber(existing) or 0) + 1
+        -- Prefer the already-computed local content version so share/push don't skip
+        -- a number after edits. Fall back to last-pushed + 1.
+        version = existing
+        if not version or version <= (tonumber(pushedVersion) or 0) then
+            version = (tonumber(pushedVersion) or 0) + 1
+        end
         -- Persist the shared snapshot as our baseline (without the stamp) so a later push diffs against it.
         self:SetPlanPushBaseline(planKey, shareData, version)
     end
@@ -1934,8 +1971,14 @@ function Diar:PushPlanUpdateToGroup()
     local prefix = self.COMM_PLAN_PREFIX or "RAIDSTRATS_PLAN"
 
     -- Version stamp lets receivers verify they share our exact base before applying a delta.
-    local baseVersion = self:GetPlanSyncVersion(planKey)
-    local newVersion = (tonumber(baseVersion) or 0) + 1
+    -- Use the last *pushed/shared* version as the base — not the local dirty version,
+    -- which can already be one ahead after edits.
+    local baseVersion = self:GetPlanPushBaseVersion(planKey)
+    local localVersion = self:GetPlanSyncVersion(planKey)
+    local newVersion = tonumber(localVersion)
+    if not newVersion or newVersion <= (tonumber(baseVersion) or 0) then
+        newVersion = (tonumber(baseVersion) or 0) + 1
+    end
 
     local mode = "full"
     local sceneIndex = nil
@@ -2079,7 +2122,14 @@ function Diar:PushPlanUpdateToGroup()
         tostring(transferId), tostring(mode), #payload,
         tostring(baseVersion or "-"), tostring(newVersion)
     ))
+    if self._planSyncVersionCommitTimer then
+        self._planSyncVersionCommitTimer:Cancel()
+        self._planSyncVersionCommitTimer = nil
+    end
     self:SetPlanPushBaseline(planKey, deltaData, newVersion)
+    if self.UpdatePlanSyncVersionLabel then
+        self:UpdatePlanSyncVersionLabel(self.plannerFrame)
+    end
 
     if mode == "move" then
         print("|cff00aaff[Raidstrats.gg]|r " ..
