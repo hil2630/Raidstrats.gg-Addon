@@ -1,5 +1,14 @@
 # Changelog
 
+## [Release 1.0.7]
+
+Fixed:
+
+- Imported plan text now shows Cyrillic, Chinese, Japanese, and Korean.
+  English Friz Quadrata has no glyphs for those scripts, so labels measured
+  as empty and collapsed. The planner now picks a client font from the text
+  itself (Cyrillic Friz, ARKai/bLEI, or 2002) so it renders on any locale.
+
 ## [Release 1.0.6]
 
 - Share to Group no longer hangs on "Requesting plan..." in small groups

@@ -2388,8 +2388,11 @@ local function EnsureReadyCheckAssignmentArrowButtons(pf)
         local owner = pf.canvas or pf
         local lbl = owner:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         if lbl.SetFont then
-            local fontName = STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF"
-            lbl:SetFont(fontName, 28, "OUTLINE")
+            if PUI and PUI.SetPlannerContentFont then
+                PUI.SetPlannerContentFont(lbl, 28, "OUTLINE")
+            else
+                lbl:SetFont(STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF", 28, "OUTLINE")
+            end
         end
         lbl:SetTextColor(0.88, 0.90, 0.94)
         lbl:SetJustifyH("CENTER")
@@ -2468,7 +2471,11 @@ function Diar:UpdateReadyCheckAssignmentArrows(pf)
         if pf.readyCheckAssignLabel.SetParent and pf.readyCheckAssignLabel:GetParent() ~= anchor then
             pf.readyCheckAssignLabel:SetParent(anchor)
         end
-        pf.readyCheckAssignLabel:SetText(L("Assignment %d / %d - Phase %s"):format(idx, total, phaseText))
+        local assignText = L("Assignment %d / %d - Phase %s"):format(idx, total, phaseText)
+        if PUI and PUI.SetPlannerContentFont then
+            PUI.SetPlannerContentFont(pf.readyCheckAssignLabel, 28, "OUTLINE", assignText)
+        end
+        pf.readyCheckAssignLabel:SetText(assignText)
         pf.readyCheckAssignLabel:ClearAllPoints()
         pf.readyCheckAssignLabel:SetPoint("TOP", anchor, "TOP", 0, -6)
         if pf.readyCheckAssignLabel.SetDrawLayer then
@@ -3870,15 +3877,19 @@ local function ApplyTextWidgetContent(w, item, label, vc, ch, minSize)
         local sw = tonumber(item.strokeWidth) or 0
         fontFlags = (sw >= 2.5) and "THICKOUTLINE" or "OUTLINE"
     end
-    w.text:SetFont(STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF", LayoutTextWidgetFont(w, item, vc, ch), fontFlags)
+    local textValue = tostring(label or "")
+    textValue = textValue:gsub("\r\n", "\n"):gsub("\r", "\n")
+    if PUI and PUI.SetPlannerContentFont then
+        PUI.SetPlannerContentFont(w.text, LayoutTextWidgetFont(w, item, vc, ch), fontFlags, textValue)
+    else
+        w.text:SetFont(STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF", LayoutTextWidgetFont(w, item, vc, ch), fontFlags)
+    end
     local tr, tg, tb = 1, 1, 1
     if item.textColor or item.fill then
         tr, tg, tb = ParseItemColor(item.textColor or item.fill, 1)
     end
     w.__baseTextColor = { tr, tg, tb }
     w.text:SetTextColor(tr, tg, tb)
-    local textValue = tostring(label or "")
-    textValue = textValue:gsub("\r\n", "\n"):gsub("\r", "\n")
     local isMultiLine = textValue:find("\n", 1, true) ~= nil
     w.text:SetWordWrap(isMultiLine)
     if w.text.SetNonSpaceWrap then w.text:SetNonSpaceWrap(isMultiLine) end
@@ -5567,12 +5578,8 @@ local function SetGroupSpotPreviewText(w, text, mine, item)
         w.spotPreviewText = fs
     end
     local out = tostring(text)
-    if #out > 24 then out = out:sub(1, 21) .. "..." end
-    w.spotPreviewText:SetText(out)
-    if mine then
-        w.spotPreviewText:SetTextColor(1, 0.95, 0.48, 1)
-    else
-        w.spotPreviewText:SetTextColor(0.95, 0.97, 1, 0.95)
+    if #out > 24 then
+        out = (PUI and PUI.TruncateUtf8 and PUI.TruncateUtf8(out, 21) or out:sub(1, 21)) .. "..."
     end
     local px = w:GetWidth() or 0
     local py = w:GetHeight() or 0
@@ -5587,7 +5594,17 @@ local function SetGroupSpotPreviewText(w, text, mine, item)
     local compactBoost = (pf and pf.compactMode) and 1.30 or 1
     local zoomBoost = 1 + math.max(0, zoom - 1) * 0.55
     local fontSize = math.max(11, math.min(52, math.floor(area * 0.26 * compactBoost * zoomBoost)))
-    w.spotPreviewText:SetFont("Fonts\\FRIZQT__.TTF", fontSize, "OUTLINE")
+    if PUI and PUI.SetPlannerContentFont then
+        PUI.SetPlannerContentFont(w.spotPreviewText, fontSize, "OUTLINE", out)
+    else
+        w.spotPreviewText:SetFont("Fonts\\FRIZQT__.TTF", fontSize, "OUTLINE")
+    end
+    w.spotPreviewText:SetText(out)
+    if mine then
+        w.spotPreviewText:SetTextColor(1, 0.95, 0.48, 1)
+    else
+        w.spotPreviewText:SetTextColor(0.95, 0.97, 1, 0.95)
+    end
     w.spotPreviewText:Show()
 end
 
@@ -5606,7 +5623,11 @@ function Diar.ApplyWidgetLabel(w, item, label, hasSelfOnPlan, playerKey, isNames
         local compactBoost = (pf and pf.compactMode) and 1.25 or 1
         local zoomBoost = (pf and pf.compactMode) and (1 + math.max(0, zoom - 1) * 0.40) or 1
         local fontSize = math.max(10, math.min(36, math.floor(area * 0.24 * compactBoost * zoomBoost)))
-        w.label:SetFont(STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF", fontSize, "OUTLINE")
+        if PUI and PUI.SetPlannerContentFont then
+            PUI.SetPlannerContentFont(w.label, fontSize, "OUTLINE", label)
+        else
+            w.label:SetFont(STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF", fontSize, "OUTLINE")
+        end
         w.__baseTextColor = { 0.85, 0.85, 0.85 }
         w.label:SetText(label)
         w.label:Show()
@@ -5910,13 +5931,14 @@ function Diar.RenderSceneItem(addon, pf, root, cw, ch, vc, minSize, item, itemIn
             end
             local area = math.max(10, math.min(w:GetWidth() or 10, w:GetHeight() or 10))
             local fontSize = math.max(8, math.floor(area * 0.24))
-            w.text:SetFont(STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF", fontSize, "OUTLINE")
-            w.text:SetTextColor(1, 1, 1, 1)
-            if item.bossBadge == true then
-        w.text:SetText(L("Boss"))
+            local badgeText = (item.bossBadge == true) and L("Boss") or tostring(item.trashBadgeLabel or "Trash")
+            if PUI and PUI.SetPlannerContentFont then
+                PUI.SetPlannerContentFont(w.text, fontSize, "OUTLINE", badgeText)
             else
-                w.text:SetText(tostring(item.trashBadgeLabel or "Trash"))
+                w.text:SetFont(STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF", fontSize, "OUTLINE")
             end
+            w.text:SetTextColor(1, 1, 1, 1)
+            w.text:SetText(badgeText)
             w.text:Show()
         else
             Diar.ApplyWidgetLabel(

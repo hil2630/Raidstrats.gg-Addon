@@ -41,6 +41,165 @@ PUI.UI = {
 
 PUI.HIGHLIGHT_TEXT = { 1.00, 0.92, 0.35 }
 
+-- Plan text can be any language regardless of client locale. Friz Quadrata
+-- (FRIZQT__) is Latin-only; FRIZQT___CYR adds Cyrillic but not CJK. Pick a
+-- bundled client font from the string so imported Chinese/Russian still
+-- measures and draws on enUS clients (otherwise GetStringWidth is ~0 and
+-- the widget collapses).
+local CYR_FONT_CANDIDATES = {
+    "Fonts\\FRIZQT___CYR.TTF",
+    "Fonts\\ARIALN.TTF",
+}
+
+local function CjkFontCandidates()
+    local loc = GetLocale and GetLocale() or ""
+    if loc == "zhTW" then
+        return { "Fonts\\bLEI00D.TTF", "Fonts\\ARHei.ttf", "Fonts\\ARKai_T.TTF" }
+    end
+    if loc == "koKR" then
+        return { "Fonts\\2002.TTF", "Fonts\\ARKai_T.TTF", "Fonts\\ARHei.ttf" }
+    end
+    return { "Fonts\\ARKai_T.TTF", "Fonts\\ARHei.ttf", "Fonts\\bLEI00D.TTF", "Fonts\\2002.TTF" }
+end
+
+local function FontPathMatches(applied, path)
+    if type(applied) ~= "string" or type(path) ~= "string" then return false end
+    local normalized = applied:gsub("/", "\\"):lower()
+    local want = path:gsub("/", "\\"):lower()
+    if normalized == want then return true end
+    local file = want:match("([^\\]+)$")
+    return file and normalized:find(file, 1, true) and true or false
+end
+
+local function ProbeFontPath(candidates)
+    local probe = PUI._fontProbe
+    if not probe then
+        probe = UIParent:CreateFontString(nil, "BACKGROUND")
+        probe:Hide()
+        PUI._fontProbe = probe
+    end
+    for i = 1, #candidates do
+        local path = candidates[i]
+        probe:SetFont(path, 12, "")
+        if FontPathMatches(probe.GetFont and probe:GetFont(), path) then
+            return path
+        end
+    end
+    return nil
+end
+
+local function Utf8CodepointAt(s, i)
+    local c = s:byte(i)
+    if not c then return nil, i end
+    if c < 0x80 then return c, i + 1 end
+    local c2 = s:byte(i + 1)
+    if c < 0xE0 then
+        if not c2 then return c, i + 1 end
+        return (c - 0xC0) * 0x40 + (c2 - 0x80), i + 2
+    end
+    local c3 = s:byte(i + 2)
+    if c < 0xF0 then
+        if not c2 or not c3 then return c, i + 1 end
+        return (c - 0xE0) * 0x1000 + (c2 - 0x80) * 0x40 + (c3 - 0x80), i + 3
+    end
+    local c4 = s:byte(i + 3)
+    if not c2 or not c3 or not c4 then return c, i + 1 end
+    return (c - 0xF0) * 0x40000 + (c2 - 0x80) * 0x1000 + (c3 - 0x80) * 0x40 + (c4 - 0x80), i + 4
+end
+
+local function IsCyrillicCodepoint(cp)
+    return (cp >= 0x0400 and cp <= 0x052F)
+        or (cp >= 0x2DE0 and cp <= 0x2DFF)
+        or (cp >= 0xA640 and cp <= 0xA69F)
+end
+
+local function IsHangulCodepoint(cp)
+    return (cp >= 0x1100 and cp <= 0x11FF)
+        or (cp >= 0x3130 and cp <= 0x318F)
+        or (cp >= 0xAC00 and cp <= 0xD7AF)
+end
+
+local function IsCjkCodepoint(cp)
+    return (cp >= 0x2E80 and cp <= 0x9FFF)
+        or (cp >= 0xF900 and cp <= 0xFAFF)
+        or (cp >= 0xFE30 and cp <= 0xFE4F)
+        or (cp >= 0xFF00 and cp <= 0xFFEF)
+        or (cp >= 0x20000 and cp <= 0x2FA1F)
+end
+
+function PUI.ScriptForText(text)
+    local s = tostring(text or "")
+    local cjk, cyr, hangul = 0, 0, 0
+    local i, n = 1, #s
+    while i <= n do
+        local cp
+        cp, i = Utf8CodepointAt(s, i)
+        if not cp then break end
+        if IsHangulCodepoint(cp) then
+            hangul = hangul + 1
+        elseif IsCjkCodepoint(cp) then
+            cjk = cjk + 1
+        elseif IsCyrillicCodepoint(cp) then
+            cyr = cyr + 1
+        end
+    end
+    if hangul > 0 and hangul >= cjk and hangul >= cyr then return "ko" end
+    if cjk > 0 and cjk >= cyr then return "cjk" end
+    if cyr > 0 then return "cyr" end
+    return "latin"
+end
+
+function PUI.GetPlannerContentFont(text)
+    local script = PUI.ScriptForText(text)
+    local cache = PUI._contentFontByScript
+    if type(cache) ~= "table" then
+        cache = {}
+        PUI._contentFontByScript = cache
+    end
+    if cache[script] then return cache[script] end
+
+    local path
+    if script == "cjk" then
+        path = ProbeFontPath(CjkFontCandidates())
+    elseif script == "ko" then
+        path = ProbeFontPath({ "Fonts\\2002.TTF", "Fonts\\ARKai_T.TTF", "Fonts\\ARHei.ttf" })
+    else
+        path = ProbeFontPath(CYR_FONT_CANDIDATES)
+    end
+    path = path or STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF"
+    cache[script] = path
+    if script == "latin" then
+        PUI._contentFont = path
+    end
+    return path
+end
+
+function PUI.SetPlannerContentFont(fs, size, flags, text)
+    if not fs or not fs.SetFont then return end
+    fs:SetFont(PUI.GetPlannerContentFont(text), size or 12, flags or "")
+end
+
+function PUI.TruncateUtf8(s, maxBytes)
+    s = tostring(s or "")
+    maxBytes = tonumber(maxBytes) or 0
+    if maxBytes <= 0 then return "" end
+    if #s <= maxBytes then return s end
+    local i, last = 1, 0
+    while i <= maxBytes do
+        local c = s:byte(i)
+        if not c then break end
+        local len = 1
+        if c >= 0xF0 then len = 4
+        elseif c >= 0xE0 then len = 3
+        elseif c >= 0xC0 then len = 2
+        end
+        if i + len - 1 > maxBytes then break end
+        last = i + len - 1
+        i = i + len
+    end
+    return s:sub(1, last)
+end
+
 function PUI.SkinPlannerScroll(scrollFrame)
     if SkinScrollBar then SkinScrollBar(scrollFrame) end
 end
@@ -50,8 +209,8 @@ function PUI.TruncatePlannerPlanTitle(name, maxLen)
     name = strtrim(tostring(name or ""))
     if name == "" then return L("Raid plan") end
     if #name <= maxLen then return name end
-    if maxLen <= 3 then return name:sub(1, maxLen) end
-    return name:sub(1, maxLen - 3) .. "..."
+    if maxLen <= 3 then return PUI.TruncateUtf8(name, maxLen) end
+    return PUI.TruncateUtf8(name, maxLen - 3) .. "..."
 end
 
 function PUI.PositionPlannerBrandTitle(brandTitle, parent)

@@ -81,6 +81,30 @@ local function DecodeBase64(s)
     return table.concat(out)
 end
 
+local function Utf8FromCodepoint(code)
+    if type(code) ~= "number" or code < 0 then return "" end
+    code = math.floor(code)
+    if code <= 0x7F then
+        return string.char(code)
+    elseif code <= 0x7FF then
+        return string.char(0xC0 + math.floor(code / 0x40), 0x80 + (code % 0x40))
+    elseif code <= 0xFFFF then
+        return string.char(
+            0xE0 + math.floor(code / 0x1000),
+            0x80 + (math.floor(code / 0x40) % 0x40),
+            0x80 + (code % 0x40)
+        )
+    elseif code <= 0x10FFFF then
+        return string.char(
+            0xF0 + math.floor(code / 0x40000),
+            0x80 + (math.floor(code / 0x1000) % 0x40),
+            0x80 + (math.floor(code / 0x40) % 0x40),
+            0x80 + (code % 0x40)
+        )
+    end
+    return ""
+end
+
 local function EncodeJSON(val)
     if C_EncodingUtil and C_EncodingUtil.SerializeJSON then
         local ok, result = pcall(C_EncodingUtil.SerializeJSON, val, { ignoreSerializationErrors = true })
@@ -157,8 +181,26 @@ local function DecodeJSON(str)
                 elseif esc == "u" then
                     local hex = str:sub(pos + 2, pos + 5)
                     local code = tonumber(hex, 16)
-                    if code then out[#out + 1] = utf8 and utf8.char(code) or string.char(code) end
                     pos = pos + 4
+                    -- UTF-16 surrogate pair: \uD83D\uDE00 -> one codepoint
+                    if code and code >= 0xD800 and code <= 0xDBFF then
+                        local pair = str:sub(pos + 2, pos + 7)
+                        if pair:sub(1, 2) == "\\u" then
+                            local low = tonumber(pair:sub(3, 6), 16)
+                            if low and low >= 0xDC00 and low <= 0xDFFF then
+                                code = 0x10000 + (code - 0xD800) * 0x400 + (low - 0xDC00)
+                                pos = pos + 6
+                            end
+                        end
+                    end
+                    if code then
+                        if utf8 and utf8.char then
+                            local ok, ch = pcall(utf8.char, code)
+                            out[#out + 1] = (ok and ch) or Utf8FromCodepoint(code)
+                        else
+                            out[#out + 1] = Utf8FromCodepoint(code)
+                        end
+                    end
                 else out[#out + 1] = esc end
                 pos = pos + 2
             else
