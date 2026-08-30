@@ -1,5 +1,9 @@
 # Changelog
 
+## [Release 1.0.8]
+
+- Added some icons to Twin Fangs
+
 ## [Release 1.0.7]
 
 Fixed:
