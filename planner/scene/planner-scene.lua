@@ -2899,6 +2899,37 @@ end
 
 -- Keep portrait helpers on one local table — this file is near Lua's 200-local limit.
 local PortraitUtil = {}
+-- Bundled Twin Fangs files are name-npcId (vexhul-140993.tga). Old short names
+-- (ithraz.tga / vexhul.tga) and display labels still need to resolve to those.
+PortraitUtil.FileAliases = {
+    ithraz = "ithraz-141309",
+    vexhul = "vexhul-140993",
+    ["spawn-of-vexhul"] = "spawn-of-vexhul-143971",
+    ["broodling-of-ithraz"] = "broodling-of-ithraz-146494",
+    ["140993"] = "vexhul-140993",
+    ["141309"] = "ithraz-141309",
+    ["143971"] = "spawn-of-vexhul-143971",
+    ["146494"] = "broodling-of-ithraz-146494",
+}
+-- Exact on-disk files. Tried first so Twin Fangs does not depend on folder slugs.
+PortraitUtil.ExactRelPaths = {
+    ["vexhul-140993"] = "the-venomous-abyss\\thetwinfangs\\vexhul-140993",
+    vexhul = "the-venomous-abyss\\thetwinfangs\\vexhul",
+    ["ithraz-141309"] = "the-venomous-abyss\\thetwinfangs\\ithraz-141309",
+    ithraz = "the-venomous-abyss\\thetwinfangs\\ithraz",
+    ["spawn-of-vexhul-143971"] = "the-venomous-abyss\\thetwinfangs\\spawn-of-vexhul-143971",
+    ["spawn-of-vexhul"] = "the-venomous-abyss\\thetwinfangs\\spawn-of-vexhul",
+    ["broodling-of-ithraz-146494"] = "the-venomous-abyss\\thetwinfangs\\broodling-of-ithraz-146494",
+    ["broodling-of-ithraz"] = "the-venomous-abyss\\thetwinfangs\\broodling-of-ithraz",
+}
+-- Scene bg Twin_Fangs_2 would otherwise only try twin-fangs-2 / twinfangs2.
+PortraitUtil.BossAliases = {
+    ["twin-fangs-2"] = "thetwinfangs",
+    ["twin-fangs"] = "thetwinfangs",
+    ["the-twin-fangs"] = "thetwinfangs",
+    ["the_twin_fangs"] = "thetwinfangs",
+    twinfangs2 = "thetwinfangs",
+}
 function PortraitUtil.UrlDecodePath(value)
     if type(value) ~= "string" then return "" end
     local decoded = value:gsub("%%(%x%x)", function(hex)
@@ -2935,26 +2966,59 @@ function PortraitUtil.InferBossFromBg(bg)
 end
 function PortraitUtil.BuildCandidates(item)
     if type(item) ~= "table" then return nil end
+    local out = {}
+    local seenPath = {}
+    local function addPath(path)
+        if type(path) ~= "string" or path == "" or seenPath[path] then return end
+        seenPath[path] = true
+        out[#out + 1] = path
+    end
+    local function addExactRel(rel)
+        if type(rel) ~= "string" or rel == "" then return end
+        addPath(PORTRAIT_BASE_PATH .. rel .. ".tga")
+        addPath(PORTRAIT_BASE_PATH .. rel .. ".blp")
+    end
+    local function addExactForName(value)
+        local slug = PortraitUtil.Slug(value)
+        if not slug then return end
+        addExactRel(PortraitUtil.ExactRelPaths[slug])
+        local aliased = PortraitUtil.FileAliases[slug]
+        if aliased then addExactRel(PortraitUtil.ExactRelPaths[aliased]) end
+    end
+    addExactForName(item.portraitName)
+    addExactForName(item.portrait)
+    addExactForName(item.portraitKey)
+    addExactForName(item.trashBadgeLabel)
+    addExactForName(item.label)
+    addExactForName(item.name)
+
     local raid = PortraitUtil.Slug(item.portraitRaid)
-    if not raid then return nil end
+    if not raid then
+        return #out > 0 and out or nil
+    end
 
     local bossKeys, bossSeen = {}, {}
+    local function pushBoss(key)
+        if not key or key == "" or bossSeen[key] then return end
+        bossSeen[key] = true
+        bossKeys[#bossKeys + 1] = key
+    end
     local function addBoss(value)
         local slug = PortraitUtil.Slug(value)
-        if not slug or bossSeen[slug] then return end
-        bossSeen[slug] = true
-        bossKeys[#bossKeys + 1] = slug
-        local underscored = slug:gsub("%-", "_")
-        if underscored ~= slug and not bossSeen[underscored] then
-            bossSeen[underscored] = true
-            bossKeys[#bossKeys + 1] = underscored
-        end
-        -- ZIP/icon folders sometimes drop separators (NymrissaWavecaller -> nymrissawavecaller).
+        if not slug then return end
         local compact = slug:gsub("%-", ""):gsub("_", "")
-        if compact ~= slug and compact ~= "" and not bossSeen[compact] then
-            bossSeen[compact] = true
-            bossKeys[#bossKeys + 1] = compact
+        local mapped = PortraitUtil.BossAliases[slug] or PortraitUtil.BossAliases[compact]
+        if mapped and mapped ~= "" then
+            -- Use the real on-disk folder first. Hyphenated bg keys like Twin_Fangs_2
+            -- otherwise become the first SetTexture path and render green.
+            pushBoss(mapped)
+            return
         end
+        -- TVA/export folders drop separators (thetwinfangs, entombedsentinels).
+        pushBoss(compact)
+        pushBoss(slug)
+        local underscored = slug:gsub("%-", "_")
+        pushBoss(underscored)
     end
     addBoss(item.portraitBoss)
     if type(item.portraitBossAlts) == "table" then
@@ -2962,7 +3026,9 @@ function PortraitUtil.BuildCandidates(item)
             addBoss(item.portraitBossAlts[i])
         end
     end
-    if #bossKeys == 0 then return nil end
+    if #bossKeys == 0 then
+        return #out > 0 and out or nil
+    end
 
     local nameKeys, seen = {}, {}
     local function addName(value)
@@ -2982,6 +3048,10 @@ function PortraitUtil.BuildCandidates(item)
             seen[raw] = true
             nameKeys[#nameKeys + 1] = raw
         end
+        local fileAlias = PortraitUtil.FileAliases[slug]
+        if fileAlias and fileAlias ~= slug then
+            addName(fileAlias)
+        end
     end
     addName(item.portraitName)
     addName(item.portrait)
@@ -2990,18 +3060,23 @@ function PortraitUtil.BuildCandidates(item)
     addName(item.bossName)
     addName(item.label)
     addName(item.name)
-    if #nameKeys == 0 then return nil end
+    if #nameKeys == 0 then
+        return #out > 0 and out or nil
+    end
 
-    local out = {}
     for b = 1, #bossKeys do
         local boss = bossKeys[b]
         for i = 1, #nameKeys do
-            local base = PORTRAIT_BASE_PATH .. raid .. "\\" .. boss .. "\\" .. nameKeys[i]
-            out[#out + 1] = base .. ".tga"
-            out[#out + 1] = base .. ".blp"
+            addPath(PORTRAIT_BASE_PATH .. raid .. "\\" .. boss .. "\\" .. nameKeys[i] .. ".tga")
         end
     end
-    return out
+    for b = 1, #bossKeys do
+        local boss = bossKeys[b]
+        for i = 1, #nameKeys do
+            addPath(PORTRAIT_BASE_PATH .. raid .. "\\" .. boss .. "\\" .. nameKeys[i] .. ".blp")
+        end
+    end
+    return #out > 0 and out or nil
 end
 
 function Diar.SplitPathParts(path)
@@ -5091,7 +5166,9 @@ function Diar:SanitizePlanData(data)
                         local iconRaid, iconBoss = PortraitUtil.InferFoldersFromIcon(item.icon or item.src or item.portrait)
                         local bgBoss = PortraitUtil.InferBossFromBg(scene and (scene.bg or scene.background))
                         local portraitRaid = item.portraitRaid or iconRaid or data.raid
-                        local portraitBoss = item.portraitBoss or iconBoss or bgBoss or data.boss
+                        -- Prefer the plan boss name (The Twin Fangs -> thetwinfangs) over
+                        -- the scene bg key (Twin_Fangs_2 -> twin-fangs-2).
+                        local portraitBoss = item.portraitBoss or iconBoss or data.boss or bgBoss
                         local bossAlts = {}
                         local function pushAlt(v)
                             if type(v) == "string" and v ~= "" then
