@@ -72,6 +72,9 @@ local BACKGROUND_KEY_ALIASES = {
     tva_the_twin_fangs_wip = "Twin_Fangs_2",
     tva_the_bargained_crown_wip = "bargained_crown",
     tva_ula_tek_wip = "ulatek1",
+    ["ulatek-split"] = "ulatek_split",
+    ["ulatek-left"] = "ulatek_left",
+    ["ulatek-right"] = "ulatek_right",
 
     -- Website UUID upload filename -> bundled TGA key.
     ["ebb83c6f-b84b-4c30-8823-38379405ab06"] = "tidebound-grotto",
@@ -120,6 +123,9 @@ local ARENAS = {
     { key = "Twin_Fangs_2", label = "The Twin Fangs", raid = "The Venomous Abyss", boss = "The Twin Fangs", expansion = "Midnight" },
     { key = "bargained_crown", label = "The Bargained Crown", raid = "The Venomous Abyss", boss = "The Bargained Crown", expansion = "Midnight" },
     { key = "ulatek1", label = "Ula'tek", raid = "The Venomous Abyss", boss = "Ula'tek", expansion = "Midnight" },
+    { key = "ulatek_left", label = "Ula'tek (Left)", raid = "The Venomous Abyss", boss = "Ula'tek", expansion = "Midnight" },
+    { key = "ulatek_right", label = "Ula'tek (Right)", raid = "The Venomous Abyss", boss = "Ula'tek", expansion = "Midnight" },
+    { key = "ulatek_split", label = "Ula'tek (Broken)", raid = "The Venomous Abyss", boss = "Ula'tek", expansion = "Midnight" },
 }
 
 local function GetBackgroundLookupKeys(bgKey)

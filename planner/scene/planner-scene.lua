@@ -2760,6 +2760,9 @@ local BACKGROUND_KEY_ALIASES = {
     tva_the_twin_fangs_wip = "Twin_Fangs_2",
     tva_the_bargained_crown_wip = "bargained_crown",
     tva_ula_tek_wip = "ulatek1",
+    ["ulatek-split"] = "ulatek_split",
+    ["ulatek-left"] = "ulatek_left",
+    ["ulatek-right"] = "ulatek_right",
 
     -- Website UUID upload filename -> bundled TGA key.
     ["ebb83c6f-b84b-4c30-8823-38379405ab06"] = "tidebound-grotto",
