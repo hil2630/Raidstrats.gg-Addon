@@ -1,5 +1,17 @@
 # Changelog
 
+## [Release 1.0.10]
+
+Added:
+
+- Added in-game support for Soak Zones, including player assignments, required counts, layouts, names, and class or spec icons.
+- Added in-game support for Formations, including spokes, rings, end styles, and telegraph lines.
+- Added in-game support for Half Circles, Pizza slices, Crosses, and X Marks.
+
+Fixed:
+
+- Pizza slices can now be right-clicked to open their object options.
+
 ## [Release 1.0.9]
 
 - Added ulatek left,right and last phase images.

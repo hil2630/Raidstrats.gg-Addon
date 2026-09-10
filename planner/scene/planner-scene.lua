@@ -4340,6 +4340,7 @@ local function ResetShapePool(pf)
         if f._lines then for _, ln in ipairs(f._lines) do ln:Hide() end end
         if f._dots then for _, d in ipairs(f._dots) do d:Hide() end end
         if f._fills then for _, t in ipairs(f._fills) do t:Hide() end end
+        if f._texts then for _, text in ipairs(f._texts) do text:Hide() end end
         f:SetAlpha(1)
         f:Hide()
     end
@@ -4354,6 +4355,7 @@ local function AcquireShapeFrame(pf, canvas, frameLevel)
         f._lines = {}
         f._dots = {}
         f._fills = {}
+        f._texts = {}
         pf._shapePool[pf._shapePoolUsed] = f
     end
     f:SetParent(canvas)
@@ -4364,6 +4366,7 @@ local function AcquireShapeFrame(pf, canvas, frameLevel)
     f._lineUsed = 0
     f._dotUsed = 0
     f._fillUsed = 0
+    f._textUsed = 0
     f:Show()
     return f
 end
@@ -4455,6 +4458,20 @@ local function ShapeDot(f)
     end
     d:Show()
     return d
+end
+
+function Diar.AcquirePlannerShapeText(f)
+    f._texts = f._texts or {}
+    f._textUsed = (f._textUsed or 0) + 1
+    local text = f._texts[f._textUsed]
+    if not text then
+        text = f:CreateFontString(nil, "OVERLAY")
+        text:SetJustifyH("CENTER")
+        text:SetJustifyV("MIDDLE")
+        f._texts[f._textUsed] = text
+    end
+    text:Show()
+    return text
 end
 
 local function DrawLineShape(pf, canvas, item, cw, ch, frameLevel)
@@ -4625,6 +4642,441 @@ local function FillConvexPolygon(f, canvas, pts, r, g, b, a)
     end
 end
 
+function Diar.FillPlannerEllipse(f, canvas, cx, cy, rx, ry, r, g, b, a)
+    if rx <= 0 or ry <= 0 then return end
+    local rows = math.max(12, math.min(math.floor(ry * 2), 180))
+    local step = (ry * 2) / rows
+    for i = 0, rows - 1 do
+        local yTop = cy - ry + i * step
+        local yBot = yTop + step
+        local sampleY = (yTop + yBot) / 2
+        local normalized = 1 - (((sampleY - cy) * (sampleY - cy)) / math.max(0.001, ry * ry))
+        if normalized > 0 then
+            local halfWidth = rx * math.sqrt(normalized)
+            ShapeFillRow(f, canvas, cx - halfWidth, cx + halfWidth, yTop, yBot, r, g, b, a)
+        end
+    end
+end
+
+function Diar.DrawStyledPlannerShapeLine(f, canvas, x1, y1, x2, y2, style, r, g, b, a, thick)
+    local dx, dy = x2 - x1, y2 - y1
+    local length = math.sqrt(dx * dx + dy * dy)
+    if length < 0.1 then return end
+    style = tostring(style or "solid"):lower()
+    if style == "solid" then
+        local line = ShapeLine(f)
+        ColorLine(line, r, g, b, a, thick)
+        line:SetStartPoint("TOPLEFT", canvas, x1, -y1)
+        line:SetEndPoint("TOPLEFT", canvas, x2, -y2)
+        return
+    end
+    local ux, uy = dx / length, dy / length
+    local dash = style == "dotted" and math.max(1.5, thick) or math.max(6, thick * 3)
+    local gap = style == "dotted" and math.max(3, thick * 2.2) or math.max(4, thick * 1.8)
+    local cursor = 0
+    while cursor < length do
+        local finish = math.min(length, cursor + dash)
+        local line = ShapeLine(f)
+        ColorLine(line, r, g, b, a, thick)
+        line:SetStartPoint("TOPLEFT", canvas, x1 + ux * cursor, -(y1 + uy * cursor))
+        line:SetEndPoint("TOPLEFT", canvas, x1 + ux * finish, -(y1 + uy * finish))
+        cursor = finish + gap
+    end
+end
+
+function Diar.PlannerRayDistanceToCanvas(cx, cy, dx, dy, width, height)
+    local distance
+    if dx > 0.0001 then distance = (width - cx) / dx
+    elseif dx < -0.0001 then distance = (0 - cx) / dx end
+    if dy > 0.0001 then
+        local yDistance = (height - cy) / dy
+        distance = not distance and yDistance or math.min(distance, yDistance)
+    elseif dy < -0.0001 then
+        local yDistance = (0 - cy) / dy
+        distance = not distance and yDistance or math.min(distance, yDistance)
+    end
+    return math.max(0, distance or 0)
+end
+
+function Diar.DrawPlannerFormationShape(pf, canvas, item, cw, ch, frameLevel)
+    local f = AcquireShapeFrame(pf, canvas, frameLevel)
+    local vc = pf.sceneViewContext
+    local x, y, width, height = GetItemCanvasRect(item, cw, ch, vc)
+    local cx, cy = x + width / 2, y + height / 2
+    local rx, ry = width / 2, height / 2
+    local count = math.max(2, math.min(16, math.floor((tonumber(item.spokeCount) or 8) + 0.5)))
+    local localWidth = math.max(3, math.min(28, tonumber(item.spokeWidth) or 10))
+    local spokeWidth = math.min(width, height) * (localWidth / 100)
+    local angleOffset = math.rad(tonumber(item.angle) or 0)
+    local fr, fg, fb, fa = ParseItemColor(item.fill or "#ffffff", item.opacity)
+    local sr, sg, sb, sa = ParseStrokeColor(item.stroke or "#c4b5fd", item.opacity)
+    local thick = SceneViewScale(vc, StrokeThickPx(item, ch))
+    local endStyle = tostring(item.endStyle or "flat"):lower()
+
+    for index = 0, count - 1 do
+        local angle = -math.pi / 2 + (index * math.pi * 2 / count) + angleOffset
+        local ux, uy = math.cos(angle), math.sin(angle)
+        local tipX, tipY = cx + ux * rx, cy + uy * ry
+        local length = math.sqrt((tipX - cx) ^ 2 + (tipY - cy) ^ 2)
+        local px, py = -uy * spokeWidth / 2, ux * spokeWidth / 2
+        local points
+        if endStyle == "pointed" then
+            points = { { cx + px, cy + py }, { tipX, tipY }, { cx - px, cy - py } }
+        elseif endStyle == "arrow" then
+            local head = math.max(spokeWidth * 1.45, math.min(length * 0.4, 10))
+            local joinX, joinY = tipX - ux * head, tipY - uy * head
+            local flareX, flareY = -uy * spokeWidth, ux * spokeWidth
+            points = {
+                { cx + px, cy + py }, { joinX + px, joinY + py },
+                { joinX + flareX, joinY + flareY }, { tipX, tipY },
+                { joinX - flareX, joinY - flareY }, { joinX - px, joinY - py },
+                { cx - px, cy - py },
+            }
+        else
+            points = {
+                { cx + px, cy + py }, { tipX + px, tipY + py },
+                { tipX - px, tipY - py }, { cx - px, cy - py },
+            }
+        end
+        FillConvexPolygon(f, canvas, points, fr, fg, fb, fa)
+
+        if item.showTelegraph == true then
+            local distance = Diar.PlannerRayDistanceToCanvas(cx, cy, ux, uy, canvas:GetWidth(), canvas:GetHeight())
+            if distance > length then
+                Diar.DrawStyledPlannerShapeLine(
+                    f, canvas, tipX, tipY, cx + ux * distance, cy + uy * distance,
+                    item.telegraphStyle, sr, sg, sb, sa, math.max(1, thick * 0.45)
+                )
+            end
+        end
+    end
+    if item.showRing == true then
+        DrawEllipseStroke(f, canvas, cx, cy, rx, ry, {
+            stroke = item.stroke or "#c4b5fd",
+            strokeWidth = item.strokeWidth,
+            opacity = item.opacity,
+        }, ch, 48)
+    end
+    return f
+end
+
+function Diar.FillPlannerSimplePolygon(f, canvas, points, r, g, b, a)
+    if type(points) ~= "table" or #points < 3 then return end
+    local minY, maxY = points[1][2], points[1][2]
+    for index = 2, #points do
+        minY = math.min(minY, points[index][2])
+        maxY = math.max(maxY, points[index][2])
+    end
+    local height = maxY - minY
+    if height < 0.5 then return end
+    local rows = math.max(10, math.min(math.floor(height), 200))
+    local step = height / rows
+    for row = 0, rows - 1 do
+        local yTop = minY + row * step
+        local yBottom = yTop + step
+        local sampleY = (yTop + yBottom) / 2
+        local intersections = {}
+        for edge = 1, #points do
+            local first = points[edge]
+            local second = points[(edge % #points) + 1]
+            if (first[2] <= sampleY and second[2] > sampleY)
+                or (second[2] <= sampleY and first[2] > sampleY) then
+                local ratio = (sampleY - first[2]) / (second[2] - first[2])
+                intersections[#intersections + 1] = first[1] + ratio * (second[1] - first[1])
+            end
+        end
+        table.sort(intersections)
+        for index = 1, #intersections - 1, 2 do
+            ShapeFillRow(
+                f, canvas, intersections[index], intersections[index + 1],
+                yTop, yBottom, r, g, b, a
+            )
+        end
+    end
+end
+
+function Diar.DrawPlannerSimplePolygonStroke(f, canvas, points, item, ch)
+    if not HasStroke(item) or type(points) ~= "table" or #points < 2 then return end
+    local r, g, b, a = ParseStrokeColor(item.stroke, item.opacity)
+    local thickness = StrokeThickPx(item, ch)
+    for index = 1, #points do
+        local first = points[index]
+        local second = points[(index % #points) + 1]
+        local line = ShapeLine(f)
+        ColorLine(line, r, g, b, a, thickness)
+        line:SetStartPoint("TOPLEFT", canvas, first[1], -first[2])
+        line:SetEndPoint("TOPLEFT", canvas, second[1], -second[2])
+    end
+end
+
+function Diar.TransformPlannerPresetPoints(points, cx, cy, rx, ry, angle)
+    local transformed = {}
+    local cosine, sine = math.cos(angle), math.sin(angle)
+    for _, point in ipairs(points) do
+        local localX, localY = point[1] * rx, point[2] * ry
+        transformed[#transformed + 1] = {
+            cx + localX * cosine - localY * sine,
+            cy + localX * sine + localY * cosine,
+        }
+    end
+    return transformed
+end
+
+function Diar.DrawPlannerPresetShape(pf, canvas, item, cw, ch, frameLevel)
+    local f = AcquireShapeFrame(pf, canvas, frameLevel)
+    local vc = pf.sceneViewContext
+    local x, y, width, height = GetItemCanvasRect(item, cw, ch, vc)
+    local cx, cy, rx, ry = x + width / 2, y + height / 2, width / 2, height / 2
+    local shape = tostring(item.shape or ""):lower()
+    local sourcePoints = {}
+
+    if shape == "halfcircle" then
+        sourcePoints[1] = { -1, 0 }
+        local segments = 32
+        for index = 0, segments do
+            local angle = -math.pi / 2 + (math.pi * index / segments)
+            sourcePoints[#sourcePoints + 1] = { math.cos(angle) * 2 - 1, math.sin(angle) }
+        end
+    elseif shape == "xmark" then
+        local size = 1
+        local inset = 0.28 / math.sqrt(2)
+        sourcePoints = {
+            { -size + inset, -size }, { -size, -size + inset },
+            { -inset, 0 }, { -size, size - inset },
+            { -size + inset, size }, { 0, inset },
+            { size - inset, size }, { size, size - inset },
+            { inset, 0 }, { size, -size + inset },
+            { size - inset, -size }, { 0, -inset },
+        }
+    else
+        local lineCount = math.max(2, math.min(6, math.floor((tonumber(item.lineCount) or 2) + 0.5)))
+        local armCount = lineCount * 2
+        local halfStep = math.pi / armCount
+        local halfWidth = math.min(
+            math.max(0.04, (tonumber(item.thickness) or 12) / 50),
+            math.sin(halfStep) * 0.72
+        )
+        local hubRadius = halfWidth / math.max(0.001, math.sin(halfStep))
+        local pointed = tostring(item.endStyle or "pointed"):lower() ~= "flat"
+        local capLength = pointed and math.max(0.1, halfWidth * 1.15) or 0
+        local shoulder = math.max(hubRadius + 0.02, 1 - capLength)
+        for arm = 0, armCount - 1 do
+            local angle = -math.pi / 2 + arm * math.pi * 2 / armCount
+            local dx, dy, px, py = math.cos(angle), math.sin(angle), -math.sin(angle), math.cos(angle)
+            sourcePoints[#sourcePoints + 1] = { dx * shoulder - px * halfWidth, dy * shoulder - py * halfWidth }
+            if pointed then sourcePoints[#sourcePoints + 1] = { dx, dy } end
+            sourcePoints[#sourcePoints + 1] = { dx * shoulder + px * halfWidth, dy * shoulder + py * halfWidth }
+            local joinAngle = angle + halfStep
+            sourcePoints[#sourcePoints + 1] = { math.cos(joinAngle) * hubRadius, math.sin(joinAngle) * hubRadius }
+        end
+    end
+
+    local points = Diar.TransformPlannerPresetPoints(sourcePoints, cx, cy, rx, ry, math.rad(tonumber(item.angle) or 0))
+    local r, g, b, a = ParseItemColor(item.fill, item.opacity)
+    Diar.FillPlannerSimplePolygon(f, canvas, points, r, g, b, a)
+    Diar.DrawPlannerSimplePolygonStroke(f, canvas, points, item, ch)
+    return f
+end
+
+Diar.PLANNER_SOAK_CLASS_COLORS = {
+    deathknight = { 0.77, 0.12, 0.23 }, demonhunter = { 0.64, 0.19, 0.79 },
+    druid = { 1, 0.49, 0.04 }, evoker = { 0.20, 0.58, 0.50 },
+    hunter = { 0.67, 0.83, 0.45 }, mage = { 0.41, 0.80, 0.94 },
+    monk = { 0, 1, 0.59 }, paladin = { 0.96, 0.55, 0.73 },
+    priest = { 1, 1, 1 }, rogue = { 1, 0.96, 0.41 },
+    shaman = { 0, 0.44, 0.87 }, warlock = { 0.58, 0.51, 0.79 },
+    warrior = { 0.78, 0.61, 0.43 },
+}
+Diar.PLANNER_SOAK_CLASS_TEXTURES = {
+    deathknight = "DEATHKNIGHT", demonhunter = "DEMONHUNTER", druid = "DRUID",
+    evoker = "EVOKER", hunter = "HUNTER", mage = "MAGE", monk = "MONK",
+    paladin = "PALADIN", priest = "PRIEST", rogue = "ROGUE", shaman = "SHAMAN",
+    warlock = "WARLOCK", warrior = "WARRIOR",
+}
+
+function Diar.BuildPlannerSoakSlots(item)
+    local assignees = type(item.assignees) == "table" and item.assignees or {}
+    local required = math.max(0, math.min(40, math.floor((tonumber(item.requiredCount) or 0) + 0.5)))
+    local highest = 0
+    for _, assignee in ipairs(assignees) do
+        highest = math.max(highest, math.floor(tonumber(assignee and assignee.slot) or 0))
+    end
+    local count = math.max(required, highest, #assignees)
+    local slots, unplaced = {}, {}
+    for index = 1, count do slots[index] = false end
+    for _, assignee in ipairs(assignees) do
+        local slot = math.floor(tonumber(assignee and assignee.slot) or 0)
+        if slot >= 1 and slot <= count and not slots[slot] then
+            slots[slot] = assignee
+        else
+            unplaced[#unplaced + 1] = assignee
+        end
+    end
+    for _, assignee in ipairs(unplaced) do
+        local placed = false
+        for index = 1, #slots do
+            if not slots[index] then slots[index], placed = assignee, true break end
+        end
+        if not placed then slots[#slots + 1] = assignee end
+    end
+    return slots, #assignees, required
+end
+
+function Diar.BuildPlannerSoakPositions(count, layout, badgeSize, radius, spacing)
+    local positions = {}
+    if count <= 0 then return positions end
+    positions[1] = { 0, 0 }
+    if count == 1 then return positions end
+    if layout == "grid" then
+        local shell = 1
+        local step = badgeSize * 1.18 * spacing
+        while #positions < count do
+            local shellPoints = {}
+            for gy = -shell, shell do
+                for gx = -shell, shell do
+                    if math.max(math.abs(gx), math.abs(gy)) == shell then
+                        shellPoints[#shellPoints + 1] = { gx * step, gy * step, math.atan2(gy, gx) }
+                    end
+                end
+            end
+            table.sort(shellPoints, function(a, b) return a[3] < b[3] end)
+            for _, point in ipairs(shellPoints) do
+                if #positions >= count then break end
+                positions[#positions + 1] = { point[1], point[2] }
+            end
+            shell = shell + 1
+        end
+        return positions
+    end
+    local remaining, ring = count - 1, 1
+    local ringStep = math.max(8, badgeSize * 1.08 * spacing)
+    while remaining > 0 do
+        local ringRadius = math.min(radius, ring * ringStep)
+        local capacity = math.max(1, math.floor((math.pi * 2 * ringRadius) / math.max(1, badgeSize * 1.12 * spacing)))
+        local onRing = math.min(remaining, capacity)
+        for index = 0, onRing - 1 do
+            local angle = -math.pi / 2 + index * math.pi * 2 / onRing
+            positions[#positions + 1] = { math.cos(angle) * ringRadius, math.sin(angle) * ringRadius }
+        end
+        remaining, ring = remaining - onRing, ring + 1
+    end
+    return positions
+end
+
+function Diar.GetEffectivePlannerSoakBadgeSize(count, layout, preferred, radius, spacing)
+    if count <= 1 then return preferred end
+    local size = preferred
+    while size > 6 do
+        if layout == "grid" then
+            local shell = 0
+            while ((2 * shell + 1) ^ 2) < count do shell = shell + 1 end
+            if shell * size * 1.18 * spacing + size / 2 <= radius + size / 2 then return size end
+        else
+            local ringStep = math.max(8, size * 1.08 * spacing)
+            local availableRings = math.max(1, math.floor(radius / ringStep))
+            local capacity = 0
+            for ring = 1, availableRings do
+                local ringRadius = math.min(radius, ring * ringStep)
+                capacity = capacity + math.max(
+                    1,
+                    math.floor((math.pi * 2 * ringRadius) / math.max(1, size * 1.12 * spacing))
+                )
+            end
+            if capacity >= count - 1 then return size end
+        end
+        size = size - 0.5
+    end
+    return 6
+end
+
+function Diar.DrawPlannerSoakZoneShape(pf, canvas, item, cw, ch, frameLevel)
+    local f = AcquireShapeFrame(pf, canvas, frameLevel)
+    local vc = pf.sceneViewContext
+    local x, y, width, height = GetItemCanvasRect(item, cw, ch, vc)
+    local cx, cy = x + width / 2, y + height / 2
+    local rx, ry = width / 2, height / 2
+    local fr, fg, fb, fa = ParseItemColor(item.fill or "rgba(59, 130, 246, 0.16)", item.opacity)
+    Diar.FillPlannerEllipse(f, canvas, cx, cy, rx, ry, fr, fg, fb, fa)
+    DrawEllipseStroke(f, canvas, cx, cy, rx, ry, {
+        stroke = item.stroke or "#ffffff",
+        strokeWidth = item.strokeWidth,
+        opacity = item.opacity,
+    }, ch, 48)
+
+    local slots, assignedCount, required = Diar.BuildPlannerSoakSlots(item)
+    if #slots == 0 then return f end
+    local spacing = math.max(0.6, math.min(1.8, tonumber(item.spacing) or 1))
+    local badgeSize = math.max(6, math.min(32, tonumber(item.badgeSize) or 20))
+    local badgePx = math.max(7, math.min(math.min(width, height) * 0.32, math.min(width, height) * badgeSize / 100))
+    local availableRadius = math.max(8, math.min(rx, ry) - badgePx / 2 - 5)
+    badgePx = Diar.GetEffectivePlannerSoakBadgeSize(#slots, item.layout, badgePx, availableRadius, spacing)
+    availableRadius = math.max(8, math.min(rx, ry) - badgePx / 2 - 5)
+    local positions = Diar.BuildPlannerSoakPositions(#slots, item.layout, badgePx, availableRadius, spacing)
+    local rotation = math.rad(tonumber(item.angle) or 0)
+    local cosRotation, sinRotation = math.cos(rotation), math.sin(rotation)
+
+    for index, assignee in ipairs(slots) do
+        local position = positions[index] or { 0, 0 }
+        local px = position[1] * cosRotation - position[2] * sinRotation
+        local py = position[1] * sinRotation + position[2] * cosRotation
+        local dot = ShapeDot(f)
+        dot:ClearAllPoints()
+        dot:SetSize(badgePx, badgePx)
+        dot:SetPoint("CENTER", canvas, "TOPLEFT", cx + px, -(cy + py))
+        local classColor = assignee and Diar.PLANNER_SOAK_CLASS_COLORS[tostring(assignee.className or ""):lower()]
+            or { 0.58, 0.64, 0.72 }
+        local iconTexture
+        if assignee and item.displayMode ~= "circle" then
+            if assignee.icon and Diar.ResolveSpecTextureFromIconKey then
+                iconTexture = Diar.ResolveSpecTextureFromIconKey(assignee.icon)
+            end
+            if not iconTexture then
+                local classTexture = Diar.PLANNER_SOAK_CLASS_TEXTURES[tostring(assignee.className or ""):lower()]
+                if classTexture then iconTexture = "Interface\\Icons\\ClassIcon_" .. classTexture end
+            end
+        end
+        dot:SetTexture(iconTexture or WHITE_TEX)
+        if iconTexture then dot:SetVertexColor(1, 1, 1, 1)
+        else dot:SetVertexColor(classColor[1], classColor[2], classColor[3], assignee and 0.96 or 0.38) end
+        dot:SetAlpha(1)
+
+        local text = Diar.AcquirePlannerShapeText(f)
+        text:ClearAllPoints()
+        text:SetPoint("CENTER", canvas, "TOPLEFT", cx + px, -(cy + py))
+        local name = assignee and tostring(assignee.name or "?") or tostring(index)
+        local inside = item.displayMode == "circle" and name:sub(1, 4) or name:sub(1, 1)
+        if PUI and PUI.SetPlannerContentFont then
+            PUI.SetPlannerContentFont(text, math.max(6, badgePx * 0.33), "OUTLINE", inside)
+        end
+        text:SetTextColor(1, 1, 1, assignee and 1 or 0.72)
+        text:SetText(inside)
+
+        if assignee and item.displayMode ~= "circle" and item.showNames ~= false then
+            local nameText = Diar.AcquirePlannerShapeText(f)
+            nameText:ClearAllPoints()
+            nameText:SetPoint("TOP", canvas, "TOPLEFT", cx + px, -(cy + py + badgePx / 2 + 1))
+            if PUI and PUI.SetPlannerContentFont then
+                PUI.SetPlannerContentFont(nameText, math.max(6, badgePx * 0.3), "OUTLINE", name)
+            end
+            nameText:SetTextColor(1, 1, 1, 1)
+            nameText:SetText(name:sub(1, 14))
+        end
+    end
+    if required > 0 then
+        local countText = Diar.AcquirePlannerShapeText(f)
+        countText:ClearAllPoints()
+        countText:SetPoint("TOP", canvas, "TOPLEFT", cx, -(cy + ry + 3))
+        local value = tostring(assignedCount) .. "/" .. tostring(required)
+        if PUI and PUI.SetPlannerContentFont then
+            PUI.SetPlannerContentFont(countText, math.max(7, math.min(width, height) * 0.09), "OUTLINE", value)
+        end
+        if assignedCount >= required then countText:SetTextColor(0.53, 0.94, 0.67, 1)
+        else countText:SetTextColor(0.99, 0.65, 0.65, 1) end
+        countText:SetText(value)
+    end
+    return f
+end
+
 local function DrawQuadShape(pf, canvas, item, cw, ch, frameLevel)
     local f = AcquireShapeFrame(pf, canvas, frameLevel)
     local vc = pf.sceneViewContext
@@ -4727,6 +5179,12 @@ local function BuildShapeWidgets(pf, scene, canvas, cw, ch)
             local itemFrameLevel = ResolveItemFrameLevel(canvas, item, i, 0)
             if k == "line" then
                 DrawLineShape(pf, canvas, item, cw, ch, itemFrameLevel)
+            elseif k == "presetShape" then
+                Diar.DrawPlannerPresetShape(pf, canvas, item, cw, ch, itemFrameLevel)
+            elseif k == "formation" then
+                Diar.DrawPlannerFormationShape(pf, canvas, item, cw, ch, itemFrameLevel)
+            elseif k == "soakZone" then
+                Diar.DrawPlannerSoakZoneShape(pf, canvas, item, cw, ch, itemFrameLevel)
             elseif k == "shape" and HasQuadCorners(item) then
                 DrawQuadShape(pf, canvas, item, cw, ch, itemFrameLevel)
             elseif k == "shape" and shp == "donut" then
@@ -5828,8 +6286,15 @@ function Diar.RenderSceneItem(addon, pf, root, cw, ch, vc, minSize, item, itemIn
     local yp = (type(item.y) == "number" and item.y or 0) / 100
 
     local isStatic = (k == "line")
+        or k == "presetShape"
+        or k == "formation"
+        or k == "soakZone"
         or (k == "shape" and (IsFrontalItem(item) or HasQuadCorners(item) or shp == "donut" or shp == "triangle" or shp == "cone"))
-    local allowStaticDragProxy = (k == "line") or (k == "shape" and (shp == "donut" or shp == "triangle" or shp == "cone"))
+    local allowStaticDragProxy = (k == "line")
+        or k == "presetShape"
+        or k == "formation"
+        or k == "soakZone"
+        or (k == "shape" and (shp == "donut" or shp == "triangle" or shp == "cone" or shp == "pizza"))
 
     if isStatic then
         if allowStaticDragProxy and not IsFrontalItem(item) then
@@ -7924,8 +8389,9 @@ function Diar:RefreshPlannerScene()
     local debugMineHits = debugTrackSpots and {} or nil
 
     -- Render pass. Icons, text, and box shapes (rect/circle/ellipse/polygon) get an
-    -- animatable item.widget. Frontal beams, donuts, triangles/cones, lines and arrows
-    -- are drawn separately (pf.frontalBeamWidgets / pooled static shapes) and have no widget.
+    -- animatable item.widget. Frontal beams, preset shapes, formations, soak
+    -- zones, donuts, triangles/cones, lines and arrows are drawn separately
+    -- (pf.frontalBeamWidgets / pooled static shapes).
     local minSize = 2
     local sceneCtx = {
         sceneIndex = idx,
