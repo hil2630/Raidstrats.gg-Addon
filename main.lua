@@ -345,6 +345,15 @@ function Raidstrats:PrunePlanDataForShare(data)
                 if scene.bg ~= nil then
                     scene.background = nil
                 end
+                if type(scene.items) == "table" then
+                    for _, item in ipairs(scene.items) do
+                        if type(item) == "table" then
+                            item.widget = nil
+                            item.currentX = nil
+                            item.currentY = nil
+                        end
+                    end
+                end
             end
         end
     end
@@ -478,14 +487,18 @@ function Raidstrats:PersistCurrentPlanToSaved()
         return false
     end
     local entry = self:FindSavedPlanEntry(data)
-    if not entry then return false end
+    if not entry then
+        if self.EnsurePlanSyncVersionMatchesContent then
+            self:EnsurePlanSyncVersionMatchesContent(data)
+        end
+        return false
+    end
     data.savedEntryId = entry.id
     entry.data = CopyPlanData(data)
     entry.data.savedEntryId = entry.id
     if self.SanitizePlanData then self:SanitizePlanData(entry.data) end
-    -- Debounced sync-version commit so Version: X updates live after edits settle.
-    if self.SchedulePlanSyncVersionCommit then
-        self:SchedulePlanSyncVersionCommit()
+    if self.EnsurePlanSyncVersionMatchesContent then
+        self:EnsurePlanSyncVersionMatchesContent(data)
     elseif self.UpdatePlanSyncVersionLabel then
         self:UpdatePlanSyncVersionLabel(self.plannerFrame)
     end
@@ -575,6 +588,9 @@ function Raidstrats:SaveImportedPlan(data)
                 data.savedEntryId = entry.id
                 data.__rsggImportedSanitized = nil
                 self:SetLastLoadedPlanId(entry.id)
+                if self.EnsurePlanSyncVersionMatchesContent then
+                    self:EnsurePlanSyncVersionMatchesContent(data)
+                end
                 return entry.id
             end
         end
@@ -597,6 +613,9 @@ function Raidstrats:SaveImportedPlan(data)
     data.savedEntryId = entry.id
     data.__rsggImportedSanitized = nil
     self:SetLastLoadedPlanId(entry.id)
+    if self.EnsurePlanSyncVersionMatchesContent then
+        self:EnsurePlanSyncVersionMatchesContent(data)
+    end
     return entry.id
 end
 
@@ -614,6 +633,9 @@ function Raidstrats:ApplySavedPlanEntry(entry)
     self.plannerData.savedEntryId = entry.id
     if self.SanitizePlanData then self:SanitizePlanData(self.plannerData) end
     self:SetLastLoadedPlanId(entry.id)
+    if self.EnsurePlanSyncVersionMatchesContent then
+        self:EnsurePlanSyncVersionMatchesContent(self.plannerData)
+    end
     return true
 end
 

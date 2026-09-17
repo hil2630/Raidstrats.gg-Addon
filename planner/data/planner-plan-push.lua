@@ -30,6 +30,43 @@ local function CopyPlanData(val)
     return val
 end
 
+local function IsIgnoredCanvasFingerprintKey(k)
+    if k == "widget" or k == "currentX" or k == "currentY" then return true end
+    if type(k) == "string" and k:sub(1, 2) == "__" then return true end
+    return false
+end
+
+local function StableSerialize(val)
+    local t = type(val)
+    if t == "number" then return tostring(val) end
+    if t == "string" then return string.format("%q", val) end
+    if t == "boolean" then return val and "t" or "f" end
+    if t ~= "table" then return "" end
+    local keys = {}
+    for k in pairs(val) do
+        if not IsIgnoredCanvasFingerprintKey(k) then
+            keys[#keys + 1] = k
+        end
+    end
+    table.sort(keys, function(a, b)
+        local ta, tb = type(a), type(b)
+        if ta == "number" and tb == "number" then return a < b end
+        return tostring(a) < tostring(b)
+    end)
+    local parts = { "{" }
+    for i, k in ipairs(keys) do
+        parts[#parts + 1] = StableSerialize(k) .. "=" .. StableSerialize(val[k])
+        if i < #keys then parts[#parts + 1] = "," end
+    end
+    parts[#parts + 1] = "}"
+    return table.concat(parts)
+end
+
+local function CanvasContentFingerprint(data)
+    if type(data) ~= "table" or type(data.scenes) ~= "table" then return "" end
+    return StableSerialize(data.scenes)
+end
+
 local function SplitSep(str)
     local out = {}
     local start = 1
@@ -1432,6 +1469,10 @@ function Diar:SetPlanPushBaseline(planKey, data, version)
         rec.version = tonumber(version)
         rec.localVersion = rec.version
     end
+    rec.localSnapshot = nil
+    if type(rec.data) == "table" then
+        rec.contentFingerprint = CanvasContentFingerprint(rec.data)
+    end
     rec.t = time()
     store[planKey] = rec
 end
@@ -1485,36 +1526,40 @@ function Diar:EnsurePlanSyncVersionMatchesContent(data)
         return nil
     end
     local planKey = "inst:" .. data.instanceKey
-    local shareData = self.PreparePlanDataForShare and self:PreparePlanDataForShare(data) or nil
-    if type(shareData) ~= "table" then
-        return self:GetPlanSyncVersion(planKey)
-    end
-    shareData.syncVersion = nil
-    if self.StripPlanAnimations then
-        self:StripPlanAnimations(shareData)
-    end
-
-    local pushedVersion = self:GetPlanPushBaseVersion(planKey)
-    local baseline = self:GetPlanPushBaseline(planKey)
     local store = self:GetPlanSyncStore()
     local rec = store[planKey] or {}
+    local fp = CanvasContentFingerprint(data)
 
-    -- No group snapshot yet (e.g. imported copy). Don't invent a baseline from
-    -- current edits — that would make the next Push Update look empty.
-    if not baseline then
-        return self:GetPlanSyncVersion(planKey)
+    if rec.contentFingerprint == nil then
+        rec.contentFingerprint = fp
+        rec.localVersion = tonumber(rec.localVersion) or tonumber(rec.version) or 1
+        rec.t = time()
+        store[planKey] = rec
+        if self.UpdatePlanSyncVersionLabel then
+            self:UpdatePlanSyncVersionLabel(self.plannerFrame)
+        end
+        return rec.localVersion
     end
 
-    local inSync = TableDeepEqual(baseline, shareData)
-    local localVersion = inSync and pushedVersion or ((tonumber(pushedVersion) or 0) + 1)
-    rec.localVersion = localVersion
-    if pushedVersion then rec.version = pushedVersion end
+    if rec.contentFingerprint == fp then
+        if rec.localVersion == nil then
+            rec.localVersion = tonumber(rec.version) or 1
+            store[planKey] = rec
+        end
+        if self.UpdatePlanSyncVersionLabel then
+            self:UpdatePlanSyncVersionLabel(self.plannerFrame)
+        end
+        return rec.localVersion
+    end
+
+    rec.contentFingerprint = fp
+    rec.localVersion = (tonumber(rec.localVersion) or tonumber(rec.version) or 1) + 1
     rec.t = time()
     store[planKey] = rec
     if self.UpdatePlanSyncVersionLabel then
         self:UpdatePlanSyncVersionLabel(self.plannerFrame)
     end
-    return localVersion
+    return rec.localVersion
 end
 
 -- Called when building a share payload. Ensures the plan has a sync version + baseline and

@@ -451,7 +451,7 @@ function Diar:StartCompactPositionPreview(opts)
         self:SetPlannerCompactMode(true)
     end
     local s = self:GetPlannerSettings()
-    pf.compactCanvasScale = tonumber(s.nsrtCompactScale) or tonumber(s.compactScale) or COMPACT_SCALE
+    pf.compactCanvasScale = tonumber(s.nsrtCompactScale) or tonumber(s.compactScale) or CompactScale.default
     if self.ApplyPlannerCompactLayout then
         self.ApplyPlannerCompactLayout(pf)
     end
@@ -960,6 +960,9 @@ function Diar:EnsurePlannerControlsButtons(pf)
     if pf.macrosBtn then
         pf.macrosBtn:Hide()
     end
+    if self.EnsurePlannerSoakGroupsButton then
+        self:EnsurePlannerSoakGroupsButton(pf)
+    end
     self:UpdatePreviewIndexButton(pf)
 end
 
@@ -1098,6 +1101,7 @@ function Diar:PositionPlannerControlsBar(pf)
         if pf.raidLeadPanel then pf.raidLeadPanel:Hide() end
         if pf.raidLeadBottomDivider then pf.raidLeadBottomDivider:Hide() end
         if pf.settingsBtn then pf.settingsBtn:Hide() end
+        if pf.soakGroupsBtn then pf.soakGroupsBtn:Hide() end
         if pf.previewIndexBtn then pf.previewIndexBtn:Hide() end
         if pf.nsrtExportBtn then pf.nsrtExportBtn:Hide() end
         if pf.paletteToggleBtn then pf.paletteToggleBtn:Hide() end
@@ -1132,10 +1136,20 @@ function Diar:PositionPlannerControlsBar(pf)
         pf.canvasLockBtn:SetHeight(CONTROLS_H)
         self:UpdateCanvasLockButton(pf)
     end
+    if pf.soakGroupsBtn then
+        pf.soakGroupsBtn:Show()
+        pf.soakGroupsBtn:ClearAllPoints()
+        pf.soakGroupsBtn:SetPoint("RIGHT", pf.controls, "RIGHT", 0, 0)
+        pf.soakGroupsBtn:SetHeight(CONTROLS_H)
+    end
     if pf.settingsBtn then
         pf.settingsBtn:Show()
         pf.settingsBtn:ClearAllPoints()
-        pf.settingsBtn:SetPoint("RIGHT", pf.controls, "RIGHT", 0, 0)
+        if pf.soakGroupsBtn then
+            pf.settingsBtn:SetPoint("RIGHT", pf.soakGroupsBtn, "LEFT", -6, 0)
+        else
+            pf.settingsBtn:SetPoint("RIGHT", pf.controls, "RIGHT", 0, 0)
+        end
         pf.settingsBtn:SetHeight(CONTROLS_H)
     end
     if pf.macrosBtn then
@@ -2220,15 +2234,8 @@ local PLANNER_CANVAS_W = 1115
 local PLANNER_CANVAS_H = 627
 local DEFAULT_EXPANDED_LOAD_SCALE = 0.60
 
-local function GetPlannerControlsMinWidth()
-    local gap = 6
-    local clusterGap = 12
-    -- Left: Show palette + Lock | Center: Play + Stop | Right: NSRT + preview-eye + Settings
-    return 96 + gap + 72 + clusterGap + 110 + gap * 2 + 110 + clusterGap + 104 + gap + 72
-end
-
-local MIN_CANVAS_W = math.max(math.floor(PLANNER_CANVAS_W * 0.5), GetPlannerControlsMinWidth())
-local MIN_CANVAS_H = math.floor(PLANNER_CANVAS_H * 0.5)
+local MIN_CANVAS_W = math.max(math.floor(PLANNER_CANVAS_W * 0.30), 380)
+local MIN_CANVAS_H = math.max(math.floor(PLANNER_CANVAS_H * 0.28), 180)
 
 local function GetPlannerChromeWidth(pf)
     local leftExtra = (Diar.GetObjectPaletteExtraWidth and Diar:GetObjectPaletteExtraWidth()) or 0
@@ -2253,12 +2260,29 @@ local function GetPlannerCanvasDimensions(pf)
     return cw, ch
 end
 
+local function GetMaxCanvasSize(pf)
+    local chromeW = GetPlannerChromeWidth(pf)
+    local chromeH = GetPlannerChromeHeight()
+    local uiW = (UIParent and UIParent:GetWidth()) or 1920
+    local uiH = (UIParent and UIParent:GetHeight()) or 1080
+    local maxW = math.min(
+        math.floor(PLANNER_CANVAS_W * 2.0 + 0.5),
+        math.max(MIN_CANVAS_W, math.floor(uiW - chromeW - 8))
+    )
+    local maxH = math.min(
+        math.floor(PLANNER_CANVAS_H * 2.0 + 0.5),
+        math.max(MIN_CANVAS_H, math.floor(uiH - chromeH - 8))
+    )
+    return maxW, maxH
+end
+
 local function ComputeCanvasSizeFromFrame(pf, fw, fh)
     local availW = math.floor(fw - GetPlannerChromeWidth(pf) + 0.5)
     local availH = math.floor(fh - GetPlannerChromeHeight() + 0.5)
-    local canvasW = math.min(PLANNER_CANVAS_W, availW)
-    local canvasH = math.min(PLANNER_CANVAS_H, availH)
-    return math.max(1, canvasW), math.max(1, canvasH)
+    local maxW, maxH = GetMaxCanvasSize(pf)
+    local canvasW = math.max(MIN_CANVAS_W, math.min(maxW, availW))
+    local canvasH = math.max(MIN_CANVAS_H, math.min(maxH, availH))
+    return canvasW, canvasH
 end
 
 local function GetPlannerRenderCanvasSize(pf, canvas)
@@ -3442,11 +3466,12 @@ local function SyncViewerViewportFromScene(pf, scene)
         pf.__viewerViewportSceneIdx = sceneIdx
         return
     end
+    -- Only apply the saved scene camera when the selected scene changes.
+    -- Edits refresh the scene and used to re-apply zoom whenever viewerViewport
+    -- was nil (zoom-out / reset), snapping back to the imported camera.
     if pf.__viewerViewportSceneIdx ~= sceneIdx then
         pf.viewerViewport = ParseSceneViewport(scene)
         pf.__viewerViewportSceneIdx = sceneIdx
-    elseif pf.viewerViewport == nil and scene then
-        pf.viewerViewport = ParseSceneViewport(scene)
     end
 end
 
@@ -3939,7 +3964,8 @@ end
 
 local function LayoutTextWidgetFont(w, item, vc, ch)
     local fontPx = SceneViewScale(vc, ch * ((type(item.fontSize) == "number" and item.fontSize or 4) / 100))
-    return math.max(6, math.min(fontPx, 64))
+    -- Keep a high ceiling so imported zoom can grow, but still shrink on zoom-out.
+    return math.max(6, math.min(fontPx, 256))
 end
 
 local function ApplyTextWidgetContent(w, item, label, vc, ch, minSize)
@@ -5536,6 +5562,12 @@ end
 
 function Diar:SanitizePlanData(data)
     if not data or type(data.scenes) ~= "table" then return data end
+    -- Website only writes viewportState when "save zoom" is on, and marks
+    -- the payload with keepZoomState. Older imports without that flag can
+    -- carry leftover zoom on some scenes, so those stay at the default view.
+    local keepZoom = data.keepZoomState == true
+        or data.keepZoomState == 1
+        or (type(data.keepZoomState) == "string" and strlower(strtrim(tostring(data.keepZoomState))) == "true")
     for _, scene in ipairs(data.scenes) do
         local rawBg = scene and (scene.bg or scene.background)
         if type(rawBg) == "string" and rawBg ~= "" then
@@ -5553,12 +5585,10 @@ function Diar:SanitizePlanData(data)
                 scene.bg = preferred or bgKeys[1]
             end
         end
-        -- Imported payloads can carry stale scene viewport snapshots (scene.view /
-        -- scene.viewportState). Those may apply a zoom only on later scenes, making
-        -- identical geometry look much larger. Normalize imported scenes to default
-        -- viewport and let runtime user interactions set viewport state afterwards.
-        scene.view = nil
-        scene.viewportState = nil
+        if not keepZoom then
+            scene.view = nil
+            scene.viewportState = nil
+        end
         if scene.items then
             for _, item in ipairs(scene.items) do
                 if type(item) == "table" then
@@ -6048,10 +6078,73 @@ local function ApplyGroupSpotBorder(w, ring, thick)
     w.__groupSpotStroke = true
 end
 
-local function ApplyGroupSpotShape(w, item, mine, shp, ch)
+function Diar.ClassTokenFromAssignedName(name)
+    local key = NormalizeAssignName(name)
+    if not key then return nil end
+    local function match(unit)
+        if not unit or not UnitExists(unit) then return nil end
+        local unitName = (UnitNameUnmodified and UnitNameUnmodified(unit)) or UnitName(unit)
+        if NormalizeAssignName(unitName) ~= key then return nil end
+        local _, token = UnitClass(unit)
+        return token
+    end
+    local mine = match("player")
+    if mine then return mine end
+    if IsInRaid() then
+        for i = 1, 40 do
+            local token = match("raid" .. i)
+            if token then return token end
+        end
+    elseif IsInGroup() then
+        for i = 1, 4 do
+            local token = match("party" .. i)
+            if token then return token end
+        end
+    end
+    return nil
+end
+
+function Diar.ResolveOtherAssignmentColors(item, spotName, fallbackFill, fallbackRing)
+    if not (Diar.IsAssignmentOtherClassColorsEnabled and Diar:IsAssignmentOtherClassColorsEnabled()) then
+        return fallbackFill, fallbackRing, false
+    end
+    local a = (fallbackFill and fallbackFill[4]) or 0.75
+    local r, g, b
+    local classKey = item and Diar.ResolveClassKeyFromIconKey and Diar.ResolveClassKeyFromIconKey(item.icon)
+    if classKey then
+        r, g, b = Diar.GetClassCircleColor(classKey, a)
+    else
+        local roleKey = item and Diar.ResolveRoleKeyFromIconKey and Diar.ResolveRoleKeyFromIconKey(item.icon)
+        if roleKey then
+            r, g, b = Diar.GetRoleCircleColor(roleKey, a)
+        else
+            local token = Diar.ClassTokenFromAssignedName(spotName)
+            local cc = token and RAID_CLASS_COLORS and RAID_CLASS_COLORS[token]
+            if cc then
+                r, g, b = cc.r, cc.g, cc.b
+            end
+        end
+    end
+    if not r then
+        return fallbackFill, fallbackRing, false
+    end
+    local fill = { r, g, b, a }
+    local ring = {
+        math.min(1, r + 0.18),
+        math.min(1, g + 0.18),
+        math.min(1, b + 0.18),
+        1,
+    }
+    return fill, ring, true
+end
+
+local function ApplyGroupSpotShape(w, item, mine, shp, ch, spotName)
     local colors = Diar:GetAssignmentSpotColors()
     local fill = mine and colors.mineFill or colors.otherFill
     local ring = mine and colors.mineRing or colors.otherRing
+    if not mine then
+        fill, ring = Diar.ResolveOtherAssignmentColors(item, spotName, fill, ring)
+    end
     w:SetAlpha(1)
     w.__groupSpotMine = mine and true or nil
     ClearCircleRingLayoutCache(w)
@@ -6068,24 +6161,41 @@ local function ApplyGroupSpotShape(w, item, mine, shp, ch)
     end
 end
 
-local function ApplyGroupSpotIcon(w, mine, ch, item)
+local function ApplyGroupSpotIcon(w, mine, ch, item, spotName)
     if not w or not w.tex then return end
     local colors = Diar:GetAssignmentSpotColors()
     local fill = mine and colors.mineFill or colors.otherFill
+    local usedClass = false
+    if not mine then
+        fill, _, usedClass = Diar.ResolveOtherAssignmentColors(item, spotName, fill, colors.otherRing)
+    end
     w:SetAlpha(1)
     w.__groupSpotMine = mine and true or nil
     w.tex:SetAlpha(1)
-    -- Icons (roles/classes/etc) should be color-tinted for assignment state, not bordered.
-    w.tex:SetVertexColor(fill[1], fill[2], fill[3], mine and 1 or 0.9)
+    local classKey = item and Diar.ResolveClassKeyFromIconKey and Diar.ResolveClassKeyFromIconKey(item.icon)
+    local roleKey = item and Diar.ResolveRoleKeyFromIconKey and Diar.ResolveRoleKeyFromIconKey(item.icon)
+    local alreadyClassCircle = (not mine) and usedClass
+        and Diar.IsClassSpecCircleModeEnabled and Diar:IsClassSpecCircleModeEnabled()
+        and (classKey or roleKey)
+    if alreadyClassCircle then
+        -- Circle already carries the class/role color; do not multiply-tint it.
+    elseif usedClass and (classKey or roleKey) then
+        w.tex:SetVertexColor(1, 1, 1, 1)
+    else
+        w.tex:SetVertexColor(fill[1], fill[2], fill[3], mine and 1 or 0.9)
+    end
     HideWidgetStroke(w)
     ClearBackdropStroke(w)
 end
 
-local function ApplyGroupSpotText(w, mine, ch, item)
+local function ApplyGroupSpotText(w, mine, ch, item, spotName)
     if not w then return end
     local colors = Diar:GetAssignmentSpotColors()
     local fill = mine and colors.mineFill or colors.otherFill
     local ring = mine and colors.mineRing or colors.otherRing
+    if not mine then
+        fill, ring = Diar.ResolveOtherAssignmentColors(item, spotName, fill, ring)
+    end
     w:SetAlpha(1)
     w.__groupSpotMine = mine and true or nil
     if not w.SetBackdrop then Mixin(w, BackdropTemplateMixin) end
@@ -6179,7 +6289,7 @@ function Diar.ApplyWidgetLabel(w, item, label, hasSelfOnPlan, playerKey, isNames
     end
 end
 
-function Diar.RenderIconWidget(addon, w, item, label, hasSelfOnPlan, playerKey, spotNum, isMySpot, ch, forceLabel, suppressGroupVisual)
+function Diar.RenderIconWidget(addon, w, item, label, hasSelfOnPlan, playerKey, spotNum, isMySpot, ch, forceLabel, suppressGroupVisual, assignedName)
     HideWidgetStroke(w)
     ClearBackdropStroke(w)
     local spellId = ResolveItemSpellId(item)
@@ -6271,7 +6381,7 @@ function Diar.RenderIconWidget(addon, w, item, label, hasSelfOnPlan, playerKey, 
     end)
     w:SetScript("OnLeave", function() GameTooltip:Hide() end)
     if spotNum and not suppressGroupVisual then
-        ApplyGroupSpotIcon(w, isMySpot, ch, item)
+        ApplyGroupSpotIcon(w, isMySpot, ch, item, assignedName)
     end
 end
 
@@ -6418,7 +6528,8 @@ function Diar.RenderSceneItem(addon, pf, root, cw, ch, vc, minSize, item, itemIn
 
     local spotNum = sceneCtx.groupSpots and sceneCtx.groupSpots[itemIndex]
     local isMySpot = spotNum and sceneCtx.activeGroup and sceneCtx.activeGroup.mySpots and sceneCtx.activeGroup.mySpots[spotNum]
-    local spotName = spotNum and sceneCtx.previewNamesOn and sceneCtx.groupSpotNames and sceneCtx.groupSpotNames[spotNum] or nil
+    local assignedName = spotNum and sceneCtx.groupSpotNames and sceneCtx.groupSpotNames[spotNum] or nil
+    local spotName = (sceneCtx.previewNamesOn and assignedName) or nil
     local macroHasLabel = macroOverride and macroOverride.label ~= nil
     local macroHasVisual = macroOverride and (macroOverride.fill ~= nil or macroOverride.stroke ~= nil)
     -- Temporary NSRT-driven label override: render-only, never mutates/saves plan data.
@@ -6437,7 +6548,7 @@ function Diar.RenderSceneItem(addon, pf, root, cw, ch, vc, minSize, item, itemIn
         if w.label then w.label:Hide() end
         local tr, tg, tb = ApplyTextWidgetContent(w, item, renderLabel, vc, ch, minSize)
         if spotNum then
-            ApplyGroupSpotText(w, isMySpot, ch, item)
+            ApplyGroupSpotText(w, isMySpot, ch, item, assignedName)
         end
         if sceneCtx.hasSelfOnPlan and LabelMatchesPlayer(renderLabel, sceneCtx.playerKey) then
             ApplyNameHighlight(w, true, true, tr, tg, tb, w.text)
@@ -6449,7 +6560,7 @@ function Diar.RenderSceneItem(addon, pf, root, cw, ch, vc, minSize, item, itemIn
         if w.text then w.text:Hide() end
         if w.label then w.label:Hide() end
         if spotNum and not macroHasVisual then
-            ApplyGroupSpotShape(w, item, isMySpot, shp, ch)
+            ApplyGroupSpotShape(w, item, isMySpot, shp, ch, assignedName)
             if (macroHasLabel or spotName) and (shp == "circle" or shp == "ellipse") then
                 SetGroupSpotPreviewText(w, renderLabel, isMySpot, item)
             end
@@ -6494,7 +6605,7 @@ function Diar.RenderSceneItem(addon, pf, root, cw, ch, vc, minSize, item, itemIn
     else
         Diar.RenderIconWidget(
             addon, w, item, renderLabel, sceneCtx.hasSelfOnPlan, sceneCtx.playerKey,
-            spotNum, isMySpot, ch, macroHasLabel, macroHasVisual
+            spotNum, isMySpot, ch, macroHasLabel, macroHasVisual, assignedName
         )
     end
 
@@ -6522,9 +6633,8 @@ function Diar.RenderSceneItem(addon, pf, root, cw, ch, vc, minSize, item, itemIn
 end
 
 -- Compact mode: same canvas as expanded, displayed smaller via SetScale.
--- Raised cap by ~40% (0.52 -> 0.73) to allow larger compact/preview layouts.
-local COMPACT_SCALE = 0.73
-local MIN_COMPACT_SCALE = 0.22
+-- default is the first open size; min/max are the resize range.
+local CompactScale = { default = 0.73, min = 0.12, max = 1.20 }
 local COMPACT_TOP_CHROME_H = 32
 
 local function GetPlannerCompactChromeWidth()
@@ -6537,17 +6647,17 @@ local function GetPlannerCompactChromeHeight(pf)
 end
 
 local function GetPlannerCompactScale(pf)
-    if not pf then return COMPACT_SCALE end
-    local s = pf.compactCanvasScale or COMPACT_SCALE
-    return math.max(MIN_COMPACT_SCALE, math.min(COMPACT_SCALE, s))
+    if not pf then return CompactScale.default end
+    local s = pf.compactCanvasScale or CompactScale.default
+    return math.max(CompactScale.min, math.min(CompactScale.max, s))
 end
 
 local function FitCompactScaleInBox(availW, availH, canvasW, canvasH)
     if not canvasW or not canvasH or canvasW <= 0 or canvasH <= 0 then
-        return COMPACT_SCALE
+        return CompactScale.default
     end
     local scale = math.min(availW / canvasW, availH / canvasH)
-    return math.max(MIN_COMPACT_SCALE, math.min(COMPACT_SCALE, scale))
+    return math.max(CompactScale.min, math.min(CompactScale.max, scale))
 end
 
 local function GetPlannerCompactFrameSize(pf, scale)
@@ -6562,13 +6672,14 @@ local function ApplyPlannerResizeBounds(pf)
     if not pf then return end
     local minW, minH, maxW, maxH
     if pf.compactMode then
-        minW, minH = GetPlannerCompactFrameSize(pf, MIN_COMPACT_SCALE)
-        maxW, maxH = GetPlannerCompactFrameSize(pf, COMPACT_SCALE)
+        minW, minH = GetPlannerCompactFrameSize(pf, CompactScale.min)
+        maxW, maxH = GetPlannerCompactFrameSize(pf, CompactScale.max)
     else
+        local maxCanvasW, maxCanvasH = GetMaxCanvasSize(pf)
         minW = GetPlannerChromeWidth(pf) + MIN_CANVAS_W
         minH = GetPlannerChromeHeight() + MIN_CANVAS_H
-        maxW = GetPlannerChromeWidth(pf) + PLANNER_CANVAS_W
-        maxH = GetPlannerChromeHeight() + PLANNER_CANVAS_H
+        maxW = GetPlannerChromeWidth(pf) + maxCanvasW
+        maxH = GetPlannerChromeHeight() + maxCanvasH
     end
     if pf.SetResizeBounds then
         pf:SetResizeBounds(minW, minH, maxW, maxH)
@@ -6939,6 +7050,7 @@ local function ApplyPlannerCompactLayout(pf, keepFrameSize, snapFrame)
     pf.canvas:Show()
 
     if pf.settingsBtn then pf.settingsBtn:Hide() end
+    if pf.soakGroupsBtn then pf.soakGroupsBtn:Hide() end
     if pf.previewIndexBtn then pf.previewIndexBtn:Hide() end
     if pf.objectPalettePanel then pf.objectPalettePanel:Hide() end
     if Diar.ClearPalettePlacement then Diar:ClearPalettePlacement() end
@@ -7001,7 +7113,7 @@ local function BeginCompactProportionalResize(pf, grip)
         if not r or not pf.compactMode then return end
         local cx = GetCursorPosition() / pf:GetEffectiveScale()
         local dx = cx - r.startMouseX
-        local newScale = math.max(MIN_COMPACT_SCALE, math.min(COMPACT_SCALE, r.startScale + dx / r.canvasW))
+        local newScale = math.max(CompactScale.min, math.min(CompactScale.max, r.startScale + dx / r.canvasW))
         if math.abs(newScale - GetPlannerCompactScale(pf)) < 0.001 then return end
         pf.compactCanvasScale = newScale
         pf.__layoutSyncing = true
@@ -7140,9 +7252,9 @@ function Diar:SetPlannerCompactMode(enabled, skipSceneRefresh)
     if enabled then
         local s = self:GetPlannerSettings()
         if pf.nsrtSceneActive then
-            pf.compactCanvasScale = tonumber(s.nsrtCompactScale) or tonumber(s.compactScale) or COMPACT_SCALE
+            pf.compactCanvasScale = tonumber(s.nsrtCompactScale) or tonumber(s.compactScale) or CompactScale.default
         else
-            pf.compactCanvasScale = tonumber(s.compactScale) or COMPACT_SCALE
+            pf.compactCanvasScale = tonumber(s.compactScale) or CompactScale.default
         end
         ApplyPlannerCompactLayout(pf)
         self:ApplyPlannerFramePosition(pf)
@@ -7959,7 +8071,7 @@ function Diar:ShowPlannerViewer(opts)
         if pf.nsrtSceneActive and not pf.compactMode then
             pf.compactMode = true
             local s = self:GetPlannerSettings()
-            pf.compactCanvasScale = tonumber(s.nsrtCompactScale) or tonumber(s.compactScale) or COMPACT_SCALE
+            pf.compactCanvasScale = tonumber(s.nsrtCompactScale) or tonumber(s.compactScale) or CompactScale.default
         end
         ApplyPlannerCompactLayout(pf)
         if pf.nsrtSceneActive then ApplyPlannerChromeTransparent(pf) end
@@ -7979,7 +8091,11 @@ function Diar:ShowPlannerViewer(opts)
     end
     self:RefreshSavedPlansList()
     if self.UpdatePushUpdateButton then self:UpdatePushUpdateButton() end
-    if self.UpdatePlanSyncVersionLabel then self:UpdatePlanSyncVersionLabel(pf) end
+    if self.EnsurePlanSyncVersionMatchesContent then
+        self:EnsurePlanSyncVersionMatchesContent(data)
+    elseif self.UpdatePlanSyncVersionLabel then
+        self:UpdatePlanSyncVersionLabel(pf)
+    end
     if self.ApplyRaidLeadViewLayout then self:ApplyRaidLeadViewLayout(pf) end
     if self.OnPlannerPlanChanged then self:OnPlannerPlanChanged() end
     self:ResetPlannerCanvasLock()

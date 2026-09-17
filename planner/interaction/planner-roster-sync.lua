@@ -1122,6 +1122,9 @@ function Diar:HidePlannerTransientMenus()
     if self.HideMemberPicker then
         self:HideMemberPicker()
     end
+    if self.HideSoakPlayerPicker then
+        self:HideSoakPlayerPicker()
+    end
     if self.HideDuplicateLabelWarning then
         self:HideDuplicateLabelWarning()
     end

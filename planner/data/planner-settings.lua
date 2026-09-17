@@ -26,6 +26,7 @@ end
 
 local LOCALE_CACHED_FRAMES = {
     "plannerSettingsDialog",
+    "plannerSoakGroupsDialog",
     "plannerHelpDialog",
     "plannerCreditsDialog",
     "plannerNsrtExportDialog",
@@ -117,6 +118,7 @@ function Diar:RefreshPlannerLocaleLabels()
     end
 
     SetLocaleBtnText(pf.settingsBtn, L("Settings"))
+    SetLocaleBtnText(pf.soakGroupsBtn, L("Soaks"))
     SetLocaleBtnText(pf.nsrtExportBtn, L("NSRT"))
     SetLocaleBtnText(pf.discordBtn, L("Discord"))
     SetLocaleBtnText(pf.creditsBtn, L("Credits"))
@@ -319,6 +321,7 @@ function Diar:GetPlannerSettings()
     if s.compactZoomToAssignment == nil then s.compactZoomToAssignment = false end
     if s.compactAssignZoom == nil then s.compactAssignZoom = 1.7 end
     if s.classSpecCircleMode == nil then s.classSpecCircleMode = false end
+    if s.assignOtherUseClassColors == nil then s.assignOtherUseClassColors = false end
     if s.compactPlanLibrary == nil then s.compactPlanLibrary = true end
     if s.nsrtCompactAlwaysOpen == nil then s.nsrtCompactAlwaysOpen = false end
     if s.hideRaidPlansInCombat == nil then s.hideRaidPlansInCombat = false end
@@ -521,6 +524,12 @@ end
 
 function Diar:IsClassSpecCircleModeEnabled()
     local v = self:GetPlannerSettings().classSpecCircleMode
+    if v == true or v == 1 then return true end
+    return false
+end
+
+function Diar:IsAssignmentOtherClassColorsEnabled()
+    local v = self:GetPlannerSettings().assignOtherUseClassColors
     if v == true or v == 1 then return true end
     return false
 end
@@ -1163,6 +1172,28 @@ function Diar:ShowPlannerSettingsDialog()
         displayY = AddSectionHeader(displayPage, L("Assignment colors"), displayY)
         displayY = AddAssignmentColorRow(displayPage, displayY, L("My assignment spot"), "assignMineColorBtn", DEFAULT_ASSIGN_MINE_FILL)
         displayY = AddAssignmentColorRow(displayPage, displayY, L("Other assignment spots"), "assignOtherColorBtn", DEFAULT_ASSIGN_OTHER_FILL)
+        displayY = AddCheckbox(displayPage, displayY, "assignOtherClassColorsChk", L("Use class colors for other assignment spots"))
+        do
+            local function RefreshOtherAssignColorEnabled()
+                local useClass = f.assignOtherClassColorsChk and CheckboxIsChecked(f.assignOtherClassColorsChk)
+                local on = not useClass
+                local alpha = on and 1 or 0.35
+                local btn = f.assignOtherColorBtn
+                if btn then
+                    if btn.SetAlpha then btn:SetAlpha(alpha) end
+                    if btn.EnableMouse then btn:EnableMouse(on and true or false) end
+                end
+            end
+            f.RefreshOtherAssignColorEnabled = RefreshOtherAssignColorEnabled
+            if f.assignOtherClassColorsChk then
+                local chk = f.assignOtherClassColorsChk
+                local prev = chk:GetScript("OnClick")
+                chk:SetScript("OnClick", function(s)
+                    if prev then prev(s) end
+                    RefreshOtherAssignColorEnabled()
+                end)
+            end
+        end
 
         local raiderY = -18
         raiderY = AddSectionHeader(raiderPage, L("Readycheck"), raiderY)
@@ -1274,6 +1305,7 @@ function Diar:ShowPlannerSettingsDialog()
             s.compactObjectsOnly = CheckboxIsChecked(f.compactObjectsOnlyChk)
             s.compactNsrtClickThrough = CheckboxIsChecked(f.compactNsrtClickThroughChk)
             s.classSpecCircleMode = CheckboxIsChecked(f.classSpecCircleChk)
+            s.assignOtherUseClassColors = CheckboxIsChecked(f.assignOtherClassColorsChk)
             s.compactSceneArrows = CheckboxIsChecked(f.compactSceneArrowsChk)
             s.compactZoomToAssignment = CheckboxIsChecked(f.compactZoomAssignChk)
             s.compactAssignZoom = ClampAssignZoom(f.compactAssignZoom)
@@ -1408,6 +1440,12 @@ function Diar:ShowPlannerSettingsDialog()
     end
     if dlg.classSpecCircleChk then
         dlg.classSpecCircleChk:SetChecked(self:IsClassSpecCircleModeEnabled())
+    end
+    if dlg.assignOtherClassColorsChk then
+        dlg.assignOtherClassColorsChk:SetChecked(self:IsAssignmentOtherClassColorsEnabled())
+    end
+    if dlg.RefreshOtherAssignColorEnabled then
+        dlg:RefreshOtherAssignColorEnabled()
     end
     if dlg.compactSceneArrowsChk then
         dlg.compactSceneArrowsChk:SetChecked(self:IsCompactSceneArrowsEnabled())

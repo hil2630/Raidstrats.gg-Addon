@@ -43,6 +43,7 @@ planner\interaction\planner-roster-sync.lua
 planner\interaction\planner-macros.lua
 planner\view\planner-raid-lead-view.lua
 planner\data\planner-settings.lua
+planner\view\planner-soak-groups.lua
 planner\view\planner-macros.lua
 planner\data\planner-saved-plans.lua
 planner\view\planner-import.lua

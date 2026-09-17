@@ -1,5 +1,30 @@
 # Changelog
 
+## [Release 1.0.11]
+
+Added:
+
+- Assignment colors can now use class colors for other players' spots
+  (warrior brown, mage blue, and so on). Your own spot still uses the
+  color you pick. Settings -> Plan display -> Use class colors for
+  other assignment spots.
+- The planner window can now be resized much larger and much smaller
+  in both the full view and compact view.
+- A Soaks button next to Settings lets you update soak groups from
+  players in your party or raid, or from names already on the plan.
+  Drag assigned players to switch their slots.
+- Plans copied for the addon now keep each scene's zoom when Save zoom
+  is turned on. Close and reopen still restores that zoom. Zoom to my
+  assignment in compact mode still wins when it is enabled.
+
+Fixed:
+
+- Plan text now shrinks and grows correctly when you zoom in or out.
+- Editing a zoomed plan no longer snaps the camera back to the saved
+  zoom. That zoom is applied again when you switch scenes.
+- The version number on the plan canvas now goes up when you change
+  objects on that plan.
+
 ## [Release 1.0.10]
 
 Added:
