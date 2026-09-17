@@ -1,5 +1,12 @@
 # Changelog
 
+## [Release 1.0.12]
+
+Fixed:
+
+- Importing a zoomed plan now applies that zoom right away, even if you
+  were already on the first scene.
+
 ## [Release 1.0.11]
 
 Added:
@@ -16,6 +23,8 @@ Added:
 - Plans copied for the addon now keep each scene's zoom when Save zoom
   is turned on. Close and reopen still restores that zoom. Zoom to my
   assignment in compact mode still wins when it is enabled.
+- Preview zoom now starts from that saved plan zoom, then applies your
+  assignment zoom on top.
 
 Fixed:
 

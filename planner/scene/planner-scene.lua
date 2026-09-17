@@ -3720,7 +3720,11 @@ local function BuildCompactAssignmentViewport(pf, scene, sceneSpots, activeGroup
     local xp = math.max(0, math.min(100, x + w * 0.5))
     local yp = math.max(0, math.min(100, y + h * 0.5))
 
-    local zoom = (Diar.GetCompactAssignmentZoom and Diar:GetCompactAssignmentZoom()) or 1.7
+    local assignZoom = (Diar.GetCompactAssignmentZoom and Diar:GetCompactAssignmentZoom()) or 1.7
+    local saved = ParseSceneViewport(scene)
+    local baseZoom = (saved and saved.zoom) or 1
+    if baseZoom < 1 then baseZoom = 1 end
+    local zoom = baseZoom * assignZoom
     local panX = 0.5 - (xp / 100) * zoom
     local panY = 0.5 - (yp / 100) * zoom
     return ClampViewerViewportNormalized({
@@ -5562,12 +5566,21 @@ end
 
 function Diar:SanitizePlanData(data)
     if not data or type(data.scenes) ~= "table" then return data end
-    -- Website only writes viewportState when "save zoom" is on, and marks
-    -- the payload with keepZoomState. Older imports without that flag can
-    -- carry leftover zoom on some scenes, so those stay at the default view.
+    -- Website writes viewportState when "save zoom" is on and usually marks
+    -- keepZoomState. Some shares/library copies only have per-scene zoom, so
+    -- keep that camera whenever a scene actually includes one.
     local keepZoom = data.keepZoomState == true
         or data.keepZoomState == 1
         or (type(data.keepZoomState) == "string" and strlower(strtrim(tostring(data.keepZoomState))) == "true")
+    if not keepZoom then
+        for i = 1, #data.scenes do
+            local vs = data.scenes[i] and (data.scenes[i].viewportState or data.scenes[i].view)
+            if type(vs) == "table" and type(vs.zoom) == "number" then
+                keepZoom = true
+                break
+            end
+        end
+    end
     for _, scene in ipairs(data.scenes) do
         local rawBg = scene and (scene.bg or scene.background)
         if type(rawBg) == "string" and rawBg ~= "" then
@@ -8059,6 +8072,12 @@ function Diar:ShowPlannerViewer(opts)
             pf.selectedSceneIndex = math.max(1, math.min(pf.selectedSceneIndex, math.max(1, sceneCount)))
         else
             pf.selectedSceneIndex = 1
+        end
+        -- A new plan (import/load) must re-apply saved zoom even if we stay on
+        -- scene 1. Push updates use keepScene and keep the current camera.
+        if not opts.keepScene then
+            pf.__viewerViewportSceneIdx = nil
+            pf.__ignoreNextSceneViewportSync = nil
         end
     end
     self:UpdateSceneTabHighlight()
