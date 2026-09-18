@@ -454,7 +454,7 @@ function Diar:ClearReadyCheckAutoSent()
 end
 
 -- Each client can only set its own readycheck response. If this player is missing
--- any note-bound plan, auto-answer Not Ready (setting, on by default).
+-- any note-bound plan, auto-answer Not Ready (setting, off by default).
 function Diar:MaybeAutoNotReadyForMissingPlans()
     if not self.IsReadyCheckAutoNotReadyMissingEnabled or not self:IsReadyCheckAutoNotReadyMissingEnabled() then
         return false

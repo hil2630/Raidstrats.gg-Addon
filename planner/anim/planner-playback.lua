@@ -103,7 +103,10 @@ function Diar:UpdatePlannerControlButtons()
     SetPlannerBtnEnabled(pf.playPauseBtn, hasAnims)
     SetPlannerBtnEnabled(pf.stopBtn, hasAnims)
 
-    if pf.timeline then
+    if self.PlannerAnimControlsHidden and self:PlannerAnimControlsHidden() then
+        if self.HidePlannerAnimControls then self:HidePlannerAnimControls(pf) end
+        hasAnims = false
+    elseif pf.timeline then
         if hasAnims and not pf.compactMode then
             pf.timeline:Show()
         else

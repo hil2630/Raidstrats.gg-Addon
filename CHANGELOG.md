@@ -1,5 +1,19 @@
 # Changelog
 
+## [Release 1.0.13]
+
+Added:
+
+- Auto Not Ready if you are missing a plan is now off by default. This
+  update also turns it off for anyone who already had it on. You will
+  get a warning before you can turn it back on.
+
+Updates:
+
+- Play, Stop, and the animation bar are hidden for now, since imported  
+  plans do not include animation. (this may or may not be temporary)
+- The object palette hint is now a small ? you can hover.
+
 ## [Release 1.0.12]
 
 Fixed:

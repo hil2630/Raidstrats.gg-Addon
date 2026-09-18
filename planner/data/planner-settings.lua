@@ -27,6 +27,7 @@ end
 local LOCALE_CACHED_FRAMES = {
     "plannerSettingsDialog",
     "plannerSoakGroupsDialog",
+    "plannerMacrosDialog",
     "plannerHelpDialog",
     "plannerCreditsDialog",
     "plannerNsrtExportDialog",
@@ -73,7 +74,28 @@ local STATIC_POPUP_LOCALE_KEYS = {
     RAIDSTRATSGG_SHARE_TO_GUILD = {
         text = "You are not in a party or raid. Share \"%s\" to guild chat? Everyone in your guild will see this link.",
     },
+    RAIDSTRATSGG_AUTO_NOT_READY = {
+        text = "This will automatically mark you Not Ready on a ready check if you do not have the plan.\n\nEnable it?",
+        button1 = "Enable",
+        button2 = "Cancel",
+    },
 }
+
+if not StaticPopupDialogs["RAIDSTRATSGG_AUTO_NOT_READY"] then
+    StaticPopupDialogs["RAIDSTRATSGG_AUTO_NOT_READY"] = {
+        text = L("This will automatically mark you Not Ready on a ready check if you do not have the plan.\n\nEnable it?"),
+        button1 = L("Enable"),
+        button2 = L("Cancel"),
+        OnAccept = function(self)
+            local chk = self.data
+            if chk and chk.SetChecked then chk:SetChecked(true) end
+        end,
+        timeout = 0,
+        whileDead = 1,
+        hideOnEscape = 1,
+        preferredIndex = 3,
+    }
+end
 
 local function RefreshStaticPopupLocales()
     for name, fields in pairs(STATIC_POPUP_LOCALE_KEYS) do
@@ -119,6 +141,7 @@ function Diar:RefreshPlannerLocaleLabels()
 
     SetLocaleBtnText(pf.settingsBtn, L("Settings"))
     SetLocaleBtnText(pf.soakGroupsBtn, L("Soaks"))
+    SetLocaleBtnText(pf.macrosBtn, L("Macros"))
     SetLocaleBtnText(pf.nsrtExportBtn, L("NSRT"))
     SetLocaleBtnText(pf.discordBtn, L("Discord"))
     SetLocaleBtnText(pf.creditsBtn, L("Credits"))
@@ -329,7 +352,12 @@ function Diar:GetPlannerSettings()
     if s.readyCheckAssignments == nil then s.readyCheckAssignments = false end
     if s.readyCheckShowRaidCheck == nil then s.readyCheckShowRaidCheck = true end
     if s.readyCheckCheckPlanVersions == nil then s.readyCheckCheckPlanVersions = true end
-    if s.readyCheckAutoNotReadyMissing == nil then s.readyCheckAutoNotReadyMissing = true end
+    -- 1.0.13: force this off once for everyone who already had the old default on.
+    if s.readyCheckAutoNotReadyResetV13 ~= true then
+        s.readyCheckAutoNotReadyMissing = false
+        s.readyCheckAutoNotReadyResetV13 = true
+    end
+    if s.readyCheckAutoNotReadyMissing == nil then s.readyCheckAutoNotReadyMissing = false end
     if s.readyCheckRaidOnlyInRaid == nil then s.readyCheckRaidOnlyInRaid = true end
     if s.readyCheckPhase == nil then s.readyCheckPhase = 0 end
     if s.readyCheckGrace == nil then s.readyCheckGrace = 10 end
@@ -1199,6 +1227,21 @@ function Diar:ShowPlannerSettingsDialog()
         raiderY = AddSectionHeader(raiderPage, L("Readycheck"), raiderY)
         raiderY = AddCheckbox(raiderPage, raiderY, "readyCheckAssignChk", L("Show assignments on readycheck"))
         raiderY = AddCheckbox(raiderPage, raiderY, "readyCheckAutoNotReadyChk", L("Auto Not Ready if missing note plans"))
+        do
+            local chk = f.readyCheckAutoNotReadyChk
+            if chk then
+                local prev = chk:GetScript("OnClick")
+                chk:SetScript("OnClick", function(s)
+                    if prev then prev(s) end
+                    if not CheckboxIsChecked(s) then
+                        if StaticPopup_Hide then StaticPopup_Hide("RAIDSTRATSGG_AUTO_NOT_READY") end
+                        return
+                    end
+                    s:SetChecked(false)
+                    StaticPopup_Show("RAIDSTRATSGG_AUTO_NOT_READY", nil, nil, s)
+                end)
+            end
+        end
         raiderY = AddCheckbox(raiderPage, raiderY, "readyCheckRaidOnlyChk", L("Show only readycheck in raid group"))
         raiderY = AddSecondsRow(raiderPage, raiderY, L("Readycheck grace period (after finished)"), "readyCheckGraceEdit")
         raiderY = AddNumberRow(raiderPage, raiderY, L("Ready check phase filter (0 = all phases)"), "readyCheckPhaseEdit")
@@ -1407,6 +1450,7 @@ function Diar:ShowPlannerSettingsDialog()
         if f.HookScript then
             f:HookScript("OnHide", function()
                 Diar._compactBgPreviewActive = nil
+                if StaticPopup_Hide then StaticPopup_Hide("RAIDSTRATSGG_AUTO_NOT_READY") end
                 if Diar.EndCompactAssignmentZoomPreviewFromSettings then
                     Diar:EndCompactAssignmentZoomPreviewFromSettings()
                 end

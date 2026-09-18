@@ -105,7 +105,21 @@ local UI = {
 }
 
 local PALETTE_HINT_DEFAULT = L("Palette: click item, then canvas · Right-click object to delete")
-local PALETTE_HINT_H = 34
+
+function Diar:SetObjectPaletteHint(text)
+    local pf = self.plannerFrame
+    if not pf then return end
+    pf.__paletteHelpTip = text or PALETTE_HINT_DEFAULT
+end
+
+function Diar:ShowObjectPaletteHelpTooltip(anchor)
+    if not GameTooltip or not anchor then return end
+    local pf = self.plannerFrame
+    local tip = (pf and pf.__paletteHelpTip) or PALETTE_HINT_DEFAULT
+    GameTooltip:SetOwner(anchor, "ANCHOR_RIGHT")
+    GameTooltip:SetText(tip, 1, 1, 1, 1, true)
+    GameTooltip:Show()
+end
 
 if not StaticPopupDialogs["RAIDSTRATSGG_PALETTE_TEXT"] then
     StaticPopupDialogs["RAIDSTRATSGG_PALETTE_TEXT"] = {
@@ -935,10 +949,7 @@ function Diar:ClearPalettePlacement()
         pf.__paletteSelectedTile = nil
     end
     pf.__palettePlacement = nil
-    if pf.objectPaletteHint then
-        pf.objectPaletteHint:SetText(PALETTE_HINT_DEFAULT)
-        pf.objectPaletteHint:SetTextColor(0.45, 0.50, 0.58)
-    end
+    self:SetObjectPaletteHint(PALETTE_HINT_DEFAULT)
     if hadPlacement and self.RefreshPlannerScene then
         self:RefreshPlannerScene()
     end
@@ -973,13 +984,10 @@ function Diar:BeginPalettePlacement(template, label, opts)
         self:StartPaletteGhostTracking(pf)
         self:UpdatePaletteGhostPreview()
     end
-    if pf.objectPaletteHint then
-        if pf.__palettePlacement.__dragDraw then
-            pf.objectPaletteHint:SetText(L("Drag on canvas to draw %s (right-click cancel)"):format(label or L("shape")))
-        else
-            pf.objectPaletteHint:SetText(L("Click canvas to place %s (right-click cancel)"):format(label or L("object")))
-        end
-        pf.objectPaletteHint:SetTextColor(0.55, 0.78, 1, 1)
+    if pf.__palettePlacement.__dragDraw then
+        self:SetObjectPaletteHint(L("Drag on canvas to draw %s (right-click cancel)"):format(label or L("shape")))
+    else
+        self:SetObjectPaletteHint(L("Click canvas to place %s (right-click cancel)"):format(label or L("object")))
     end
     if opts and opts.sourceTile and self.SetPaletteTileSelected then
         pf.__paletteSelectedTile = opts.sourceTile
@@ -1537,42 +1545,51 @@ function Diar:RelayoutObjectPaletteTiles(pf)
 end
 
 function Diar:EnsureObjectPalettePanel(pf)
-    if pf.objectPalettePanel and pf.objectPalettePanel.__paletteV6 then return end
+    if pf.objectPalettePanel and pf.objectPalettePanel.__paletteV7 then return end
     if pf.objectPalettePanel then
         pf.objectPalettePanel:Hide()
         pf.objectPalettePanel = nil
         pf.objectPaletteHint = nil
+        pf.objectPaletteHelpBtn = nil
         pf.objectPaletteContent = nil
         pf.objectPaletteTileRefs = nil
     end
 
     local panel = CreateFrame("Frame", nil, pf, "BackdropTemplate")
-    panel.__paletteV6 = true
+    panel.__paletteV7 = true
     panel:SetWidth(self.OBJECT_PALETTE_PANEL_W)
     panel:EnableMouse(true)
     panel:SetFrameLevel((pf:GetFrameLevel() or 0) + 8)
     if SetBackdrop then SetBackdrop(panel, UI.PANEL, UI.BORDER, 1) end
     pf.objectPalettePanel = panel
 
-    local hint = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    hint:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 8, 8)
-    hint:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -6, 8)
-    hint:SetHeight(PALETTE_HINT_H)
-    hint:SetJustifyH("LEFT")
-    hint:SetJustifyV("BOTTOM")
-    hint:SetWordWrap(true)
-    hint:SetTextColor(0.45, 0.50, 0.58)
-    hint:SetText(PALETTE_HINT_DEFAULT)
-    pf.objectPaletteHint = hint
-
     local title = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     title:SetPoint("TOPLEFT", panel, "TOPLEFT", 8, -8)
     title:SetText(L("Objects"))
     title:SetTextColor(0.92, 0.92, 0.92)
 
+    local helpBtn = CreateFrame("Button", nil, panel)
+    helpBtn:SetSize(16, 16)
+    helpBtn:SetPoint("LEFT", title, "RIGHT", 4, 0)
+    helpBtn:EnableMouse(true)
+    local helpLabel = helpBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    helpLabel:SetPoint("CENTER")
+    helpLabel:SetText("?")
+    helpLabel:SetTextColor(0.55, 0.58, 0.65)
+    helpBtn:SetScript("OnEnter", function(s)
+        helpLabel:SetTextColor(0.85, 0.88, 0.92)
+        Diar:ShowObjectPaletteHelpTooltip(s)
+    end)
+    helpBtn:SetScript("OnLeave", function()
+        helpLabel:SetTextColor(0.55, 0.58, 0.65)
+        if GameTooltip then GameTooltip:Hide() end
+    end)
+    pf.objectPaletteHelpBtn = helpBtn
+    self:SetObjectPaletteHint(PALETTE_HINT_DEFAULT)
+
     local child = CreateFrame("Frame", nil, panel)
     child:SetPoint("TOPLEFT", panel, "TOPLEFT", 8, -28)
-    child:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -8, PALETTE_HINT_H + 10)
+    child:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -8, 8)
     if child.SetClipsChildren then child:SetClipsChildren(true) end
     pf.objectPaletteContent = child
     child:SetScript("OnSizeChanged", function()
@@ -1733,16 +1750,13 @@ function Diar:ApplyObjectPaletteLockedState(pf)
     if locked and self.HidePaletteSpecPicker then
         self:HidePaletteSpecPicker()
     end
-    if pf.objectPaletteHint and not pf.__palettePlacement then
+    if not pf.__palettePlacement then
         if noPlan then
-            pf.objectPaletteHint:SetText(L("Load a plan to use the palette"))
-            pf.objectPaletteHint:SetTextColor(0.40, 0.43, 0.48)
+            self:SetObjectPaletteHint(L("Load a plan to use the palette"))
         elseif locked then
-            pf.objectPaletteHint:SetText(L("Objects locked"))
-            pf.objectPaletteHint:SetTextColor(0.40, 0.43, 0.48)
+            self:SetObjectPaletteHint(L("Objects locked"))
         else
-            pf.objectPaletteHint:SetText(PALETTE_HINT_DEFAULT)
-            pf.objectPaletteHint:SetTextColor(0.45, 0.50, 0.58)
+            self:SetObjectPaletteHint(PALETTE_HINT_DEFAULT)
         end
     end
 end
@@ -1776,7 +1790,7 @@ function Diar:ApplyObjectPaletteLayout(pf)
         local content = pf.objectPaletteContent
         content:ClearAllPoints()
         content:SetPoint("TOPLEFT", panel, "TOPLEFT", 8, -28)
-        content:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -8, PALETTE_HINT_H + 10)
+        content:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -8, 8)
         if content.SetClipsChildren then content:SetClipsChildren(true) end
         self:RelayoutObjectPaletteTiles(pf)
     end

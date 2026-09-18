@@ -26,6 +26,25 @@ PUI.PLAN_TITLE_MAX_LEN = 50
 PUI.ROW_GAP = 10
 PUI.CONTROLS_H = 30
 PUI.TIMELINE_H = 30
+-- Temporary: imported plans have no animation, so hide play/stop + timeline.
+PUI.HIDE_ANIM_CONTROLS = true
+
+function Diar:PlannerAnimControlsHidden()
+    return PUI.HIDE_ANIM_CONTROLS == true
+end
+
+function Diar:HidePlannerAnimControls(pf)
+    pf = pf or self.plannerFrame
+    if not pf then return end
+    if pf.playPauseBtn then pf.playPauseBtn:Hide() end
+    if pf.stopBtn then pf.stopBtn:Hide() end
+    if pf.timeline then pf.timeline:Hide() end
+end
+
+function Diar:GetPlannerAnimChromeExtra()
+    if self:PlannerAnimControlsHidden() then return 0 end
+    return (PUI.ROW_GAP or 10) + (PUI.TIMELINE_H or 30)
+end
 PUI.SCENE_TAB_H = 18
 PUI.GROUP_LEADER_ICON = "Interface\\GroupFrame\\UI-Group-LeaderIcon"
 PUI.PATREON_BOX_H = 52

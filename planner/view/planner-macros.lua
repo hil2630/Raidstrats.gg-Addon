@@ -193,8 +193,44 @@ end
 
 local function RefreshCommandPreview(dialog)
     local macro = GetSelectedMacro(dialog)
-    local command = macro and Trim(dialog.commandEdit:GetText()) or ""
-    dialog.commandPreview:SetText(command ~= "" and ("/rs macro " .. command) or "/rs macro <name>")
+    local command = macro and Trim(dialog.commandEdit:GetText() or macro.command) or ""
+    if dialog.commandPreview then
+        dialog.commandPreview:SetText(command ~= "" and ("/rs macro " .. command) or "/rs macro <name>")
+    end
+    if dialog.pickupTitle then
+        if command ~= "" then
+            dialog.pickupTitle:SetText(L("Drag to your action bar"))
+            dialog.pickupSub:SetText("/rs macro " .. command)
+        else
+            dialog.pickupTitle:SetText(L("Create or select a macro."))
+            dialog.pickupSub:SetText("")
+        end
+    end
+    if dialog.pickupBtn then
+        if command ~= "" then
+            dialog.pickupBtn:SetAlpha(1)
+            dialog.pickupBtn:Enable()
+        else
+            dialog.pickupBtn:SetAlpha(0.45)
+            dialog.pickupBtn:Disable()
+        end
+    end
+end
+
+local function PickupSelectedMacro(dialog)
+    CommitForm(dialog)
+    local macro = GetSelectedMacro(dialog)
+    if not macro then return end
+    if not Diar.PickupPlannerWowMacro then return end
+    local ok, err = Diar:PickupPlannerWowMacro(macro)
+    if ok then return end
+    if err == "combat" then
+        SetStatus(dialog, L("Cannot make or drag macros in combat."), true)
+    elseif err == "full" then
+        SetStatus(dialog, L("No free WoW macro slots. Delete an unused macro first."), true)
+    else
+        SetStatus(dialog, L("Could not create the WoW macro."), true)
+    end
 end
 
 local function RefreshTargetRows(dialog)
@@ -389,9 +425,22 @@ RefreshMacroList = function(dialog)
             dialog.macroRows[index] = nil
             row = nil
         end
+        if row and not row.pickup then
+            row:Hide()
+            dialog.macroRows[index] = nil
+            row = nil
+        end
         if not row then
             row = CreateFrame("Button", nil, dialog.macroScrollChild, "BackdropTemplate")
             row:SetHeight(40)
+            row.pickup = CreateFrame("Button", nil, row, "BackdropTemplate")
+            row.pickup:SetSize(22, 22)
+            row.pickup:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", -6, 6)
+            SetBackdrop(row.pickup, { 0.12, 0.14, 0.2, 1 }, UI.ACCENT, 1)
+            row.pickup.icon = row.pickup:CreateTexture(nil, "ARTWORK")
+            row.pickup.icon:SetPoint("TOPLEFT", 2, -2)
+            row.pickup.icon:SetPoint("BOTTOMRIGHT", -2, 2)
+            row.pickup.icon:SetTexture(1519351)
             row.scope = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
             row.scope:SetPoint("TOPRIGHT", row, "TOPRIGHT", -8, -6)
             row.scope:SetJustifyH("RIGHT")
@@ -400,13 +449,13 @@ RefreshMacroList = function(dialog)
             if row.scope.SetMaxLines then row.scope:SetMaxLines(1) end
             row.title = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
             row.title:SetPoint("TOPLEFT", row, "TOPLEFT", 9, -6)
-            row.title:SetPoint("RIGHT", row.scope, "LEFT", -6, 0)
+            row.title:SetPoint("RIGHT", row.scope, "LEFT", -28, 0)
             row.title:SetJustifyH("LEFT")
             if row.title.SetWordWrap then row.title:SetWordWrap(false) end
             if row.title.SetMaxLines then row.title:SetMaxLines(1) end
             row.sub = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
             row.sub:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", 9, 6)
-            row.sub:SetPoint("RIGHT", row, "RIGHT", -8, 0)
+            row.sub:SetPoint("RIGHT", row, "RIGHT", -32, 0)
             row.sub:SetJustifyH("LEFT")
             row.sub:SetTextColor(0.5, 0.55, 0.65)
             if row.sub.SetWordWrap then row.sub:SetWordWrap(false) end
@@ -424,6 +473,14 @@ RefreshMacroList = function(dialog)
             row.scope:SetTextColor(0.55, 0.6, 0.7)
         end
         row.sub:SetText("/rs macro " .. (Trim(macro.command) ~= "" and macro.command or "?"))
+        row.pickup:SetScript("OnMouseDown", function(_, button)
+            if button ~= "LeftButton" then return end
+            CommitForm(dialog)
+            dialog.selectedIndex = index
+            RefreshMacroList(dialog)
+            LoadSelectedMacro(dialog)
+            PickupSelectedMacro(dialog)
+        end)
         local selected = index == dialog.selectedIndex
         SetBackdrop(row, selected and { 0.16, 0.28, 0.48, 1 } or UI.ROW, selected and UI.ACCENT or UI.BORDER, 1)
         row:SetScript("OnClick", function()
@@ -468,10 +525,18 @@ local function NewMacro(dialog)
     dialog.selectedIndex = #dialog.draft
     RefreshMacroList(dialog)
     LoadSelectedMacro(dialog)
+    if Diar.EnsurePlannerWowMacro then
+        Diar:EnsurePlannerWowMacro(GetSelectedMacro(dialog))
+    end
+    RefreshCommandPreview(dialog)
 end
 
 local function DeleteMacro(dialog)
-    if not GetSelectedMacro(dialog) then return end
+    local removed = GetSelectedMacro(dialog)
+    if not removed then return end
+    if Diar.DeletePlannerWowMacro then
+        Diar:DeletePlannerWowMacro(removed)
+    end
     table.remove(dialog.draft, dialog.selectedIndex)
     dialog.selectedIndex = math.min(dialog.selectedIndex, #dialog.draft)
     if dialog.selectedIndex < 1 and #dialog.draft > 0 then dialog.selectedIndex = 1 end
@@ -549,8 +614,21 @@ local function SaveMacros(dialog)
     local saved = Diar.PersistCurrentPlanToSaved and Diar:PersistCurrentPlanToSaved()
     if Diar.UpdatePushUpdateButton then Diar:UpdatePushUpdateButton() end
     if Diar.OnPlannerPlanChanged then Diar:OnPlannerPlanChanged() end
-    SetStatus(dialog, saved and L("Macros saved to this plan.") or L("Macros updated; save the plan to keep them."), not saved)
-    dialog:Hide()
+    if Diar.SyncPlannerWowMacros then
+        local all = {}
+        for _, macro in ipairs(planMacros) do all[#all + 1] = macro end
+        for _, macro in ipairs(globalMacros) do all[#all + 1] = macro end
+        local ok, err = Diar:SyncPlannerWowMacros(all)
+        if not ok and err == "combat" then
+            SetStatus(dialog, L("Cannot make or drag macros in combat."), true)
+            return
+        elseif not ok and err == "full" then
+            SetStatus(dialog, L("No free WoW macro slots. Delete an unused macro first."), true)
+            return
+        end
+    end
+    RefreshCommandPreview(dialog)
+    SetStatus(dialog, saved and L("Macros saved. Drag the button onto your action bar.") or L("Macros updated; save the plan to keep them."), not saved)
 end
 
 local function BuildDialog()
@@ -569,7 +647,7 @@ local function BuildDialog()
 
     local title = CreateLabel(dialog, L("Combat Assignments"), "TOPLEFT", dialog, "TOPLEFT", 18, -17, "GameFontNormalLarge")
     title:SetTextColor(0.95, 0.95, 1)
-    local subtitle = CreateLabel(dialog, L("Set this up before combat. During the pull, players only press one action-bar button."), "TOPLEFT", title, "BOTTOMLEFT", 0, -5)
+    local subtitle = CreateLabel(dialog, L("We make the WoW macro for you. Drag it to your action bar, then press that button during the pull."), "TOPLEFT", title, "BOTTOMLEFT", 0, -5)
     subtitle:SetTextColor(0.55, 0.6, 0.7)
     local close = CreateFrame("Button", nil, dialog, "UIPanelCloseButton")
     close:SetPoint("TOPRIGHT", dialog, "TOPRIGHT", -4, -4)
@@ -679,21 +757,48 @@ local function BuildDialog()
     dialog.targetEmpty = targetEmpty
 
     local workflowHelp = CreateLabel(form,
-        L("IN COMBAT\n1. Each player presses the command below.\n2. The raid leader assigns the next spot.\n3. Everyone's plan updates immediately.\nAssignments reset for each encounter."),
+        L("IN COMBAT\n1. Drag the button below to your action bar.\n2. Each player presses that button.\n3. The raid leader assigns the next spot.\n4. Everyone's plan updates immediately.\nAssignments reset for each encounter."),
         "TOPLEFT", targetBox, "BOTTOMLEFT", 3, -17)
     workflowHelp:SetWidth(430)
     workflowHelp:SetJustifyH("LEFT")
     workflowHelp:SetTextColor(0.58, 0.65, 0.76)
     dialog.workflowHelp = workflowHelp
 
-    local commandHint = CreateLabel(form, L("Put this command in a WoW macro, then drag it to the action bar"), "BOTTOMLEFT", form, "BOTTOMLEFT", 14, 48)
-    local previewWrap, commandPreview = CreateEdit(form, 300, 255)
-    previewWrap:SetPoint("BOTTOMLEFT", form, "BOTTOMLEFT", 14, 14)
-    commandPreview:SetText("/rs macro <name>")
-    commandPreview:SetScript("OnEditFocusGained", function(self) self:HighlightText() end)
-    commandPreview:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
-    commandPreview:SetScript("OnEnterPressed", function(self) self:HighlightText() end)
-    dialog.commandPreview = commandPreview
+    local pickupBtn = CreateFrame("Button", nil, form, "BackdropTemplate")
+    pickupBtn:SetHeight(46)
+    pickupBtn:SetPoint("BOTTOMLEFT", form, "BOTTOMLEFT", 14, 12)
+    pickupBtn:SetPoint("BOTTOMRIGHT", form, "BOTTOMRIGHT", -14, 12)
+    SetBackdrop(pickupBtn, UI.ROW, UI.ACCENT, 1)
+    pickupBtn:RegisterForClicks("LeftButtonUp")
+    pickupBtn:EnableMouse(true)
+    local pickupIcon = pickupBtn:CreateTexture(nil, "ARTWORK")
+    pickupIcon:SetSize(34, 34)
+    pickupIcon:SetPoint("LEFT", pickupBtn, "LEFT", 8, 0)
+    pickupIcon:SetTexture(1519351)
+    local pickupTitle = pickupBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    pickupTitle:SetPoint("LEFT", pickupIcon, "RIGHT", 10, 7)
+    pickupTitle:SetPoint("RIGHT", pickupBtn, "RIGHT", -10, 7)
+    pickupTitle:SetJustifyH("LEFT")
+    pickupTitle:SetText(L("Drag to your action bar"))
+    pickupTitle:SetTextColor(0.92, 0.94, 1)
+    local pickupSub = pickupBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    pickupSub:SetPoint("LEFT", pickupIcon, "RIGHT", 10, -9)
+    pickupSub:SetPoint("RIGHT", pickupBtn, "RIGHT", -10, -9)
+    pickupSub:SetJustifyH("LEFT")
+    pickupSub:SetTextColor(0.55, 0.62, 0.72)
+    pickupBtn:SetScript("OnEnter", function(self)
+        SetBackdrop(self, UI.ROW_HOV, UI.ACCENT, 1)
+    end)
+    pickupBtn:SetScript("OnLeave", function(self)
+        SetBackdrop(self, UI.ROW, UI.ACCENT, 1)
+    end)
+    pickupBtn:SetScript("OnMouseDown", function(_, button)
+        if button == "LeftButton" then PickupSelectedMacro(dialog) end
+    end)
+    dialog.pickupBtn = pickupBtn
+    dialog.pickupTitle = pickupTitle
+    dialog.pickupSub = pickupSub
+    dialog.commandPreview = pickupSub
 
     typeButton:SetScript("OnClick", function()
         CommitForm(dialog)
@@ -770,6 +875,27 @@ local function BuildDialog()
     save:SetPoint("BOTTOMRIGHT", dialog, "BOTTOMRIGHT", -16, 14)
     save:SetScript("OnClick", function() SaveMacros(dialog) end)
     return dialog
+end
+
+function Diar:HidePlannerMacrosDialog()
+    if self.plannerMacrosDialog then
+        self.plannerMacrosDialog:Hide()
+    end
+end
+
+function Diar:EnsurePlannerMacrosButton(pf)
+    local createBtn = PUI.CreatePlannerIconBtn
+    if not pf or not pf.controls or not createBtn then return end
+    if not pf.macrosBtn then
+        pf.macrosBtn = createBtn(pf.controls, L("Macros"), 72, PUI.CONTROLS_H or 30)
+        pf.macrosBtn:SetScript("OnClick", function()
+            Diar:ShowPlannerMacrosDialog()
+        end)
+    elseif pf.macrosBtn:GetParent() ~= pf.controls then
+        pf.macrosBtn:SetParent(pf.controls)
+        pf.macrosBtn:SetHeight(PUI.CONTROLS_H or 30)
+    end
+    SetButtonText(pf.macrosBtn, L("Macros"))
 end
 
 function Diar:ShowPlannerMacrosDialog()

@@ -12,6 +12,11 @@ local SEP = string.char(31)
 local MAX_COMMAND_LEN = 24
 local MAX_LABEL_LEN = 80
 local MAX_TARGETS = 40
+local WowMacroApi = {
+    nameMax = 16,
+    prefix = "RS-",
+    icon = 1519351,
+}
 
 local function L(key)
     return RSGG_L and RSGG_L(key) or key
@@ -952,6 +957,145 @@ function Diar:RefreshPlannerMacroGroupAuthority()
         local planKey = self:GetPlannerMacroPlanKey(self.plannerData)
         if planKey then self:RequestPlannerMacroSnapshot(planKey) end
     end
+end
+
+local function WowMacroMap()
+    RaidstratsggSettings = RaidstratsggSettings or {}
+    if type(RaidstratsggSettings.plannerWowMacroNames) ~= "table" then
+        RaidstratsggSettings.plannerWowMacroNames = {}
+    end
+    return RaidstratsggSettings.plannerWowMacroNames
+end
+
+local function WowMacroBody(command)
+    return "/rs macro " .. command
+end
+
+local function CommandFromWowBody(body)
+    if type(body) ~= "string" then return nil end
+    local command = body:match("/rs%s+macro%s+([%w_%-]+)")
+    return command and NormalizeCommand(command) or nil
+end
+
+local function PreferredWowMacroName(command)
+    local name = WowMacroApi.prefix .. tostring(command or "macro")
+    if #name > WowMacroApi.nameMax then
+        name = name:sub(1, WowMacroApi.nameMax)
+    end
+    return name
+end
+
+local function UniqueWowMacroName(preferred, keepIndex)
+    local name = preferred
+    local n = 2
+    while true do
+        local index = GetMacroIndexByName and GetMacroIndexByName(name)
+        if not index or index == 0 or index == keepIndex then
+            return name
+        end
+        local suffix = tostring(n)
+        name = preferred:sub(1, WowMacroApi.nameMax - #suffix) .. suffix
+        n = n + 1
+        if n > 40 then return name end
+    end
+end
+
+function Diar:FindPlannerWowMacroIndex(macro)
+    if not GetMacroInfo then return nil end
+    local stored = macro and macro.id and WowMacroMap()[macro.id]
+    if type(stored) == "string" and stored ~= "" and GetMacroIndexByName then
+        local index = GetMacroIndexByName(stored)
+        if index and index > 0 then return index, stored end
+    end
+    local command = NormalizeCommand(macro and macro.command)
+    if command == "" then return nil end
+    local general, perChar = GetNumMacros()
+    general = tonumber(general) or 0
+    perChar = tonumber(perChar) or 0
+    local maxGeneral = MAX_ACCOUNT_MACROS or 120
+    local function matchIndex(index)
+        if not index or index <= 0 then return nil end
+        local name, _, body = GetMacroInfo(index)
+        if CommandFromWowBody(body) == command then return index, name end
+        return nil
+    end
+    for i = 1, general do
+        local index, name = matchIndex(i)
+        if index then return index, name end
+    end
+    for i = 1, perChar do
+        local index, name = matchIndex(maxGeneral + i)
+        if index then return index, name end
+    end
+    return nil
+end
+
+function Diar:EnsurePlannerWowMacro(macro)
+    if InCombatLockdown and InCombatLockdown() then return nil, "combat" end
+    if not CreateMacro or not EditMacro then return nil, "api" end
+    local command = NormalizeCommand(macro and macro.command)
+    if command == "" then return nil, "command" end
+    local body = WowMacroBody(command)
+    local index, currentName = self:FindPlannerWowMacroIndex(macro)
+    if index then
+        pcall(EditMacro, index, currentName, WowMacroApi.icon, body)
+        if macro.id and currentName then WowMacroMap()[macro.id] = currentName end
+        return index, currentName
+    end
+    local name = UniqueWowMacroName(PreferredWowMacroName(command))
+    local ok
+    ok, index = pcall(CreateMacro, name, WowMacroApi.icon, body, 1)
+    if not ok or not index then
+        ok, index = pcall(CreateMacro, name, WowMacroApi.icon, body)
+    end
+    if not ok or not index then return nil, "full" end
+    if macro.id then WowMacroMap()[macro.id] = name end
+    return index, name
+end
+
+function Diar:DeletePlannerWowMacro(macro)
+    if InCombatLockdown and InCombatLockdown() then return false end
+    if not DeleteMacro then return false end
+    local index, name = self:FindPlannerWowMacroIndex(macro)
+    if not index then return false end
+    local _, _, body = GetMacroInfo(index)
+    if not CommandFromWowBody(body) then return false end
+    DeleteMacro(index)
+    if macro and macro.id then WowMacroMap()[macro.id] = nil end
+    return true, name
+end
+
+function Diar:PickupPlannerWowMacro(macro)
+    if InCombatLockdown and InCombatLockdown() then return false, "combat" end
+    if not PickupMacro then return false, "api" end
+    local index, err = self:EnsurePlannerWowMacro(macro)
+    if not index then return false, err end
+    PickupMacro(index)
+    return true
+end
+
+function Diar:SyncPlannerWowMacros(macros)
+    if InCombatLockdown and InCombatLockdown() then return false, "combat" end
+    local keep = {}
+    for _, macro in ipairs(type(macros) == "table" and macros or {}) do
+        local index = self:EnsurePlannerWowMacro(macro)
+        if index and macro.id then keep[macro.id] = true end
+    end
+    local map = WowMacroMap()
+    for id, name in pairs(map) do
+        if not keep[id] then
+            self:DeletePlannerWowMacro({ id = id, command = "" })
+            if name and GetMacroIndexByName then
+                local index = GetMacroIndexByName(name)
+                if index and index > 0 then
+                    local _, _, body = GetMacroInfo(index)
+                    if CommandFromWowBody(body) then DeleteMacro(index) end
+                end
+            end
+            map[id] = nil
+        end
+    end
+    return true
 end
 
 local macroGroupFrame = CreateFrame("Frame")

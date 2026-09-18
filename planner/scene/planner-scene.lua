@@ -956,12 +956,15 @@ function Diar:EnsurePlannerControlsButtons(pf)
         SetPlannerBtnText(pf.nsrtExportBtn, L("NSRT"))
         pf.nsrtExportBtn:SetWidth(72)
     end
-    -- Macro editor UI is hidden for now; runtime /rs macro support remains loaded.
+    if self.EnsurePlannerSoakGroupsButton then
+        self:EnsurePlannerSoakGroupsButton(pf)
+    end
+    -- Macro editor stays loaded; hide the toolbar button for now.
     if pf.macrosBtn then
         pf.macrosBtn:Hide()
     end
-    if self.EnsurePlannerSoakGroupsButton then
-        self:EnsurePlannerSoakGroupsButton(pf)
+    if self.HidePlannerMacrosDialog then
+        self:HidePlannerMacrosDialog()
     end
     self:UpdatePreviewIndexButton(pf)
 end
@@ -1102,6 +1105,8 @@ function Diar:PositionPlannerControlsBar(pf)
         if pf.raidLeadBottomDivider then pf.raidLeadBottomDivider:Hide() end
         if pf.settingsBtn then pf.settingsBtn:Hide() end
         if pf.soakGroupsBtn then pf.soakGroupsBtn:Hide() end
+        if pf.macrosBtn then pf.macrosBtn:Hide() end
+        if Diar.HidePlannerMacrosDialog then Diar:HidePlannerMacrosDialog() end
         if pf.previewIndexBtn then pf.previewIndexBtn:Hide() end
         if pf.nsrtExportBtn then pf.nsrtExportBtn:Hide() end
         if pf.paletteToggleBtn then pf.paletteToggleBtn:Hide() end
@@ -1116,8 +1121,12 @@ function Diar:PositionPlannerControlsBar(pf)
         return
     end
     if pf.controls then pf.controls:Show() end
-    if pf.playPauseBtn then pf.playPauseBtn:Show() end
-    if pf.stopBtn then pf.stopBtn:Show() end
+    if Diar.PlannerAnimControlsHidden and Diar:PlannerAnimControlsHidden() then
+        if Diar.HidePlannerAnimControls then Diar:HidePlannerAnimControls(pf) end
+    else
+        if pf.playPauseBtn then pf.playPauseBtn:Show() end
+        if pf.stopBtn then pf.stopBtn:Show() end
+    end
     if pf.paletteToggleBtn then
         pf.paletteToggleBtn:Show()
         pf.paletteToggleBtn:ClearAllPoints()
@@ -1136,6 +1145,9 @@ function Diar:PositionPlannerControlsBar(pf)
         pf.canvasLockBtn:SetHeight(CONTROLS_H)
         self:UpdateCanvasLockButton(pf)
     end
+    if pf.macrosBtn then
+        pf.macrosBtn:Hide()
+    end
     if pf.soakGroupsBtn then
         pf.soakGroupsBtn:Show()
         pf.soakGroupsBtn:ClearAllPoints()
@@ -1151,9 +1163,6 @@ function Diar:PositionPlannerControlsBar(pf)
             pf.settingsBtn:SetPoint("RIGHT", pf.controls, "RIGHT", 0, 0)
         end
         pf.settingsBtn:SetHeight(CONTROLS_H)
-    end
-    if pf.macrosBtn then
-        pf.macrosBtn:Hide()
     end
     if pf.previewIndexBtn then
         pf.previewIndexBtn:Show()
@@ -2250,7 +2259,8 @@ local function GetPlannerContentLeft()
 end
 
 local function GetPlannerChromeHeight()
-    return CANVAS_TOP + ROW_GAP + CONTROLS_H + ROW_GAP + TIMELINE_H + UI_PAD
+    local extra = (Diar.GetPlannerAnimChromeExtra and Diar:GetPlannerAnimChromeExtra()) or (ROW_GAP + TIMELINE_H)
+    return CANVAS_TOP + ROW_GAP + CONTROLS_H + extra + UI_PAD
 end
 
 local function GetPlannerCanvasDimensions(pf)
@@ -6945,13 +6955,20 @@ local function ApplyPlannerNormalLayout(pf, keepFrameSize)
         pf.controls:SetWidth(canvasW)
         pf.controls:ClearAllPoints()
         pf.controls:SetPoint("TOP", pf.canvas, "BOTTOM", 0, -ROW_GAP)
-        if pf.playPauseBtn then pf.playPauseBtn:Show() end
-        if pf.stopBtn then pf.stopBtn:Show() end
+        if Diar.PlannerAnimControlsHidden and Diar:PlannerAnimControlsHidden() then
+            if Diar.HidePlannerAnimControls then Diar:HidePlannerAnimControls(pf) end
+        else
+            if pf.playPauseBtn then pf.playPauseBtn:Show() end
+            if pf.stopBtn then pf.stopBtn:Show() end
+        end
     end
     if pf.timeline then
         pf.timeline:SetWidth(canvasW)
         pf.timeline:ClearAllPoints()
         pf.timeline:SetPoint("TOP", pf.controls, "BOTTOM", 0, -ROW_GAP)
+        if Diar.PlannerAnimControlsHidden and Diar:PlannerAnimControlsHidden() then
+            pf.timeline:Hide()
+        end
     end
     if pf.patreonPanel and pf.toolbar then
         pf.patreonPanel:Show()
@@ -6959,11 +6976,15 @@ local function ApplyPlannerNormalLayout(pf, keepFrameSize)
         pf.patreonPanel:SetPoint("TOPLEFT", pf.toolbar, "TOPRIGHT", 12, 0)
         if pf.patreonLabel then pf.patreonLabel:Show() end
     end
-    if pf.savedPlansPanel and pf.patreonPanel and pf.timeline then
+    if pf.savedPlansPanel and pf.patreonPanel and (pf.controls or pf.timeline) then
         pf.savedPlansPanel:Show()
         pf.savedPlansPanel:ClearAllPoints()
         pf.savedPlansPanel:SetPoint("TOPLEFT", pf.patreonPanel, "BOTTOMLEFT", 0, -RIGHT_COL_GAP)
-        pf.savedPlansPanel:SetPoint("BOTTOMLEFT", pf.timeline, "BOTTOMRIGHT", 12, RIGHT_PANEL_BOTTOM_GAP)
+        local bottomAnchor = pf.controls
+        if not (Diar.PlannerAnimControlsHidden and Diar:PlannerAnimControlsHidden()) and pf.timeline then
+            bottomAnchor = pf.timeline
+        end
+        pf.savedPlansPanel:SetPoint("BOTTOMLEFT", bottomAnchor, "BOTTOMRIGHT", 12, RIGHT_PANEL_BOTTOM_GAP)
         if pf.savedPlansFooter then pf.savedPlansFooter:Show() end
     end
     if pf.resizeGrip then
@@ -7064,6 +7085,7 @@ local function ApplyPlannerCompactLayout(pf, keepFrameSize, snapFrame)
 
     if pf.settingsBtn then pf.settingsBtn:Hide() end
     if pf.soakGroupsBtn then pf.soakGroupsBtn:Hide() end
+    if pf.macrosBtn then pf.macrosBtn:Hide() end
     if pf.previewIndexBtn then pf.previewIndexBtn:Hide() end
     if pf.objectPalettePanel then pf.objectPalettePanel:Hide() end
     if Diar.ClearPalettePlacement then Diar:ClearPalettePlacement() end
@@ -7353,7 +7375,7 @@ function Diar:ShowPlannerViewer(opts)
         pf.plannerCanvasW = defaultCanvasW
         pf.plannerCanvasH = defaultCanvasH
         local frameW = UI_PAD + (Diar.GetObjectPaletteExtraWidth and Diar:GetObjectPaletteExtraWidth() or 0) + defaultCanvasW + 12 + RIGHT_PANEL_W + UI_PAD
-        local frameH = CANVAS_TOP + defaultCanvasH + ROW_GAP + CONTROLS_H + ROW_GAP + TIMELINE_H + UI_PAD
+        local frameH = defaultCanvasH + GetPlannerChromeHeight()
         pf:SetSize(frameW, frameH)
         local initPos = Diar:GetPlannerSettings().expandedPos
         if initPos and initPos.point then
@@ -7561,6 +7583,7 @@ function Diar:ShowPlannerViewer(opts)
         local stopBtn = CreatePlannerIconBtn(controls, L("Stop"), 110, CONTROLS_H)
         stopBtn:SetPoint("LEFT", controls, "CENTER", 6, 0)
         pf.stopBtn = stopBtn
+        if Diar.HidePlannerAnimControls then Diar:HidePlannerAnimControls(pf) end
 
         local settingsBtn = CreatePlannerIconBtn(controls, L("Settings"), 72, CONTROLS_H)
         settingsBtn:SetPoint("RIGHT", controls, "RIGHT", 0, 0)
@@ -7651,6 +7674,7 @@ function Diar:ShowPlannerViewer(opts)
         pf.timelineLabel = timeline:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         pf.timelineLabel:SetPoint("RIGHT", timeline, "RIGHT", -10, 0)
         pf.timelineLabel:SetTextColor(0.55, 0.58, 0.65)
+        if Diar.HidePlannerAnimControls then Diar:HidePlannerAnimControls(pf) end
 
         local function SeekPlannerTimelineAtCursor(t)
             local pf = Diar.plannerFrame
@@ -7772,7 +7796,11 @@ function Diar:ShowPlannerViewer(opts)
         local rightPanel = CreateFrame("Frame", nil, pf, "BackdropTemplate")
         rightPanel:SetWidth(RIGHT_PANEL_W)
         rightPanel:SetPoint("TOPLEFT", patreonPanel, "BOTTOMLEFT", 0, -RIGHT_COL_GAP)
-        rightPanel:SetPoint("BOTTOMLEFT", timeline, "BOTTOMRIGHT", 12, 0)
+        if Diar.PlannerAnimControlsHidden and Diar:PlannerAnimControlsHidden() then
+            rightPanel:SetPoint("BOTTOMLEFT", controls, "BOTTOMRIGHT", 12, 0)
+        else
+            rightPanel:SetPoint("BOTTOMLEFT", timeline, "BOTTOMRIGHT", 12, 0)
+        end
         SetBackdrop(rightPanel, UI.PANEL, UI.BORDER, 1)
         pf.savedPlansPanel = rightPanel
 
