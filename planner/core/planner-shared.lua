@@ -196,15 +196,25 @@ end
 function PUI.SetPlannerContentFont(fs, size, flags, text)
     if not fs or not fs.SetFont then return end
     size = tonumber(size) or 12
+    if size < 1 then size = 1 end
     flags = flags or ""
     local path = PUI.GetPlannerContentFont(text)
     -- Retail FontStrings often ignore SetFont when the new size is smaller.
-    -- Force a 1px pass first so zoom-out actually shrinks plan text.
+    -- Keep a stable base size and scale it so zoom-in/out always matches.
+    local base = 16
+    fs:SetFont(path, base, flags)
+    if fs.SetTextScale then
+        fs:SetTextScale(size / base)
+        return
+    end
     local _, applied = fs:GetFont()
     if applied and size + 0.05 < applied then
         fs:SetFont(path, 1, flags)
     end
     fs:SetFont(path, size, flags)
+    if fs.SetTextHeight then
+        fs:SetTextHeight(size)
+    end
 end
 
 function PUI.TruncateUtf8(s, maxBytes)

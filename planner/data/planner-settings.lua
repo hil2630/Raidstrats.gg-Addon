@@ -38,6 +38,7 @@ local LOCALE_CACHED_FRAMES = {
     "createPlanNameDialog",
     "importPlanDialog",
     "rosterExportDialog",
+    "plannerCustomRosterDialog",
     "groupImportConflictDialog",
     "planImportConflictDialog",
     "multiImportConfirmDialog",
@@ -69,8 +70,10 @@ local STATIC_POPUP_LOCALE_KEYS = {
     },
     RAIDSTRATSGG_PALETTE_TEXT = { text = "Enter label text:" },
     RAIDSTRATSGG_DELETE_OBJECT = { text = "Delete this object?" },
+    RAIDSTRATSGG_DELETE_SELECTION = { text = "Delete these objects?" },
     RAIDSTRATSGG_CUSTOM_OBJECT_LABEL = { text = "Custom label:" },
     RAIDSTRATSGG_CREATE_PLAN_NAME = { text = "Plan name:" },
+    RAIDSTRATSGG_DELETE_ROSTER = { text = "Delete roster \"%s\"?" },
     RAIDSTRATSGG_SHARE_TO_GUILD = {
         text = "You are not in a party or raid. Share \"%s\" to guild chat? Everyone in your guild will see this link.",
     },

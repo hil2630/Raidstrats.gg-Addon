@@ -507,6 +507,9 @@ end
 
 function Raidstrats:SaveImportedPlan(data)
     if not data then return end
+    if self.ApplyImportedPlanRoster then
+        self:ApplyImportedPlanRoster(data)
+    end
     local importAlreadySanitized = data.__rsggImportedSanitized == true
     local sharedVersion = tonumber(data.__rsggSharedVersion)
     data.__rsggSharedVersion = nil
@@ -1413,7 +1416,37 @@ local function ConvertWebSceneObjects(scene, canvasW, canvasH)
                 if x and y and w and h then
                     local item = nil
                     local objType = strlower(tostring(obj.type or ""))
-                    if objType == "image" then
+                    if objType == "genericmarker" or CoerceBool(obj.__isGenericMarker) then
+                        local assignee = type(obj.__markerAssignee) == "table" and obj.__markerAssignee or nil
+                        item = {
+                            kind = "icon",
+                            genericMarker = true,
+                            markerNumber = math.max(1, math.floor((tonumber(obj.__markerNumber) or 1) + 0.5)),
+                            displayMode = (strlower(tostring(obj.__markerDisplayMode or "")) == "circle") and "circle" or "icon",
+                            x = x,
+                            y = y,
+                            w = w,
+                            h = h,
+                            fill = (type(obj.fill) == "string" and obj.fill ~= "") and obj.fill or "rgba(15,23,42,0.56)",
+                            stroke = (type(obj.stroke) == "string" and obj.stroke ~= "") and obj.stroke or "rgba(148,163,184,0.72)",
+                            strokeWidth = ValueToPercent(CoerceNumber(obj.strokeWidth), canvasH) or 0.35,
+                            strokeStyle = "dashed",
+                            opacity = CoerceNumber(obj.opacity),
+                        }
+                        if assignee then
+                            local className = strlower(tostring(assignee.className or assignee.class or "")):gsub("[%s_%-]", "")
+                            item.assignee = {
+                                name = strtrim(tostring(assignee.name or "")),
+                                className = className ~= "" and className or nil,
+                                spec = tostring(assignee.spec or ""),
+                                icon = ResolveIconKeyFromSrc(assignee.iconSrc or assignee.icon),
+                            }
+                            if item.assignee.name ~= "" then
+                                item.label = item.assignee.name
+                                item.labelExplicit = true
+                            end
+                        end
+                    elseif objType == "image" then
                         local spellId = ResolveSpellIdFromWebObject(obj)
                         local src = (type(obj.src) == "string" and obj.src ~= "") and obj.src
                             or (type(obj["data-base-src"]) == "string" and obj["data-base-src"] or nil)

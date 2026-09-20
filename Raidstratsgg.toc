@@ -38,8 +38,12 @@ planner\anim\planner-stationary.lua
 planner\anim\planner-frontal.lua
 planner\anim\planner-tether.lua
 planner\ui\planner-palette.lua
+planner\ui\planner-draw.lua
+planner\ui\planner-roster-panel.lua
+planner\ui\planner-roster-editor.lua
 planner\data\planner-plan-push.lua
 planner\interaction\planner-roster-sync.lua
+planner\interaction\planner-selection.lua
 planner\interaction\planner-macros.lua
 planner\view\planner-raid-lead-view.lua
 planner\data\planner-settings.lua

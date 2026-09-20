@@ -227,7 +227,7 @@ end
 
 function Diar:IsPlannerMacroTargetSupported(item)
     if type(item) ~= "table" or not item.id then return false end
-    if item.kind == "line" then return false end
+    if item.kind == "line" or item.kind == "draw" then return false end
     if item.kind == "presetShape" or item.kind == "formation" or item.kind == "soakZone" then return false end
     if item.kind == "shape" then
         local shape = tostring(item.shape or ""):lower()

@@ -253,12 +253,47 @@ local function CursorInsidePolygonCorners(item)
     return false
 end
 
+local function PointInCanvasPoly(pts, sx, sy)
+    local n = pts and #pts or 0
+    if n < 3 or not sx then return false end
+    local inside = false
+    local j = n
+    for i = 1, n do
+        local axi, ayi = pts[i][1], pts[i][2]
+        local axj, ayj = pts[j][1], pts[j][2]
+        if ((ayi > sy) ~= (ayj > sy)) and (sx < (axj - axi) * (sy - ayi) / (ayj - ayi) + axi) then
+            inside = not inside
+        end
+        j = i
+    end
+    return inside
+end
+
 local function CursorInsideItemShape(widget, item)
     -- Cones/polygons/skewed shapes carry their real outline in item.corners;
     -- hit test against that instead of the axis-aligned widget rect.
     local polyHit = CursorInsidePolygonCorners(item)
     if polyHit ~= nil then
         return polyHit
+    end
+    local pf = Diar.plannerFrame
+    local canvas = pf and pf.canvas
+    if canvas and Diar.PlannerItemUsesOrientedHit and Diar.PlannerItemUsesOrientedHit(item)
+        and Diar.GetPlannerItemCornerPoints then
+        local cw, ch = canvas:GetSize()
+        local pts = Diar.GetPlannerItemCornerPoints(item, cw, ch, pf.sceneViewContext)
+        if pts and #pts >= 3 then
+            local scale = canvas:GetEffectiveScale() or 1
+            local left, top = canvas:GetLeft(), canvas:GetTop()
+            if left and top then
+                local cx, cy = GetCursorPosition()
+                cx, cy = cx / scale, cy / scale
+                if PointInCanvasPoly(pts, cx - left, top - cy) then
+                    return true
+                end
+            end
+            return false
+        end
     end
     local lx, ly, width, height = GetWidgetCursorPoint(widget)
     if not lx then return false end
@@ -427,15 +462,24 @@ end
 
 local function ResolveWorldMarkerKey(item)
     if type(item) ~= "table" then return nil end
+    if item.genericMarker == true or tonumber(item.markerNumber) then return nil end
+    if item.playerCircle == true then return nil end
     if tostring(item.kind or ""):lower() ~= "icon" then return nil end
     local raw = tostring(item.icon or ""):lower():gsub("\\", "/")
     if raw == "" then return nil end
     local base = raw:match("([^/]+)$") or raw
+    local flagged = item.worldMarker == true or item.isWorldMarker == true
+    local folderMarker = raw:find("/worldmarkers/", 1, true) or raw:find("worldmarkers/", 1, true)
+        or raw:find("worldmarker", 1, true) or raw:find("world-marker", 1, true)
+        or raw:find("world_marker", 1, true)
+        or raw:find("raidmarkers/", 1, true)
+        or (raw:find("markers/", 1, true) and not raw:find("class", 1, true))
+    if not flagged and not folderMarker and raw:find("/", 1, true) then
+        return nil
+    end
     if RAID_MARKER_KEYS[base] then return base end
     if WORLD_MARKER_ALIAS_TO_KEY[base] then return WORLD_MARKER_ALIAS_TO_KEY[base] end
-    if raw:find("/worldmarkers/", 1, true) or raw:find("worldmarkers/", 1, true)
-        or raw:find("worldmarker", 1, true) or raw:find("world-marker", 1, true)
-        or raw:find("world_marker", 1, true) then
+    if folderMarker then
         local n = tonumber(base:match("(%d+)")) or tonumber(raw:match("worldmarkers?/?(%d+)"))
         if n and n >= 1 and n <= 8 then
             return RAID_MARKER_ORDER[n]
@@ -446,8 +490,9 @@ end
 
 function Diar:CanAssignPlayerToItem(item)
     if not item then return false end
+    if item.genericMarker == true or tonumber(item.markerNumber) then return false end
     if item.kind == "text" then return true end
-    if item.kind == "line" then return false end
+    if item.kind == "line" or item.kind == "draw" then return false end
     if item.kind == "shape" then
         local shp = tostring(item.shape or ""):lower()
         if (shp == "circle" or shp == "ellipse") and ItemSlotIndex(item) then
@@ -1083,7 +1128,19 @@ function Diar:ShowPlannerContextMenu(anchor, itemIndex, item)
     if canDelete then
         makeMenuBtn(L("Delete"), y, function()
             Diar:HidePlannerContextMenu()
-            StaticPopup_Show("RAIDSTRATSGG_DELETE_OBJECT", nil, nil, itemIndex)
+            local selectedCount = 0
+            local set = Diar.plannerFrame and Diar.plannerFrame.__selectedItemSet
+            if type(set) == "table" then
+                for _ in pairs(set) do
+                    selectedCount = selectedCount + 1
+                end
+            end
+            if selectedCount > 1 and Diar.IsPlannerItemSelected
+                and Diar:IsPlannerItemSelected(itemIndex) then
+                StaticPopup_Show("RAIDSTRATSGG_DELETE_SELECTION")
+            else
+                StaticPopup_Show("RAIDSTRATSGG_DELETE_OBJECT", nil, nil, itemIndex)
+            end
         end)
     end
 
@@ -1549,8 +1606,24 @@ function Diar:BeginPlannerItemDrag(widget)
     local item = scene and scene.items and scene.items[widget.itemIndex] or nil
     local shapeKey = item and tostring(item.shape or ""):lower() or ""
     local liveStaticShape = (item and item.kind == "line")
+        or (item and item.kind == "draw")
         or (item and item.kind == "shape" and (shapeKey == "triangle" or shapeKey == "cone" or shapeKey == "donut"))
 
+    local scale = canvas:GetEffectiveScale() or 1
+    local cx, cy = GetCursorPosition()
+    cx, cy = cx / scale, cy / scale
+    local _, _, _, startXOfs, startYOfs = widget:GetPoint()
+    if not startXOfs or not startYOfs then
+        startXOfs = (widget:GetLeft() or 0) - (canvas:GetLeft() or 0)
+        startYOfs = (widget:GetTop() or 0) - (canvas:GetTop() or 0)
+    end
+    local startXp, startYp
+    if item and item.kind == "line" then
+        startXp, startYp = GetLineDragAnchor(item)
+    elseif item then
+        startXp = tonumber(item.x)
+        startYp = tonumber(item.y)
+    end
     self._plannerDrag = {
         widget = widget,
         itemIndex = widget.itemIndex,
@@ -1560,8 +1633,18 @@ function Diar:BeginPlannerItemDrag(widget)
         sceneIndex = sceneIdx,
         liveStaticShape = liveStaticShape and true or false,
         liveNextAt = 0,
+        startCx = cx,
+        startCy = cy,
+        startXOfs = startXOfs,
+        startYOfs = startYOfs,
+        startXp = startXp,
+        startYp = startYp,
+        moved = false,
     }
     widget:SetFrameLevel(canvas:GetFrameLevel() + 24)
+    if self.PreparePlannerSelectionDrag then
+        self:PreparePlannerSelectionDrag()
+    end
     widget:SetScript("OnUpdate", function(w)
         Diar:UpdatePlannerItemDrag(w)
     end)
@@ -1584,13 +1667,33 @@ function Diar:UpdatePlannerItemDrag(widget)
     local canvasTop = canvas:GetTop()
     if not canvasLeft or not canvasTop then return end
 
-    local w, h = widget:GetWidth(), widget:GetHeight()
-    local relX = cx - canvasLeft - (w / 2)
-    local relY = canvasTop - cy - (h / 2)
-    widget:ClearAllPoints()
-    widget:SetPoint("TOPLEFT", canvas, "TOPLEFT", relX, -relY)
+    if not drag.moved then
+        local adx = cx - (drag.startCx or cx)
+        local ady = cy - (drag.startCy or cy)
+        if (adx * adx + ady * ady) < 16 then
+            return
+        end
+        drag.moved = true
+        if self.RetargetPlannerItemDragAfterCopy then
+            widget = self:RetargetPlannerItemDragAfterCopy(widget) or widget
+            drag = self._plannerDrag
+            if not drag or drag.widget ~= widget then return end
+        end
+    end
 
-    if drag.liveStaticShape then
+    local relX = (drag.startXOfs or 0) + (cx - (drag.startCx or cx))
+    local yOfs = (drag.startYOfs or 0) + (cy - (drag.startCy or cy))
+    widget:ClearAllPoints()
+    widget:SetPoint("TOPLEFT", canvas, "TOPLEFT", relX, yOfs)
+
+    if self.UpdatePlannerSelectionDrag then
+        self:UpdatePlannerSelectionDrag(widget, relX, -yOfs)
+    end
+    if self.SyncPlannerSelectionOverlay then
+        self:SyncPlannerSelectionOverlay()
+    end
+
+    if drag.liveStaticShape and not (self.IsPlannerMultiDragging and self:IsPlannerMultiDragging()) then
         local now = GetTime() or 0
         if now < (drag.liveNextAt or 0) then
             return
@@ -1599,7 +1702,7 @@ function Diar:UpdatePlannerItemDrag(widget)
         local pf = self.plannerFrame
         local vc = pf and pf.sceneViewContext
         local screenToWorld = Diar.PlannerView and Diar.PlannerView.ScreenToWorld
-        local sx, sy = relX, relY
+        local sx, sy = relX, -yOfs
         local wx, wy = sx, sy
         if screenToWorld then
             wx, wy = screenToWorld(vc, sx, sy)
@@ -1622,6 +1725,10 @@ function Diar:EndPlannerItemDrag(widget)
     if not drag or drag.widget ~= widget then return end
     widget:SetScript("OnUpdate", nil)
     self._plannerDrag = nil
+    if not drag.moved then
+        self._plannerSelectionDrag = nil
+        return
+    end
 
     local _, _, _, xOfs, yOfs = widget:GetPoint()
     if not xOfs or not yOfs then return end
@@ -1640,6 +1747,12 @@ function Diar:EndPlannerItemDrag(widget)
 
     local xp = math.floor((wx / drag.cw) * 10000 + 0.5) / 100
     local yp = math.floor((wy / drag.ch) * 10000 + 0.5) / 100
+    if self.FinishPlannerSelectionDrag and self:FinishPlannerSelectionDrag(xp, yp) then
+        return
+    end
+    if self.NudgePlannerSelXform and drag.startXp and drag.startYp then
+        self:NudgePlannerSelXform(xp - drag.startXp, yp - drag.startYp)
+    end
     self:ApplyItemPositionChange(drag.itemIndex, xp, yp)
 end
 
@@ -1792,15 +1905,54 @@ function Diar:AttachPlannerItemContextMenu(widget, itemIndex, item)
 
     widget:SetScript("OnMouseDown", function(w, button)
         if button == "LeftButton" and Diar.CanEditPlannerItems and Diar:CanEditPlannerItems() then
-            if not CursorInsideItemShape(w, item) then return end
-            Diar:BeginPlannerItemDrag(w)
+            if IsShiftKeyDown and IsShiftKeyDown() and Diar.BeginPlannerMarqueeSelect then
+                Diar:BeginPlannerMarqueeSelect()
+                return
+            end
+            local inside
+            if item.kind == "line" and Diar.CursorHitsPlannerLine then
+                inside = Diar:CursorHitsPlannerLine(item)
+                if not inside then
+                    if Diar.TryPlannerCanvasDeselect then
+                        Diar:TryPlannerCanvasDeselect("LeftButton")
+                    end
+                    return
+                end
+            elseif item.kind == "draw" and Diar.CursorHitsPlannerDraw then
+                inside = Diar:CursorHitsPlannerDraw(item)
+                if not inside then
+                    if Diar.TryPlannerCanvasDeselect then
+                        Diar:TryPlannerCanvasDeselect("LeftButton")
+                    end
+                    return
+                end
+            else
+                inside = CursorInsideItemShape(w, item)
+                if not inside then
+                    local lx, ly, width, height = GetWidgetCursorPoint(w)
+                    inside = lx and width and lx >= 0 and ly >= 0 and lx <= width and ly <= height
+                end
+                if not inside then return end
+            end
+            if Diar.HandlePlannerItemSelectClick then
+                Diar:HandlePlannerItemSelectClick(w)
+            end
+            if not Diar.IsPlannerItemSelected or Diar:IsPlannerItemSelected(w.itemIndex) then
+                Diar:BeginPlannerItemDrag(w)
+            end
         end
     end)
     widget:SetScript("OnMouseUp", function(w, button)
         if button == "LeftButton" then
             Diar:EndPlannerItemDrag(w)
         elseif button == "RightButton" then
-            if not CursorInsideItemShape(w, item) then return end
+            if item.kind == "line" and Diar.CursorHitsPlannerLine then
+                if not Diar:CursorHitsPlannerLine(item) then return end
+            elseif item.kind == "draw" and Diar.CursorHitsPlannerDraw then
+                if not Diar:CursorHitsPlannerDraw(item) then return end
+            elseif not CursorInsideItemShape(w, item) then
+                return
+            end
             local canAssign = Diar:CanAssignPlayerToItem(item) and Diar:IsPlanLeader()
             local canDelete = Diar.CanEditPlannerItems and Diar:CanEditPlannerItems()
             local canCustomLabel = Diar.CanEditPlannerItems and Diar:CanEditPlannerItems()

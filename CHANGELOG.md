@@ -1,5 +1,48 @@
 # Changelog
 
+## [Release 1.1.0]
+
+Added:
+
+- Click an object on the plan to select it. Drag a corner to resize.
+  It keeps its shape unless you hold Shift. Drag the handle above an
+  object to rotate it. Hold Shift while rotating to snap in 15 degree
+  steps. Hold Ctrl and click to select more than one, then move,
+  resize, or rotate them together. Hold Shift and drag to
+  select everything in that area. Hold Alt and drag to copy an
+  object and move the copy.
+- Delete now removes every selected object.
+- The objects ? tip is easier to read.
+- Shapes now include Draw. Drag on the plan to sketch, then
+  draw again to add more. Drawings stay with the plan.
+- Roster on the top-left of the plan lists your current group with
+  specs and names. Click a person to add them, or click a group to
+  add everyone. Current party uses the group you are in. Custom
+  lets you build your own roster with name, class, and spec, with
+  class and spec icons. Create and Edit sit side by side. In the
+  roster window you can pick a saved roster or save one by name.
+  In Custom, click a person to add them. Click the pen to change
+  their name, class, or spec. You can pick just the class, with
+  no spec. That person updates on every scene. The roster on a
+  plan also comes along when the plan is shared. Extracting a plan
+  from the site also brings that roster in as the plan name plus
+  -roster, so you can pick it again later.
+
+### Bug fixes
+
+- The rotate handle now stays with the objects as they turn.
+- Rotating several selected objects together now keeps them lined up.
+- After you rotate an object, you can click it again to select it.
+- Objects now rotate the same way you drag the handle.
+- The resize box hides while you move an object and comes back when you let go.
+- Text on objects now turns with them when you rotate, and stays on the same side of the object.
+- The resize box now follows an object’s rotation when you select it.
+- Text now keeps the right size and place when you zoom in or out.
+- Numbered markers from the site now keep their dashed ring and the number in the center.
+- Replace marker only shows on raid markers.
+- Escape now clears what you have selected, including drawings and shapes.
+- Names under people and objects are a bit larger.
+
 ## [Release 1.0.13]
 
 Added:

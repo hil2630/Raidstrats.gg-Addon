@@ -105,6 +105,22 @@ local UI = {
 }
 
 local PALETTE_HINT_DEFAULT = L("Palette: click item, then canvas · Right-click object to delete")
+local PALETTE_HELP = {
+    { L("Select"), true },
+    { L("Click an object, or Ctrl+click to add more.") },
+    { L("Hold Shift and drag to select several.") },
+    { L("Move"), true },
+    { L("Drag to move. Hold Alt to copy.") },
+    { L("Resize & rotate"), true },
+    { L("Drag a corner to resize. Hold Shift to ignore the shape.") },
+    { L("Drag the top handle to rotate. Hold Shift to snap.") },
+    { L("Delete"), true },
+    { L("Right-click an object.") },
+    { L("Palette"), true },
+    { L("Click an item, then the plan.") },
+    { L("Draw"), true },
+    { L("Drag on the plan to draw. Draw again to add more.") },
+}
 
 function Diar:SetObjectPaletteHint(text)
     local pf = self.plannerFrame
@@ -117,7 +133,22 @@ function Diar:ShowObjectPaletteHelpTooltip(anchor)
     local pf = self.plannerFrame
     local tip = (pf and pf.__paletteHelpTip) or PALETTE_HINT_DEFAULT
     GameTooltip:SetOwner(anchor, "ANCHOR_RIGHT")
-    GameTooltip:SetText(tip, 1, 1, 1, 1, true)
+    if tip ~= PALETTE_HINT_DEFAULT then
+        GameTooltip:SetText(tip, 1, 1, 1, 1, true)
+    else
+        GameTooltip:SetText(L("Palette help"), 1, 0.82, 0)
+        for i = 1, #PALETTE_HELP do
+            local line = PALETTE_HELP[i]
+            if line[2] then
+                if i > 1 then
+                    GameTooltip:AddLine(" ")
+                end
+                GameTooltip:AddLine(line[1], 1, 0.82, 0)
+            else
+                GameTooltip:AddLine(line[1], 0.82, 0.84, 0.88, true)
+            end
+        end
+    end
     GameTooltip:Show()
 end
 
@@ -162,8 +193,27 @@ if not StaticPopupDialogs["RAIDSTRATSGG_DELETE_OBJECT"] then
         hideOnEscape = 1,
         OnAccept = function(self)
             local itemIndex = self.data
-            if itemIndex and Diar.DeletePlannerSceneItem then
+            if itemIndex and Diar.IsPlannerItemSelected and Diar:IsPlannerItemSelected(itemIndex)
+                and Diar.DeletePlannerSelection then
+                Diar:DeletePlannerSelection()
+            elseif itemIndex and Diar.DeletePlannerSceneItem then
                 Diar:DeletePlannerSceneItem(itemIndex)
+            end
+        end,
+    }
+end
+
+if not StaticPopupDialogs["RAIDSTRATSGG_DELETE_SELECTION"] then
+    StaticPopupDialogs["RAIDSTRATSGG_DELETE_SELECTION"] = {
+        text = L("Delete these objects?"),
+        button1 = _G.YES or L("Yes"),
+        button2 = _G.NO or L("No"),
+        timeout = 0,
+        whileDead = 1,
+        hideOnEscape = 1,
+        OnAccept = function()
+            if Diar.DeletePlannerSelection then
+                Diar:DeletePlannerSelection()
             end
         end,
     }
@@ -330,6 +380,49 @@ local function ApplyTextTileIcon(btn, tileSize)
     btn.letter:Show()
 end
 
+local function HideDrawTileIcon(btn)
+    if btn and btn.drawSegs then
+        for i = 1, #btn.drawSegs do
+            btn.drawSegs[i]:Hide()
+        end
+    end
+end
+
+local function ApplyDrawTileIcon(btn, tileSize)
+    if btn.letter then btn.letter:Hide() end
+    if btn.icon then btn.icon:Hide() end
+    btn.drawSegs = btn.drawSegs or {}
+    local size = math.max(16, tileSize or 44)
+    local pad = size * 0.22
+    local mid = size * 0.5
+    local segs = {
+        { pad, size * 0.68, mid, pad + 2 },
+        { mid, pad + 2, size - pad, size * 0.62 },
+        { size - pad, size * 0.62, size - pad * 0.55, size * 0.38 },
+    }
+    for i = 1, 3 do
+        local tex = btn.drawSegs[i]
+        if not tex then
+            tex = btn:CreateTexture(nil, "ARTWORK")
+            tex:SetTexture(WHITE_TEX)
+            btn.drawSegs[i] = tex
+        end
+        local a, b = segs[i][1], segs[i][2]
+        local c, d = segs[i][3], segs[i][4]
+        local dx, dy = c - a, d - b
+        local len = math.max(4, math.sqrt(dx * dx + dy * dy))
+        tex:ClearAllPoints()
+        tex:SetSize(len, math.max(2, size * 0.07))
+        tex:SetPoint("CENTER", btn, "TOPLEFT", (a + c) * 0.5, -((b + d) * 0.5))
+        tex:SetVertexColor(0.92, 0.92, 0.92, 1)
+        if tex.SetRotation then
+            local angle = math.atan2 and math.atan2(dy, dx) or 0
+            tex:SetRotation(-angle)
+        end
+        tex:Show()
+    end
+end
+
 local function ApplyLineTileIcon(btn, tileSize, isArrow)
     if btn.letter then btn.letter:Hide() end
     if not btn.icon then return end
@@ -358,6 +451,7 @@ end
 
 local function ApplyPaletteTilePreview(btn, previewKind, tileSize)
     tileSize = tileSize or btn:GetWidth() or PALETTE_TILE
+    HideDrawTileIcon(btn)
     if previewKind == "text" then
         ApplyTextTileIcon(btn, tileSize)
     elseif previewKind == "circle" then
@@ -370,6 +464,8 @@ local function ApplyPaletteTilePreview(btn, previewKind, tileSize)
         ApplyRectTileIcon(btn.icon, btn, tileSize)
     elseif previewKind == "line" then
         ApplyLineTileIcon(btn, tileSize, btn.__lineToolMode == "arrow")
+    elseif previewKind == "draw" then
+        ApplyDrawTileIcon(btn, tileSize)
     end
 end
 
@@ -697,6 +793,9 @@ function Diar:CancelPaletteDragDraw()
     pf.__paletteDrag = nil
     pf.__paletteDragCanFinish = nil
     if pf.__paletteDragPreview then pf.__paletteDragPreview:Hide() end
+    if self.HidePlannerDrawPreview then
+        self:HidePlannerDrawPreview(pf)
+    end
     self:HidePaletteDragLayer(pf)
     self:StopPaletteDragTracking(pf)
 end
@@ -730,6 +829,13 @@ function Diar:UpdatePaletteDragPreview(pf, drag)
     self:ShowPaletteDragLayer(pf)
     local template = drag.template
     local shape = template and tostring(template.shape or ""):lower() or ""
+    if template and tostring(template.kind or ""):lower() == "draw" then
+        if preview then preview:Hide() end
+        if self.RefreshPlannerDrawPreview then
+            self:RefreshPlannerDrawPreview(pf, drag)
+        end
+        return
+    end
     local isLineTool = template and tostring(template.kind or ""):lower() == "line"
     local x2 = drag.curX or drag.startX
     local y2 = drag.curY or drag.startY
@@ -830,6 +936,12 @@ function Diar:UpdatePaletteDragDraw()
     if not lx then return end
     drag.curX, drag.curY = lx, ly
     drag.cw, drag.ch = cw, ch
+    if drag.kind == "draw" or (drag.template and drag.template.kind == "draw") then
+        if self.AddPlannerDrawSample and self:AddPlannerDrawSample(drag, lx, ly) then
+            self:RefreshPlannerDrawPreview(pf, drag)
+        end
+        return
+    end
     self:UpdatePaletteDragPreview(pf, drag)
 end
 
@@ -841,6 +953,14 @@ function Diar:FinishPaletteDragDraw()
     local cw, ch = drag.cw or 1, drag.ch or 1
     local dx = math.abs((drag.curX or drag.startX) - drag.startX)
     local dy = math.abs((drag.curY or drag.startY) - drag.startY)
+    if template and tostring(template.kind or ""):lower() == "draw" then
+        local item = self.BuildPlannerDrawItem and self:BuildPlannerDrawItem(pf, drag)
+        self:CancelPaletteDragDraw()
+        if item then
+            self:AddPlannerItemToScene(item, item.x, item.y)
+        end
+        return
+    end
     if template and tostring(template.kind or ""):lower() == "line" then
         local endX = drag.curX or drag.startX
         local endY = drag.curY or drag.startY
@@ -908,7 +1028,7 @@ function Diar:AddPlannerItemToScene(template, xPct, yPct, opts)
         item.h = hPct
     end
 
-    if item.kind ~= "line" and not IsWorldMarkerPaletteItem(item) then
+    if item.kind ~= "line" and item.kind ~= "draw" and not IsWorldMarkerPaletteItem(item) then
         local slotIndex = PUI.GetNextAvailableSlotIndex(scene)
         item.slotIndex = slotIndex
         item.embedIndex = slotIndex
@@ -918,13 +1038,14 @@ function Diar:AddPlannerItemToScene(template, xPct, yPct, opts)
     end
 
     table.insert(scene.items, item)
-    if self.PersistCurrentPlanToSaved then
+    local newIndex = #scene.items
+    if not opts.skipPersist and self.PersistCurrentPlanToSaved then
         self:PersistCurrentPlanToSaved()
     end
-    if self.RefreshPlannerScene then
+    if not opts.skipRefresh and self.RefreshPlannerScene then
         self:RefreshPlannerScene()
     end
-    return true
+    return true, newIndex
 end
 
 function Diar:IsPlannerPaletteActive()
@@ -1019,16 +1140,20 @@ function Diar:TryPaletteCanvasMouseDown(button)
         local lx, ly, cw, ch = GetCanvasLocalPointClamped(canvas, pf)
         if not lx then return false end
         self:ShowPaletteDragLayer(pf)
-        pf.__paletteDrag = {
-            template = CopyTemplate(template),
-            startX = lx,
-            startY = ly,
-            curX = lx,
-            curY = ly,
-            cw = cw,
-            ch = ch,
-        }
-        self:UpdatePaletteDragPreview(pf, pf.__paletteDrag)
+        if tostring(template.kind or ""):lower() == "draw" and self.BeginPlannerDrawStroke then
+            pf.__paletteDrag = self:BeginPlannerDrawStroke(pf, lx, ly, cw, ch, CopyTemplate(template))
+        else
+            pf.__paletteDrag = {
+                template = CopyTemplate(template),
+                startX = lx,
+                startY = ly,
+                curX = lx,
+                curY = ly,
+                cw = cw,
+                ch = ch,
+            }
+            self:UpdatePaletteDragPreview(pf, pf.__paletteDrag)
+        end
         self:StartPaletteDragTracking(pf)
         return true
     end
@@ -1176,6 +1301,14 @@ local PALETTE_SHAPES = {
         previewKind = "line",
         template = {
             kind = "line", shape = "line", stroke = "#ffffff", strokeWidth = 0.42,
+        },
+    },
+    {
+        label = L("Draw"),
+        tooltip = L("Draw on the plan"),
+        previewKind = "draw",
+        template = {
+            kind = "draw", shape = "freehand", stroke = "#ffffff", strokeWidth = 0.42,
         },
     },
 }
@@ -1640,7 +1773,7 @@ function Diar:EnsureObjectPalettePanel(pf)
                     end
                 end,
             })
-        elseif entry.previewKind == "circle" or entry.previewKind == "rect" then
+        elseif entry.previewKind == "circle" or entry.previewKind == "rect" or entry.previewKind == "draw" then
             WirePaletteTile(btn, entry.template, entry.label, { dragDraw = true })
         else
             WirePaletteTile(btn, entry.template, entry.label)
@@ -1811,7 +1944,8 @@ function Diar:CanEditPlannerItems()
     return true
 end
 
-function Diar:DeletePlannerSceneItem(itemIndex)
+function Diar:DeletePlannerSceneItem(itemIndex, opts)
+    opts = opts or {}
     if not self:CanEditPlannerItems() then return false end
     local pf = self.plannerFrame
     local data = self.plannerData
@@ -1823,6 +1957,9 @@ function Diar:DeletePlannerSceneItem(itemIndex)
     local removed = scene.items[itemIndex]
     local removedId = removed.id and tostring(removed.id) or nil
     table.remove(scene.items, itemIndex)
+    if self.NotifyPlannerItemIndexRemoved then
+        self:NotifyPlannerItemIndexRemoved(itemIndex)
+    end
 
     if scene.animations then
         local kept = {}
@@ -1847,13 +1984,13 @@ function Diar:DeletePlannerSceneItem(itemIndex)
         scene.animations = kept
     end
 
-    if self.PersistCurrentPlanToSaved then
+    if not opts.skipPersist and self.PersistCurrentPlanToSaved then
         self:PersistCurrentPlanToSaved()
     end
-    if self.StopPlannerAnimation then
+    if not opts.skipRefresh and self.StopPlannerAnimation then
         self:StopPlannerAnimation()
     end
-    if self.RefreshPlannerScene then
+    if not opts.skipRefresh and self.RefreshPlannerScene then
         self:RefreshPlannerScene()
     end
     return true

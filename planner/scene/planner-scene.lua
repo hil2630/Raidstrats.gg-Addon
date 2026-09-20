@@ -3598,8 +3598,29 @@ local function BindPlannerCanvasViewportInput(pf, canvas)
         HandlePlannerCanvasWheel(delta)
     end)
 
+    pf:EnableKeyboard(true)
+    if pf.SetPropagateKeyboardInput then
+        pf:SetPropagateKeyboardInput(true)
+    end
+    pf:SetScript("OnKeyDown", function(frame, key)
+        if frame.SetPropagateKeyboardInput then
+            frame:SetPropagateKeyboardInput(true)
+        end
+        if key ~= "DELETE" then return end
+        if GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus() then return end
+        if Diar.DeletePlannerSelection and Diar:DeletePlannerSelection() then
+            if frame.SetPropagateKeyboardInput then
+                frame:SetPropagateKeyboardInput(false)
+            end
+        end
+    end)
+
     canvas:SetScript("OnMouseDown", function(_, button)
+        if pf.EnableKeyboard then
+            pf:EnableKeyboard(true)
+        end
         if Diar.TryPaletteCanvasMouseDown and Diar:TryPaletteCanvasMouseDown(button) then return end
+        if Diar.TryPlannerCanvasDeselect and Diar:TryPlannerCanvasDeselect(button) then return end
         local pf2 = Diar.plannerFrame
         if pf2 and pf2.nsrtSceneActive and button == "LeftButton" then
             BeginPlannerFrameMove(pf2, button)
@@ -3973,13 +3994,15 @@ local function LayoutItemWidget(w, item, vc, cw, ch, root, minSize)
         if shp == "circle" or shp == "ellipse" then
             UpdateCircleWidgetStroke(w, item, vc, ch)
         end
+    elseif item.genericMarker or item.markerNumber then
+        UpdateCircleWidgetStroke(w, item, vc, ch)
     end
 end
 
 local function LayoutTextWidgetFont(w, item, vc, ch)
     local fontPx = SceneViewScale(vc, ch * ((type(item.fontSize) == "number" and item.fontSize or 4) / 100))
-    -- Keep a high ceiling so imported zoom can grow, but still shrink on zoom-out.
-    return math.max(6, math.min(fontPx, 256))
+    -- Follow zoom exactly so imported text shrinks and grows with the scene.
+    return math.max(3, math.min(fontPx, 256))
 end
 
 local function ApplyTextWidgetContent(w, item, label, vc, ch, minSize)
@@ -3990,6 +4013,8 @@ local function ApplyTextWidgetContent(w, item, label, vc, ch, minSize)
     end
     w.text:ClearAllPoints()
     w.text:SetPoint("TOPLEFT", w, "TOPLEFT", 0, 0)
+    if w.text.SetRotation then w.text:SetRotation(0) end
+    if w.textBgTex and w.textBgTex.SetRotation then w.textBgTex:SetRotation(0) end
     local fontFlags = ""
     if HasStroke(item) then
         local sw = tonumber(item.strokeWidth) or 0
@@ -4341,7 +4366,8 @@ UpdateCircleWidgetStroke = function(w, item, vc, ch)
     end
     local iw, ih = w:GetWidth(), w:GetHeight()
     if iw < 2 or ih < 2 then return end
-    local colorSig = string.format("%.2f:%.2f:%.2f:%.2f", sr, sg, sb, sa)
+    local dashed = (not override) and item and (item.strokeStyle == "dashed" or item.genericMarker)
+    local colorSig = string.format("%.2f:%.2f:%.2f:%.2f%s", sr, sg, sb, sa, dashed and ":d" or "")
     if w.__ringLayoutIw == iw and w.__ringLayoutIh == ih and w.__ringLayoutThick == thick
         and w.__ringLayoutColor == colorSig then return end
     w.__ringLayoutIw = iw
@@ -4356,12 +4382,16 @@ UpdateCircleWidgetStroke = function(w, item, vc, ch)
             ln = w:CreateLine(nil, "OVERLAY")
             w._ringLines[i] = ln
         end
-        ln:Show()
-        ColorLine(ln, sr, sg, sb, sa, thick)
-        local a1 = (i - 1) / segs * math.pi * 2
-        local a2 = i / segs * math.pi * 2
-        ln:SetStartPoint("TOPLEFT", w, cx + rx * math.cos(a1), -(cy + ry * math.sin(a1)))
-        ln:SetEndPoint("TOPLEFT", w, cx + rx * math.cos(a2), -(cy + ry * math.sin(a2)))
+        if dashed and (i % 2 == 0) then
+            ln:Hide()
+        else
+            ln:Show()
+            ColorLine(ln, sr, sg, sb, sa, thick)
+            local a1 = (i - 1) / segs * math.pi * 2
+            local a2 = i / segs * math.pi * 2
+            ln:SetStartPoint("TOPLEFT", w, cx + rx * math.cos(a1), -(cy + ry * math.sin(a1)))
+            ln:SetEndPoint("TOPLEFT", w, cx + rx * math.cos(a2), -(cy + ry * math.sin(a2)))
+        end
     end
     for i = segs + 1, #w._ringLines do
         w._ringLines[i]:Hide()
@@ -4550,6 +4580,31 @@ local function DrawLineShape(pf, canvas, item, cw, ch, frameLevel)
     return f
 end
 
+function Diar.DrawPlannerFreehand(pf, canvas, item, cw, ch, frameLevel)
+    local pts = item and item.points
+    if type(pts) ~= "table" or #pts < 2 then return nil end
+    local f = AcquireShapeFrame(pf, canvas, frameLevel)
+    local vc = pf.sceneViewContext
+    local r, g, b, a = ParseStrokeColor(item.stroke, item.opacity)
+    local thick = SceneViewScale(vc, math.max(2, ch * ((type(item.strokeWidth) == "number" and item.strokeWidth or 0.42) / 100)))
+    local ox = tonumber(item.x) or 0
+    local oy = tonumber(item.y) or 0
+    local prevX, prevY
+    for i = 1, #pts do
+        local px = ox + (tonumber(pts[i].x) or 0)
+        local py = oy + (tonumber(pts[i].y) or 0)
+        local x, y = SceneViewCoord(vc, cw * (px / 100), ch * (py / 100))
+        if prevX then
+            local ln = ShapeLine(f)
+            ColorLine(ln, r, g, b, a, thick)
+            ln:SetStartPoint("TOPLEFT", canvas, prevX, -prevY)
+            ln:SetEndPoint("TOPLEFT", canvas, x, -y)
+        end
+        prevX, prevY = x, y
+    end
+    return f
+end
+
 -- Filled triangle/cone via vertically tiled fill rows (apex at top). Rows are laid
 -- edge-to-edge with no overlap, so a translucent fill renders as one uniform color
 -- instead of banding into darker horizontal lines where scanlines would overlap.
@@ -4626,22 +4681,52 @@ end
 -- Skewed/rotated rectangles export their 4 oriented corners (percent coords) so we can
 -- render the true parallelogram instead of an axis-aligned bounding box.
 local function HasQuadCorners(item)
-    return item and type(item.corners) == "table" and #item.corners >= 3
+    if item and type(item.corners) == "table" and #item.corners >= 3 then return true end
+    if not item or item.kind ~= "shape" then return false end
+    local ang = tonumber(item.angle) or 0
+    if math.abs(ang) < 0.05 then return false end
+    local shp = tostring(item.shape or ""):lower()
+    return shp == "rect" or shp == "rectangle" or shp == "square" or shp == "polygon"
+        or shp == "triangle" or shp == "cone"
 end
 
 local function GetItemCornerPoints(item, cw, ch, vc)
-    local c = item and item.corners
-    if type(c) ~= "table" or #c < 3 then return nil end
     local pts = {}
-    for i = 1, #c do
-        local p = c[i]
-        local pxPct = tonumber(p and p.x) or 0
-        local pyPct = tonumber(p and p.y) or 0
-        local px, py = SceneViewCoord(vc, cw * (pxPct / 100), ch * (pyPct / 100))
-        pts[i] = { px, py }
+    local c = item and item.corners
+    if type(c) == "table" and #c >= 3 then
+        for i = 1, #c do
+            local p = c[i]
+            local pxPct = tonumber(p and p.x) or 0
+            local pyPct = tonumber(p and p.y) or 0
+            local px, py = SceneViewCoord(vc, cw * (pxPct / 100), ch * (pyPct / 100))
+            pts[i] = { px, py }
+        end
+        return pts
+    end
+    local x = tonumber(item and item.x)
+    local y = tonumber(item and item.y)
+    if not x or not y then return nil end
+    local w = tonumber(item.w) or 4
+    local h = tonumber(item.h) or 4
+    local shp = tostring(item.shape or ""):lower()
+    local raw
+    if shp == "triangle" or shp == "cone" then
+        raw = { { x + w * 0.5, y }, { x + w, y + h }, { x, y + h } }
+    else
+        raw = { { x, y }, { x + w, y }, { x + w, y + h }, { x, y + h } }
+    end
+    local ocx, ocy = SceneViewCoord(vc, cw * ((x + w * 0.5) / 100), ch * ((y + h * 0.5) / 100))
+    local rad = math.rad(tonumber(item.angle) or 0)
+    local cosA, sinA = math.cos(rad), math.sin(rad)
+    for i = 1, #raw do
+        local px, py = SceneViewCoord(vc, cw * (raw[i][1] / 100), ch * (raw[i][2] / 100))
+        local dx, dy = px - ocx, py - ocy
+        pts[i] = { ocx + dx * cosA - dy * sinA, ocy + dx * sinA + dy * cosA }
     end
     return pts
 end
+Diar.GetPlannerItemCornerPoints = GetItemCornerPoints
+Diar.PlannerItemUsesOrientedHit = HasQuadCorners
 
 -- Fill a convex polygon (canvas coords, y positive-down) using vertically tiled
 -- rows, mirroring the triangle/cone fill approach so skewed rects render as solid
@@ -5219,6 +5304,8 @@ local function BuildShapeWidgets(pf, scene, canvas, cw, ch)
             local itemFrameLevel = ResolveItemFrameLevel(canvas, item, i, 0)
             if k == "line" then
                 DrawLineShape(pf, canvas, item, cw, ch, itemFrameLevel)
+            elseif k == "draw" then
+                Diar.DrawPlannerFreehand(pf, canvas, item, cw, ch, itemFrameLevel)
             elseif k == "presetShape" then
                 Diar.DrawPlannerPresetShape(pf, canvas, item, cw, ch, itemFrameLevel)
             elseif k == "formation" then
@@ -5619,6 +5706,32 @@ function Diar:SanitizePlanData(data)
                     local typeLower = tostring(item.type or item.objectType or ""):lower()
                     local shapeLower = tostring(item.shape or ""):lower()
                     local slotIndex = tonumber(item.slotIndex or item.embedIndex)
+                    if item.genericMarker == true or tonumber(item.markerNumber) or typeLower == "genericmarker" then
+                        item.genericMarker = true
+                        item.playerCircle = nil
+                        item.slotIndex = nil
+                        item.embedIndex = nil
+                        item.kind = "icon"
+                        kindLower = "icon"
+                        local markerNum = tonumber(item.markerNumber) or tonumber(item.label)
+                        if markerNum then
+                            item.markerNumber = math.max(1, math.floor(markerNum + 0.5))
+                        end
+                        if tostring(item.label or "") == tostring(item.markerNumber or "") then
+                            item.label = ""
+                            item.labelExplicit = nil
+                        end
+                        if type(item.fill) ~= "string" or item.fill == "" then
+                            item.fill = "rgba(15,23,42,0.56)"
+                        end
+                        if type(item.stroke) ~= "string" or item.stroke == "" then
+                            item.stroke = "rgba(148,163,184,0.72)"
+                        end
+                        if type(item.strokeWidth) ~= "number" then
+                            item.strokeWidth = 0.35
+                        end
+                        item.strokeStyle = item.strokeStyle or "dashed"
+                    end
                     if kindLower == "shape" and (shapeLower == "circle" or shapeLower == "ellipse") and slotIndex and slotIndex > 0 then
                         -- Legacy imports stored player spots as shape circles, which blocked
                         -- assignment/class updates. Normalize them into player-circle icons.
@@ -5630,7 +5743,7 @@ function Diar:SanitizePlanData(data)
                         item.strokeWidth = nil
                         kindLower = "icon"
                     end
-                    if item.playerCircle == true then
+                    if item.playerCircle == true and not item.genericMarker then
                         -- Player circles should match icon-circle rendering without any
                         -- geometry stroke ring from imported shape data.
                         item.stroke = nil
@@ -6255,16 +6368,9 @@ local function SetGroupSpotPreviewText(w, text, mine, item)
     local px = w:GetWidth() or 0
     local py = w:GetHeight() or 0
     local area = math.max(1, math.min(px, py))
-    local zoom = 1
     local pf = Diar and Diar.plannerFrame
-    if pf and pf.compactMode then
-        zoom = (type(pf.__viewportDisplayZoom) == "number" and pf.__viewportDisplayZoom)
-            or (pf.viewerViewport and pf.viewerViewport.zoom)
-            or 1
-    end
     local compactBoost = (pf and pf.compactMode) and 1.30 or 1
-    local zoomBoost = 1 + math.max(0, zoom - 1) * 0.55
-    local fontSize = math.max(11, math.min(52, math.floor(area * 0.26 * compactBoost * zoomBoost)))
+    local fontSize = math.max(4, math.min(72, area * 0.26 * compactBoost))
     if PUI and PUI.SetPlannerContentFont then
         PUI.SetPlannerContentFont(w.spotPreviewText, fontSize, "OUTLINE", out)
     else
@@ -6279,28 +6385,35 @@ local function SetGroupSpotPreviewText(w, text, mine, item)
     w.spotPreviewText:Show()
 end
 
+function Diar.LayoutWidgetLabelFont(w, item)
+    if not w or not w.label then return end
+    local area = math.max(1, math.min(w:GetWidth() or 1, w:GetHeight() or 1))
+    local pf = Diar and Diar.plannerFrame
+    local compactBoost = (pf and pf.compactMode) and 1.25 or 1
+    local fontSize = math.max(6, math.min(72, area * 0.24 * compactBoost + 3))
+    local label = w.label:GetText() or ""
+    if PUI and PUI.SetPlannerContentFont then
+        PUI.SetPlannerContentFont(w.label, fontSize, "OUTLINE", label)
+    else
+        w.label:SetFont(STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF", fontSize, "OUTLINE")
+    end
+    local zoom = (pf and pf.__viewportDisplayZoom) or (pf and pf.viewerViewport and pf.viewerViewport.zoom) or 1
+    local gap = math.max(1, 2 * zoom)
+    w.label:ClearAllPoints()
+    w.label:SetPoint("TOP", w, "BOTTOM", 0, -gap)
+end
+
 function Diar.ApplyWidgetLabel(w, item, label, hasSelfOnPlan, playerKey, isNamesVisible)
     if not w then return end
     local shouldShowLabel = (label ~= "") and (isNamesVisible == true)
     if shouldShowLabel then
         if not w.label then
             w.label = w:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-            w.label:SetPoint("TOP", w, "BOTTOM", 0, -2)
             w.label:SetTextColor(0.85, 0.85, 0.85)
         end
-        local area = math.max(10, math.min(w:GetWidth() or 10, w:GetHeight() or 10))
-        local pf = Diar and Diar.plannerFrame
-        local zoom = (pf and pf.__viewportDisplayZoom) or (pf and pf.viewerViewport and pf.viewerViewport.zoom) or 1
-        local compactBoost = (pf and pf.compactMode) and 1.25 or 1
-        local zoomBoost = (pf and pf.compactMode) and (1 + math.max(0, zoom - 1) * 0.40) or 1
-        local fontSize = math.max(10, math.min(36, math.floor(area * 0.24 * compactBoost * zoomBoost)))
-        if PUI and PUI.SetPlannerContentFont then
-            PUI.SetPlannerContentFont(w.label, fontSize, "OUTLINE", label)
-        else
-            w.label:SetFont(STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF", fontSize, "OUTLINE")
-        end
-        w.__baseTextColor = { 0.85, 0.85, 0.85 }
         w.label:SetText(label)
+        Diar.LayoutWidgetLabelFont(w, item)
+        w.__baseTextColor = { 0.85, 0.85, 0.85 }
         w.label:Show()
         if hasSelfOnPlan and LabelMatchesPlayer(label, playerKey) then
             ApplyNameHighlight(w, true, true, 0.85, 0.85, 0.85, w.label)
@@ -6312,9 +6425,137 @@ function Diar.ApplyWidgetLabel(w, item, label, hasSelfOnPlan, playerKey, isNames
     end
 end
 
+function Diar.IsPlannerNumberedMarker(item)
+    return type(item) == "table" and (item.genericMarker == true or tonumber(item.markerNumber) ~= nil)
+end
+
+function Diar.ApplyNumberedMarkerVisual(w, item, ch)
+    if not w or not item then return end
+    local assignee = type(item.assignee) == "table" and item.assignee or nil
+    local classKey = assignee and tostring(assignee.className or assignee.class or ""):lower():gsub("[%s_%-]", "") or ""
+    if classKey == "" then classKey = nil end
+    local displayMode = (item.displayMode == "circle") and "circle" or "icon"
+    local classColor = (classKey and Diar.PLANNER_SOAK_CLASS_COLORS and Diar.PLANNER_SOAK_CLASS_COLORS[classKey])
+        or { 0.58, 0.64, 0.72 }
+    local hasClass = assignee and (classKey or assignee.icon or assignee.spec)
+    HideWidgetStroke(w)
+    ClearBackdropStroke(w)
+    w.__ringOverride = nil
+    local centerText = tostring(item.markerNumber or item.label or "")
+    local textColor = { 0.80, 0.84, 0.88, 0.9 }
+    if hasClass and displayMode == "icon" then
+        local iconTex
+        if assignee.icon and Diar.ResolveSpecTextureFromIconKey then
+            iconTex = Diar.ResolveSpecTextureFromIconKey(assignee.icon)
+        end
+        if not iconTex and classKey then
+            local classFile = Diar.PLANNER_SOAK_CLASS_TEXTURES and Diar.PLANNER_SOAK_CLASS_TEXTURES[classKey]
+            if classFile then iconTex = "Interface\\Icons\\ClassIcon_" .. classFile end
+        end
+        if iconTex then
+            if not w.circleMask then
+                w.circleMask = w:CreateMaskTexture()
+                w.circleMask:SetTexture(CIRCLE_MASK, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+            end
+            w.tex:SetTexture(iconTex)
+            w.tex:SetTexCoord(0, 1, 0, 1)
+            w.tex:SetVertexColor(1, 1, 1, 1)
+            w.tex:SetAlpha(1)
+            w.circleMask:SetAllPoints(w.tex)
+            if not w.__maskOn then
+                w.tex:AddMaskTexture(w.circleMask)
+                w.__maskOn = true
+            end
+            w.tex:Show()
+            centerText = ""
+        else
+            ApplyCircleWidgetVisual(w, item, { classColor[1], classColor[2], classColor[3], 0.96 })
+            centerText = assignee.name and tostring(assignee.name):sub(1, 1) or centerText
+            textColor = { 1, 1, 1, 1 }
+        end
+        w.__ringOverride = { classColor[1], classColor[2], classColor[3], 1 }
+    elseif hasClass then
+        ApplyCircleWidgetVisual(w, item, { classColor[1], classColor[2], classColor[3], 0.96 })
+        centerText = assignee.name and tostring(assignee.name):sub(1, 4) or centerText
+        textColor = { 0.06, 0.09, 0.16, 1 }
+        w.__ringOverride = { classColor[1], classColor[2], classColor[3], 1 }
+    else
+        local fr, fg, fb, fa = ParseItemColor(item.fill or "rgba(15,23,42,0.56)", item.opacity)
+        ApplyCircleWidgetVisual(w, item, { fr, fg, fb, fa })
+        if type(item.stroke) ~= "string" or item.stroke == "" then
+            item.stroke = "rgba(148,163,184,0.72)"
+        end
+        item.strokeStyle = item.strokeStyle or "dashed"
+    end
+    if not w.text then
+        w.text = w:CreateFontString(nil, "OVERLAY")
+        w.text:SetJustifyH("CENTER")
+        w.text:SetJustifyV("MIDDLE")
+    end
+    w.text:ClearAllPoints()
+    w.text:SetPoint("CENTER", w, "CENTER", 0, 0)
+    local area = math.max(1, math.min(w:GetWidth() or 1, w:GetHeight() or 1))
+    local fontSize = math.max(6, area * 0.35)
+    if centerText ~= "" then
+        if PUI and PUI.SetPlannerContentFont then
+            PUI.SetPlannerContentFont(w.text, fontSize, "OUTLINE", centerText)
+        else
+            w.text:SetFont(STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF", fontSize, "OUTLINE")
+        end
+        w.text:SetTextColor(textColor[1], textColor[2], textColor[3], textColor[4] or 1)
+        w.text:SetText(centerText)
+        w.text:Show()
+    else
+        w.text:Hide()
+    end
+    local pf = Diar.plannerFrame
+    UpdateCircleWidgetStroke(w, item, pf and pf.sceneViewContext, ch or 1)
+end
+
+function Diar:SyncPlannerWidgetTextLayout(w, item, vc, ch, minSize)
+    if not w or not item then return end
+    if self.IsPlannerNumberedMarker and self.IsPlannerNumberedMarker(item) then
+        self.ApplyNumberedMarkerVisual(w, item, ch)
+    elseif item.kind == "text" and w.text and w.text:IsShown() then
+        local lbl = (w.__renderLabelOverride and w.__renderLabelOverride ~= "")
+            and w.__renderLabelOverride
+            or ((item.label and item.label ~= "") and item.label or "")
+        ApplyTextWidgetContent(w, item, lbl, vc, ch, minSize or 2)
+    elseif w.text and w.text:IsShown() then
+        local area = math.max(1, math.min(w:GetWidth() or 1, w:GetHeight() or 1))
+        local fontSize = math.max(4, math.min(72, area * 0.24))
+        local value = w.text:GetText()
+        if PUI and PUI.SetPlannerContentFont then
+            PUI.SetPlannerContentFont(w.text, fontSize, "OUTLINE", value)
+        elseif w.text.SetFont then
+            w.text:SetFont(STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF", fontSize, "OUTLINE")
+        end
+    end
+    if w.label and w.label:IsShown() then
+        self.LayoutWidgetLabelFont(w, item)
+    end
+    if w.spotPreviewText and w.spotPreviewText:IsShown() then
+        SetGroupSpotPreviewText(w, w.spotPreviewText:GetText(), w.__groupSpotMine, item)
+    end
+    if self.ApplyPlannerWidgetAngle then
+        self.ApplyPlannerWidgetAngle(w, item)
+    end
+end
+
 function Diar.RenderIconWidget(addon, w, item, label, hasSelfOnPlan, playerKey, spotNum, isMySpot, ch, forceLabel, suppressGroupVisual, assignedName)
     HideWidgetStroke(w)
     ClearBackdropStroke(w)
+    if Diar.IsPlannerNumberedMarker and Diar.IsPlannerNumberedMarker(item) then
+        w.__suppressed = nil
+        Diar.ApplyNumberedMarkerVisual(w, item, ch)
+        local markerLabel = (item.assignee and item.assignee.name) or ""
+        if markerLabel == "" and type(item.label) == "string" and item.label ~= tostring(item.markerNumber or "") then
+            markerLabel = item.label
+        end
+        w.__tooltipText = (markerLabel ~= "" and markerLabel) or tostring(item.markerNumber or "")
+        if w.label then w.label:Hide() end
+        return
+    end
     local spellId = ResolveItemSpellId(item)
     local hasSpellSource = spellId ~= nil
     local skipHelper = (not item.icon or item.icon == "") and (not hasSpellSource) and label == ""
@@ -6419,15 +6660,17 @@ function Diar.RenderSceneItem(addon, pf, root, cw, ch, vc, minSize, item, itemIn
     local yp = (type(item.y) == "number" and item.y or 0) / 100
 
     local isStatic = (k == "line")
+        or (k == "draw")
         or k == "presetShape"
         or k == "formation"
         or k == "soakZone"
         or (k == "shape" and (IsFrontalItem(item) or HasQuadCorners(item) or shp == "donut" or shp == "triangle" or shp == "cone"))
     local allowStaticDragProxy = (k == "line")
+        or (k == "draw")
         or k == "presetShape"
         or k == "formation"
         or k == "soakZone"
-        or (k == "shape" and (shp == "donut" or shp == "triangle" or shp == "cone" or shp == "pizza"))
+            or (k == "shape" and (shp == "donut" or shp == "triangle" or shp == "cone" or shp == "pizza" or HasQuadCorners(item)))
 
     if isStatic then
         if allowStaticDragProxy and not IsFrontalItem(item) then
@@ -6466,7 +6709,29 @@ function Diar.RenderSceneItem(addon, pf, root, cw, ch, vc, minSize, item, itemIn
             w.basePixelW = iw
             w.basePixelH = ih
             local px, py = SceneViewPctToCanvas(vc, cw, ch, anchorXp, anchorYp)
+            if HasQuadCorners(item) then
+                local pts = GetItemCornerPoints(item, cw, ch, vc)
+                if pts and #pts >= 3 then
+                    local minX, minY, maxX, maxY = pts[1][1], pts[1][2], pts[1][1], pts[1][2]
+                    for pi = 2, #pts do
+                        local qx, qy = pts[pi][1], pts[pi][2]
+                        if qx < minX then minX = qx end
+                        if qy < minY then minY = qy end
+                        if qx > maxX then maxX = qx end
+                        if qy > maxY then maxY = qy end
+                    end
+                    iw = math.max(minSize, maxX - minX)
+                    ih = math.max(minSize, maxY - minY)
+                    w:SetSize(iw, ih)
+                    w.basePixelW = iw
+                    w.basePixelH = ih
+                    px, py = minX, minY
+                end
+            end
             w:SetPoint("TOPLEFT", root, "TOPLEFT", px, -py)
+            if w.EnableMouse then
+                w:EnableMouse(true)
+            end
             if w.tex then
                 w.tex:Hide()
             end
@@ -6649,9 +6914,14 @@ function Diar.RenderSceneItem(addon, pf, root, cw, ch, vc, minSize, item, itemIn
         end
         if k == "shape" and (shp == "circle" or shp == "ellipse") then
             UpdateCircleWidgetStroke(w, item, vc, ch)
+        elseif item.genericMarker or item.markerNumber then
+            UpdateCircleWidgetStroke(w, item, vc, ch)
         end
     elseif w.slotBadge then
         w.slotBadge:Hide()
+    end
+    if addon.ApplyPlannerWidgetAngle then
+        addon.ApplyPlannerWidgetAngle(w, item)
     end
 end
 
@@ -7239,12 +7509,7 @@ function Diar:RefreshPlannerLayoutLive()
         local w = item.widget
         if IsPlannerWidgetFrame(w) and w:IsShown() and not w.__suppressed then
             LayoutItemWidget(w, item, vc, cw, ch, root, minSize)
-            if w.text and w.text:IsShown() and item.kind == "text" then
-                local lbl = (w.__renderLabelOverride and w.__renderLabelOverride ~= "")
-                    and w.__renderLabelOverride
-                    or ((item.label and item.label ~= "") and item.label or "")
-                ApplyTextWidgetContent(w, item, lbl, vc, ch, minSize)
-            end
+            self:SyncPlannerWidgetTextLayout(w, item, vc, ch, minSize)
         end
     end
 end
@@ -7569,6 +7834,9 @@ function Diar:ShowPlannerViewer(opts)
         Diar:EnsurePreviewNamesButton(pf)
         Diar:EnsureSpellTooltipToggle(pf)
         Diar:EnsurePlannerAssignmentButton(pf)
+        if Diar.EnsurePlannerRosterButton then
+            Diar:EnsurePlannerRosterButton(pf)
+        end
 
         local controls = CreateFrame("Frame", nil, pf)
         controls:SetHeight(CONTROLS_H)
@@ -8624,6 +8892,12 @@ function Diar:RefreshPlannerScene()
     if self.UpdatePlannerAssignmentButton then
         self:UpdatePlannerAssignmentButton(pf)
     end
+    if self.SyncPlannerSelectionOverlay then
+        self:SyncPlannerSelectionOverlay()
+    end
+    if self.EnsurePlannerRosterButton then
+        self:EnsurePlannerRosterButton(pf)
+    end
 end
 
 -- Animation helpers live on Diar.__plannerAnim (not file-scope locals).
@@ -8871,10 +9145,7 @@ function Diar:RefreshPlannerViewportDisplay(panOnly)
         local w = item.widget
         if IsPlannerWidgetFrame(w) and w:IsShown() and not w.__suppressed then
             LayoutItemWidget(w, item, vc, cw, ch, root, minSize)
-            if w.text and w.text:IsShown() and item.kind == "text" then
-                local lbl = (item.label and item.label ~= "") and item.label or ""
-                ApplyTextWidgetContent(w, item, lbl, vc, ch, minSize)
-            end
+            self:SyncPlannerWidgetTextLayout(w, item, vc, ch, minSize)
         end
     end
 
@@ -8892,6 +9163,9 @@ function Diar:RefreshPlannerViewportDisplay(panOnly)
         end
     end
     UpdatePlannerZoomLabel(pf)
+    if self.SyncPlannerSelectionOverlay then
+        self:SyncPlannerSelectionOverlay()
+    end
 end
 
 function Diar:PlannerZoomBy(factor)
@@ -8934,6 +9208,9 @@ function Diar:ClearPlannerDisplay()
     end
     self:UpdatePlannerControlButtons()
     GameTooltip:Hide()
+    if self.ClearPlannerSelection then
+        self:ClearPlannerSelection(true)
+    end
     -- Clear all item widget refs so we don't hold references to frames we're removing
     local data = self.plannerData
     if data and data.scenes then
