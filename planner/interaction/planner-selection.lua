@@ -1171,7 +1171,7 @@ end
 
 function Diar:HandlePlannerItemSelectClick(widget)
     local pf = self.plannerFrame
-    if pf and pf.EnableKeyboard then
+    if pf and pf.EnableKeyboard and not pf.compactMode and not pf.nsrtSceneActive then
         pf:EnableKeyboard(true)
     end
     if not pf or not widget or not widget.itemIndex or not CanEdit() then return end
@@ -2214,6 +2214,9 @@ function Diar:HandlePlannerEscapeKey()
     end
     local pf = self.plannerFrame
     if not pf or not pf.IsShown or not pf:IsShown() then return false end
+    -- Compact / combat popups must never swallow Escape or ability keys.
+    if pf.compactMode or pf.nsrtSceneActive then return false end
+    if InCombatLockdown and InCombatLockdown() then return false end
 
     local handled = false
     if self._plannerMarquee then

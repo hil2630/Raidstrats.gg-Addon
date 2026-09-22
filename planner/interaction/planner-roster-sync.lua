@@ -1895,9 +1895,7 @@ function Diar:AttachPlannerItemContextMenu(widget, itemIndex, item)
     widget.itemIndex = itemIndex
 
     if self:IsPlannerCompactMode() then
-        if pf and pf.nsrtSceneActive and self.IsNsrtCompactClickThroughEnabled and self:IsNsrtCompactClickThroughEnabled() and widget.EnableMouse then
-            widget:EnableMouse(false)
-        end
+        if widget.EnableMouse then widget:EnableMouse(false) end
         widget:SetScript("OnMouseDown", nil)
         widget:SetScript("OnMouseUp", nil)
         return

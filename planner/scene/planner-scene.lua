@@ -2642,7 +2642,6 @@ end
 local function HookCompactChromeHoverFrame(pf, f)
     if not pf or not f or f.__compactChromeHoverHooked then return end
     f.__compactChromeHoverHooked = true
-    if f.EnableMouse then f:EnableMouse(true) end
     local function onEnter()
         if pf.compactMode and not pf.compactPreviewActive then SetCompactControlButtonsVisible(pf, true) end
     end
@@ -3598,7 +3597,9 @@ local function BindPlannerCanvasViewportInput(pf, canvas)
         HandlePlannerCanvasWheel(delta)
     end)
 
-    pf:EnableKeyboard(true)
+    if not pf.compactMode and not pf.nsrtSceneActive then
+        pf:EnableKeyboard(true)
+    end
     if pf.SetPropagateKeyboardInput then
         pf:SetPropagateKeyboardInput(true)
     end
@@ -3616,14 +3617,18 @@ local function BindPlannerCanvasViewportInput(pf, canvas)
     end)
 
     canvas:SetScript("OnMouseDown", function(_, button)
-        if pf.EnableKeyboard then
+        if pf.EnableKeyboard and not pf.compactMode and not pf.nsrtSceneActive then
             pf:EnableKeyboard(true)
         end
         if Diar.TryPaletteCanvasMouseDown and Diar:TryPaletteCanvasMouseDown(button) then return end
         if Diar.TryPlannerCanvasDeselect and Diar:TryPlannerCanvasDeselect(button) then return end
         local pf2 = Diar.plannerFrame
         if pf2 and pf2.nsrtSceneActive and button == "LeftButton" then
-            BeginPlannerFrameMove(pf2, button)
+            local locked = Diar.IsNsrtCompactClickThroughEnabled and Diar:IsNsrtCompactClickThroughEnabled()
+            local inCombat = InCombatLockdown and InCombatLockdown()
+            if not locked and not inCombat then
+                BeginPlannerFrameMove(pf2, button)
+            end
             return
         end
         if button ~= "LeftButton" and button ~= "MiddleButton" then return end
@@ -3667,6 +3672,9 @@ local function BindPlannerCanvasViewportInput(pf, canvas)
             FinishPlannerFrameMove(pf2)
         end
     end)
+    if Diar.ApplyCompactInteractionState then
+        Diar:ApplyCompactInteractionState(pf)
+    end
 end
 
 local function SceneViewCoord(vc, wx, wy)
@@ -7030,6 +7038,10 @@ end
 
 BeginPlannerFrameMove = function(pf, button)
     if not pf or button ~= "LeftButton" then return end
+    if pf.compactMode and InCombatLockdown and InCombatLockdown() then return end
+    if pf.nsrtSceneActive and Diar.IsNsrtCompactClickThroughEnabled and Diar:IsNsrtCompactClickThroughEnabled() then
+        return
+    end
     if pf.nsrtSceneActive then
         ApplyPlannerChromeTransparent(pf)
         if C_Timer and C_Timer.NewTicker and not pf.__nsrtMoveTicker then
@@ -7124,23 +7136,59 @@ end
 
 function Diar:ApplyCompactInteractionState(pf)
     if not pf then return end
+    local compact = pf.compactMode and true or false
+    local nsrt = pf.nsrtSceneActive and true or false
+    local inCombat = InCombatLockdown and InCombatLockdown()
     local lockNsrtCompact = self.IsNsrtCompactClickThroughEnabled and self:IsNsrtCompactClickThroughEnabled()
-    local clickThrough = pf.compactMode and pf.nsrtSceneActive and lockNsrtCompact
-
-    -- NSRT compact popup should be presentation-only:
-    -- do not capture mouse so world clicks pass through.
-    if pf.EnableMouse then pf:EnableMouse(not clickThrough) end
-    if pf.compactViewport and pf.compactViewport.EnableMouse then
-        pf.compactViewport:EnableMouse(not clickThrough)
+    -- Compact / NSRT popups must never steal ability keys.
+    local allowKeys = (not compact) and (not nsrt)
+    if pf.EnableKeyboard then
+        pf:EnableKeyboard(allowKeys)
     end
-    if pf.canvas and pf.canvas.EnableMouse then
-        pf.canvas:EnableMouse(not clickThrough)
+    -- Locked NSRT compact, or any compact view during combat, must not eat
+    -- world / action-bar clicks.
+    local clickThrough = (compact and nsrt and lockNsrtCompact)
+        or (compact and inCombat)
+        or (nsrt and inCombat)
+
+    if pf.EnableMouse then pf:EnableMouse(not clickThrough) end
+    if pf.EnableMouseWheel then pf:EnableMouseWheel(not clickThrough) end
+    if pf.compactViewport then
+        if pf.compactViewport.EnableMouse then pf.compactViewport:EnableMouse(not clickThrough) end
+        if pf.compactViewport.EnableMouseWheel then pf.compactViewport:EnableMouseWheel(not clickThrough) end
+    end
+    if pf.canvas then
+        if pf.canvas.EnableMouse then pf.canvas:EnableMouse(not clickThrough) end
+        if pf.canvas.EnableMouseWheel then pf.canvas:EnableMouseWheel(not clickThrough) end
     end
     if pf.compactTopBar and pf.compactTopBar.EnableMouse then
         pf.compactTopBar:EnableMouse(not clickThrough)
     end
     if pf.resizeGrip and pf.resizeGrip.EnableMouse then
         pf.resizeGrip:EnableMouse(not clickThrough)
+    end
+    if clickThrough then
+        if self.ClearPlannerSelection then
+            self:ClearPlannerSelection(true)
+        end
+        if pf.selectionOverlay then pf.selectionOverlay:Hide() end
+        if pf.__moveCatcher and not pf.__plannerMoving then
+            pf.__moveCatcher:EnableMouse(false)
+            pf.__moveCatcher:Hide()
+        end
+        if pf.canvas and pf.canvas.GetChildren then
+            local kids = { pf.canvas:GetChildren() }
+            for i = 1, #kids do
+                local w = kids[i]
+                if w and w.EnableMouse then w:EnableMouse(false) end
+            end
+        end
+        if self.HidePlannerTransientMenus then
+            self:HidePlannerTransientMenus()
+        end
+        if self.HideSceneTabContextMenu then
+            self:HideSceneTabContextMenu()
+        end
     end
 end
 
@@ -7382,10 +7430,10 @@ local function ApplyPlannerCompactLayout(pf, keepFrameSize, snapFrame)
     end
     -- Always clear opaque panel chrome in compact so background opacity can show the world.
     ApplyPlannerChromeTransparent(pf)
-    Diar:ApplyCompactInteractionState(pf)
     ApplyPlannerResizeBounds(pf)
     UpdatePlannerModeToggleBtn(pf)
     RefreshCompactChromeHoverHooks(pf)
+    Diar:ApplyCompactInteractionState(pf)
     Diar:PositionPlannerControlsBar(pf)
     if Diar.UpdatePlannerDebugPanel then Diar:UpdatePlannerDebugPanel() end
 end
@@ -7669,6 +7717,9 @@ function Diar:ShowPlannerViewer(opts)
             Diar:SyncPlannerLayoutFromFrame(false)
         end)
         pf:SetScript("OnShow", function(s)
+            if Diar.ApplyCompactInteractionState then
+                Diar:ApplyCompactInteractionState(s)
+            end
             if s.canvas then s.canvas:SetAlpha(1) end
             if s.compactMode then
                 ApplyPlannerChromeTransparent(s)
@@ -8753,6 +8804,9 @@ function Diar:RefreshPlannerScene()
         if self.UpdateCompactSceneArrowButtons then
             self:UpdateCompactSceneArrowButtons(pf)
         end
+        if self.ApplyCompactInteractionState then
+            self:ApplyCompactInteractionState(pf)
+        end
         return
     end
     SetNoPlanCanvasHint(pf, noPlanLoaded)
@@ -8897,6 +8951,9 @@ function Diar:RefreshPlannerScene()
     end
     if self.EnsurePlannerRosterButton then
         self:EnsurePlannerRosterButton(pf)
+    end
+    if self.ApplyCompactInteractionState then
+        self:ApplyCompactInteractionState(pf)
     end
 end
 

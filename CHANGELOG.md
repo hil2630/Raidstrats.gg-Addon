@@ -1,5 +1,11 @@
 # Changelog
 
+## [Release 1.1.1]
+
+Bugs:
+
+- Compact view during a fight no longer blocks your buttons or keys.
+
 ## [Release 1.1.0]
 
 Added:
