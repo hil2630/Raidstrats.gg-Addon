@@ -1427,9 +1427,9 @@ local function ConvertWebSceneObjects(scene, canvasW, canvasH)
                             y = y,
                             w = w,
                             h = h,
-                            fill = (type(obj.fill) == "string" and obj.fill ~= "") and obj.fill or "rgba(15,23,42,0.56)",
-                            stroke = (type(obj.stroke) == "string" and obj.stroke ~= "") and obj.stroke or "rgba(148,163,184,0.72)",
-                            strokeWidth = ValueToPercent(CoerceNumber(obj.strokeWidth), canvasH) or 0.35,
+                            fill = "rgba(15,23,42,0.56)",
+                            stroke = "rgba(148,163,184,0.72)",
+                            strokeWidth = 0.2,
                             strokeStyle = "dashed",
                             opacity = CoerceNumber(obj.opacity),
                         }

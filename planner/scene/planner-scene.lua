@@ -4007,6 +4007,46 @@ local function LayoutItemWidget(w, item, vc, cw, ch, root, minSize)
     end
 end
 
+-- Extra FontStrings for lines 2..n of multi-line text. They follow w.text so code
+-- that hides, recolours or fades w.text (pool release, name highlight) covers them.
+function Diar.AcquireTextWidgetLines(w, count)
+    local lines = w.__extraTextLines
+    if not lines then
+        lines = {}
+        w.__extraTextLines = lines
+    end
+    if not w.__extraTextLinesHooked and w.text and hooksecurefunc then
+        w.__extraTextLinesHooked = true
+        hooksecurefunc(w.text, "Hide", function()
+            Diar.HideTextWidgetLines(w, 0)
+        end)
+        hooksecurefunc(w.text, "SetTextColor", function(_, r, g, b, a)
+            for _, fs in ipairs(w.__extraTextLines) do
+                fs:SetTextColor(r, g, b, a or 1)
+            end
+        end)
+        hooksecurefunc(w.text, "SetAlpha", function(_, a)
+            for _, fs in ipairs(w.__extraTextLines) do
+                fs:SetAlpha(a)
+            end
+        end)
+    end
+    for i = #lines + 1, count do
+        local fs = w:CreateFontString(nil, "OVERLAY")
+        fs:SetWordWrap(false)
+        lines[i] = fs
+    end
+    return lines
+end
+
+function Diar.HideTextWidgetLines(w, keepCount)
+    local lines = w and w.__extraTextLines
+    if not lines then return end
+    for i = (keepCount or 0) + 1, #lines do
+        lines[i]:Hide()
+    end
+end
+
 local function LayoutTextWidgetFont(w, item, vc, ch)
     local fontPx = SceneViewScale(vc, ch * ((type(item.fontSize) == "number" and item.fontSize or 4) / 100))
     -- Follow zoom exactly so imported text shrinks and grows with the scene.
@@ -4019,6 +4059,7 @@ local function ApplyTextWidgetContent(w, item, label, vc, ch, minSize)
         w.text:SetJustifyH("LEFT")
         w.text:SetJustifyV("TOP")
     end
+    w.text:SetJustifyV("TOP")
     w.text:ClearAllPoints()
     w.text:SetPoint("TOPLEFT", w, "TOPLEFT", 0, 0)
     if w.text.SetRotation then w.text:SetRotation(0) end
@@ -4029,58 +4070,123 @@ local function ApplyTextWidgetContent(w, item, label, vc, ch, minSize)
         fontFlags = (sw >= 2.5) and "THICKOUTLINE" or "OUTLINE"
     end
     local textValue = tostring(label or "")
-    textValue = textValue:gsub("\r\n", "\n"):gsub("\r", "\n")
-    if PUI and PUI.SetPlannerContentFont then
-        PUI.SetPlannerContentFont(w.text, LayoutTextWidgetFont(w, item, vc, ch), fontFlags, textValue)
-    else
-        w.text:SetFont(STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF", LayoutTextWidgetFont(w, item, vc, ch), fontFlags)
+    if type(item.labelColored) == "string" and item.labelColored ~= "" and textValue == tostring(item.label or "") then
+        textValue = item.labelColored
     end
+    textValue = textValue:gsub("\r\n", "\n"):gsub("\r", "\n")
+    -- WoW fonts have no arrow glyphs; they render as empty boxes.
+    textValue = textValue:gsub("\226\134\146", "->"):gsub("\226\134\144", "<-")
+        :gsub("\226\134\145", "^"):gsub("\226\134\147", "v")
+    local fontPx = LayoutTextWidgetFont(w, item, vc, ch)
+    local function applyFont(fs)
+        if PUI and PUI.SetPlannerContentFont then
+            PUI.SetPlannerContentFont(fs, fontPx, fontFlags, textValue)
+        else
+            fs:SetFont(STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF", fontPx, fontFlags)
+        end
+    end
+    applyFont(w.text)
     local tr, tg, tb = 1, 1, 1
     if item.textColor or item.fill then
         tr, tg, tb = ParseItemColor(item.textColor or item.fill, 1)
     end
     w.__baseTextColor = { tr, tg, tb }
-    w.text:SetTextColor(tr, tg, tb)
     local isMultiLine = textValue:find("\n", 1, true) ~= nil
-    w.text:SetWordWrap(isMultiLine)
-    if w.text.SetNonSpaceWrap then w.text:SetNonSpaceWrap(isMultiLine) end
+    -- The website gives every line an equal share of the text box. Planner fonts are
+    -- drawn through SetTextScale, which makes SetSpacing unreliable, so lay each line
+    -- out as its own string to keep icons placed beside a line lined up with it.
+    local lineList
+    if isMultiLine and type(item.h) == "number" and item.h > 0 then
+        lineList = {}
+        for line in (textValue .. "\n"):gmatch("(.-)\n") do
+            lineList[#lineList + 1] = line
+        end
+        if #lineList < 2 then lineList = nil end
+    end
+    local lineStrings = { w.text }
+    if lineList then
+        local extra = Diar.AcquireTextWidgetLines(w, #lineList - 1)
+        for i = 1, #lineList - 1 do
+            local fs = extra[i]
+            applyFont(fs)
+            lineStrings[i + 1] = fs
+        end
+        Diar.HideTextWidgetLines(w, #lineList - 1)
+    else
+        Diar.HideTextWidgetLines(w, 0)
+    end
+    w.text:SetTextColor(tr, tg, tb)
+    local wrapText = isMultiLine and not lineList
+    w.text:SetWordWrap(wrapText)
+    if w.text.SetNonSpaceWrap then w.text:SetNonSpaceWrap(wrapText) end
     if w.text.SetMaxLines then w.text:SetMaxLines(0) end
+    if w.text.SetSpacing then w.text:SetSpacing(0) end
     -- Use a large temporary width for measurement; width=0 can render as ellipsis on some clients.
-    -- For multi-line text the wrap width MUST scale with zoom to match the font (which is
+    -- For wrapped multi-line text the wrap width MUST scale with zoom to match the font (which is
     -- zoom-scaled): otherwise the font grows on zoom while the wrap width stays fixed, so the
     -- text wraps into far more lines, the measured height explodes and the background balloons
     -- and overlaps neighbouring objects.
-    local measureW = isMultiLine and math.max(32, math.ceil(SceneViewScale(vc, w.baseWorldW or w:GetWidth() or 0))) or 4096
-    w.text:SetWidth(measureW)
-    w.text:SetText(textValue)
-    local measuredW = (not isMultiLine and w.text.GetUnboundedStringWidth)
-        and w.text:GetUnboundedStringWidth()
-        or w.text:GetStringWidth()
-    local textW = math.max(minSize, math.ceil((measuredW or 0) + 8))
+    local measureW = wrapText and math.max(32, math.ceil(SceneViewScale(vc, w.baseWorldW or w:GetWidth() or 0))) or 4096
+    local measuredW = 0
+    for i, fs in ipairs(lineStrings) do
+        fs:SetHeight(0)
+        fs:SetWidth(measureW)
+        fs:SetText(lineList and lineList[i] or textValue)
+        if i > 1 then
+            fs:SetWordWrap(false)
+            fs:SetTextColor(tr, tg, tb)
+        end
+        local lineW = (not wrapText and fs.GetUnboundedStringWidth)
+            and fs:GetUnboundedStringWidth()
+            or fs:GetStringWidth()
+        measuredW = math.max(measuredW, lineW or 0)
+    end
+    local textW = math.max(minSize, math.ceil(measuredW + 8))
     local textH = math.max(minSize, math.ceil((w.text:GetStringHeight() or 0) + 2))
+    local slotH
+    if lineList then
+        local targetH = SceneViewScale(vc, ch * (item.h / 100))
+        slotH = targetH / #lineList
+        textH = math.max(minSize, math.ceil(targetH))
+    end
     -- Horizontal alignment from the web export. Default 'left' keeps the legacy
     -- auto-sized layout; center/right lay the text out inside the exported box width.
     local align = strlower(tostring(item.textAlign or ""))
+    local justifyH = "LEFT"
     if align == "center" then
-        w.text:SetJustifyH("CENTER")
+        justifyH = "CENTER"
     elseif align == "right" then
-        w.text:SetJustifyH("RIGHT")
+        justifyH = "RIGHT"
     else
         align = "left"
-        w.text:SetJustifyH("LEFT")
     end
+    local lineW
     if align == "left" then
         w:SetSize(textW, textH)
         w.basePixelW = textW
         w.basePixelH = textH
-        w.text:SetWidth(math.max(textW, measureW))
+        lineW = math.max(textW, measureW)
     else
         local boxWpx = math.max(minSize, SceneViewScale(vc, w.baseWorldW or 0))
         local layoutW = math.max(textW, boxWpx)
         w:SetSize(layoutW, textH)
         w.basePixelW = layoutW
         w.basePixelH = textH
-        w.text:SetWidth(layoutW)
+        lineW = layoutW
+    end
+    for i, fs in ipairs(lineStrings) do
+        fs:SetJustifyH(justifyH)
+        fs:SetWidth(lineW)
+        if slotH then
+            fs:SetJustifyV("MIDDLE")
+            fs:SetHeight(slotH)
+            fs:ClearAllPoints()
+            fs:SetPoint("TOPLEFT", w, "TOPLEFT", 0, -(i - 1) * slotH)
+            if i > 1 then
+                fs:SetAlpha(w.text:GetAlpha() or 1)
+                fs:Show()
+            end
+        end
     end
     -- Text highlight background (Fabric backgroundColor). Sized to the actual
     -- rendered glyphs (textW/textH follow the font, which is capped when you zoom
@@ -5729,16 +5835,29 @@ function Diar:SanitizePlanData(data)
                             item.label = ""
                             item.labelExplicit = nil
                         end
-                        if type(item.fill) ~= "string" or item.fill == "" then
-                            item.fill = "rgba(15,23,42,0.56)"
+                        -- The website draws numbered markers with fixed colors.
+                        item.fill = "rgba(15,23,42,0.56)"
+                        item.stroke = "rgba(148,163,184,0.72)"
+                        item.strokeWidth = math.min(tonumber(item.strokeWidth) or 0.2, 0.25)
+                        item.strokeStyle = "dashed"
+                    end
+                    if item.playerCircle == true and not item.genericMarker
+                        and type(item.label) == "string" and item.label:find("\n", 1, true) then
+                        -- Older exports turned numbered multi-line text into a white player circle.
+                        local _, breaks = item.label:gsub("\n", "\n")
+                        item.kind = "text"
+                        kindLower = "text"
+                        item.playerCircle = nil
+                        item.icon = nil
+                        item.fill = nil
+                        item.slotIndex = nil
+                        item.textColor = item.textColor or "#ffffff"
+                        item.textAlign = item.textAlign or "center"
+                        item.stroke = item.stroke or "#000000"
+                        item.strokeWidth = item.strokeWidth or 0.48
+                        if type(item.h) == "number" and not item.fontSize then
+                            item.fontSize = item.h / ((breaks + 1) * 1.31)
                         end
-                        if type(item.stroke) ~= "string" or item.stroke == "" then
-                            item.stroke = "rgba(148,163,184,0.72)"
-                        end
-                        if type(item.strokeWidth) ~= "number" then
-                            item.strokeWidth = 0.35
-                        end
-                        item.strokeStyle = item.strokeStyle or "dashed"
                     end
                     if kindLower == "shape" and (shapeLower == "circle" or shapeLower == "ellipse") and slotIndex and slotIndex > 0 then
                         -- Legacy imports stored player spots as shape circles, which blocked
@@ -6488,12 +6607,12 @@ function Diar.ApplyNumberedMarkerVisual(w, item, ch)
         textColor = { 0.06, 0.09, 0.16, 1 }
         w.__ringOverride = { classColor[1], classColor[2], classColor[3], 1 }
     else
-        local fr, fg, fb, fa = ParseItemColor(item.fill or "rgba(15,23,42,0.56)", item.opacity)
+        -- Match the website: empty numbered markers ignore their stored fill/stroke.
+        local fr, fg, fb, fa = ParseItemColor("rgba(15,23,42,0.56)", item.opacity)
         ApplyCircleWidgetVisual(w, item, { fr, fg, fb, fa })
-        if type(item.stroke) ~= "string" or item.stroke == "" then
-            item.stroke = "rgba(148,163,184,0.72)"
-        end
-        item.strokeStyle = item.strokeStyle or "dashed"
+        item.stroke = "rgba(148,163,184,0.72)"
+        item.strokeStyle = "dashed"
+        item.strokeWidth = math.min(tonumber(item.strokeWidth) or 0.2, 0.25)
     end
     if not w.text then
         w.text = w:CreateFontString(nil, "OVERLAY")
@@ -6502,6 +6621,13 @@ function Diar.ApplyNumberedMarkerVisual(w, item, ch)
     end
     w.text:ClearAllPoints()
     w.text:SetPoint("CENTER", w, "CENTER", 0, 0)
+    -- Widgets are pooled; a text widget may have left a narrow width behind,
+    -- which makes WoW draw the name as "...".
+    w.text:SetJustifyH("CENTER")
+    w.text:SetJustifyV("MIDDLE")
+    w.text:SetWordWrap(false)
+    w.text:SetWidth(4096)
+    if w.text.SetSpacing then w.text:SetSpacing(0) end
     local area = math.max(1, math.min(w:GetWidth() or 1, w:GetHeight() or 1))
     local fontSize = math.max(6, area * 0.35)
     if centerText ~= "" then
