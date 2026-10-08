@@ -6630,11 +6630,14 @@ function Diar.ApplyNumberedMarkerVisual(w, item, ch)
     if w.text.SetSpacing then w.text:SetSpacing(0) end
     local area = math.max(1, math.min(w:GetWidth() or 1, w:GetHeight() or 1))
     local fontSize = math.max(6, area * 0.35)
+    -- Class-colored circles draw the name in dark text. An outline is scaled with
+    -- the font and turns into a fat stroke, unlike the website.
+    local fontFlags = (hasClass and displayMode ~= "icon") and "" or "OUTLINE"
     if centerText ~= "" then
         if PUI and PUI.SetPlannerContentFont then
-            PUI.SetPlannerContentFont(w.text, fontSize, "OUTLINE", centerText)
+            PUI.SetPlannerContentFont(w.text, fontSize, fontFlags, centerText)
         else
-            w.text:SetFont(STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF", fontSize, "OUTLINE")
+            w.text:SetFont(STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF", fontSize, fontFlags)
         end
         w.text:SetTextColor(textColor[1], textColor[2], textColor[3], textColor[4] or 1)
         w.text:SetText(centerText)
